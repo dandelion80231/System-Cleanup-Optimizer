@@ -3120,7 +3120,9 @@ namespace CpqSystemTool
             }).ToList();
             _selectedBlob = _settings.Blobs.FirstOrDefault();
             _selectedStop = null;
-            _currentColor = BackgroundSettings.ParseColor(_selectedBlob.Color);
+            // [Q45] preset 无光斑（Blobs 为空）时 FirstOrDefault()=null，原直接 _selectedBlob.Color 会 NRE。
+            // 回退用基础色初始化选中色；光斑列表为空时 RefreshBlobList 无行可刷，安全。
+            _currentColor = BackgroundSettings.ParseColor(_selectedBlob != null ? _selectedBlob.Color : _settings.MeshBaseColor);
             _isUpdating = true;
             try { UpdateColor(_currentColor, true); }
             finally { _isUpdating = false; }
