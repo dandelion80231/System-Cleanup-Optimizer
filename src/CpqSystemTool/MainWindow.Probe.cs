@@ -219,9 +219,11 @@ namespace CpqSystemTool
                     // 超时 15 分钟强制结束，避免 UI 永久挂起
                     if (!p.WaitForExit(900000))
                     {
-                        try { p.Kill(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                        // [Q28] 整树终止（.NET10 Process.Kill(bool)）：原 p.Kill() 只杀直接子进程（node），
+                        // 其派生的 Playwright/Chromium 子进程会成孤儿残留；Kill(true) 连带整棵进程树一起杀。
+                        try { p.Kill(true); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
                         outStdout = sb.ToString();
-                        logf("[!] 进程超时（15 分钟）已被强制结束。");
+                        logf("[!] 进程超时（15 分钟）已被强制结束。" + "（含其子进程树）");
                         return false;
                     }
                     outStdout = sb.ToString();
