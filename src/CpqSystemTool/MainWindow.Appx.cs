@@ -237,7 +237,19 @@ namespace CpqSystemTool
             // 模式切换刷新
             rbCurrent.Click += (s, e) => { if (rbCurrent.IsChecked == true) LoadAndRender(true, cardsPanel, countLbl, searchBox.Text, log, UpdateAppxSelCount); };
             rbProvisioned.Click += (s, e) => { if (rbProvisioned.IsChecked == true) LoadAndRender(false, cardsPanel, countLbl, searchBox.Text, log, UpdateAppxSelCount); };
-            searchBox.TextChanged += (s, e) => LoadAndRender(rbCurrent.IsChecked == true, cardsPanel, countLbl, searchBox.Text, log, UpdateAppxSelCount);
+            // [Q33] 搜索框原来每键触发 LoadAndRender 全量重扫 → 快速输入时多个后台任务叠加、计数/卡片不符。
+            // 加 ~300ms 防抖（DispatcherTimer）：只在停止输入 300ms 后跑最后一次，取当时 searchBox.Text（即最新关键词）。
+            var searchDebounceTimer = new System.Windows.Threading.DispatcherTimer { Interval = System.TimeSpan.FromMilliseconds(300) };
+            searchDebounceTimer.Tick += (ts, te) =>
+            {
+                searchDebounceTimer.Stop();
+                LoadAndRender(rbCurrent.IsChecked == true, cardsPanel, countLbl, searchBox.Text, log, UpdateAppxSelCount);
+            };
+            searchBox.TextChanged += (s, e) =>
+            {
+                searchDebounceTimer.Stop();
+                searchDebounceTimer.Start();
+            };
 
             // 打开时默认加载（静默加载，不显示进度条，避免切换页面时感觉慢）
             AutoLoad(() =>
@@ -265,7 +277,9 @@ namespace CpqSystemTool
                     btnToggleSel.Content = "□ 全选";
                     rbCurrent.IsChecked = true;
                     chkConfirm.IsChecked = true;
-                    chkWithProvisioned.IsChecked = true;
+                    // [Q34] 新建页 chkWithProvisioned 默认 false（构建时未设 IsChecked）；缓存刷新原强制 true，
+                    // 会静默附带更具破坏性的“同时卸载预装”。改为与新建页一致的 false。
+                    chkWithProvisioned.IsChecked = false;
                 });
             }
 
