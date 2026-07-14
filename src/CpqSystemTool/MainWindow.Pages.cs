@@ -966,11 +966,13 @@ namespace CpqSystemTool
             var btnBar = MakeBtnRow(
                 Btn("📋 复制到剪贴板", true, () =>
                 {
-                    if (!string.IsNullOrEmpty(_lastSystemInfo))
-                    {
-                        Clipboard.SetText(_lastSystemInfo);
-                        SetStatus("已复制到剪贴板");
-                    }
+                if (!string.IsNullOrEmpty(_lastSystemInfo))
+                {
+                    // [Q35] 剪贴板被占用时 Clipboard.SetText 会抛异常 → UI 线程崩溃（无 try/catch 兑底）。
+                    // 改走带 Win32 兑底+重试的 TrySetClipboardTextAsync（内部全 catch，不崩），完成后再回填状态。
+                    _ = TrySetClipboardTextAsync(_lastSystemInfo).ContinueWith(t => Dispatcher.Invoke(() =>
+                        SetStatus(t.Result ? "已复制到剪贴板" : "[!] 复制失败：剪贴板暂不可用，请重试")));
+                }
                 }, 150),
                 Btn("💾 导出为 TXT...", false, () =>
                 {
