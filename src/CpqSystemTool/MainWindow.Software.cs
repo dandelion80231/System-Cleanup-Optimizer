@@ -83,7 +83,11 @@ namespace CpqSystemTool
             root.Children.Add(logBorder);
 
             // 后台线程：扫描所有软件安装状态
-            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+            // [Q38] 把"扫描+构建整页"抽成可复用的 scanAndBuild，供初始加载与下方"重新扫描"按钮共用；
+            // 初始扫描失败(外层 catch)不再静默卡"正在扫描…"，而是回 UI 线程换成 错误提示+重试。
+            // 先声明为 null 再赋值，避免在自身 lambda 内引用（重试按钮）时触发 CS0165。
+            Action scanAndBuild = null;
+            scanAndBuild = () =>
             {
                 try
                 {
@@ -715,8 +719,35 @@ namespace CpqSystemTool
                         }
                     }); } catch { /* 窗口已关闭，忽略 */ }
                 }
-                catch { /* 静默 */ }
-            });
+                catch (Exception ex)
+                {
+                    // [Q38] 初始扫描失败：原 catch{} 全吞，占位"正在扫描…"永不替换、页面无反馈无重试。
+                    // 记日志 + 回 UI 线程把占位换成 错误提示 + "重新扫描"按钮（重跑 scanAndBuild）。
+                    DebugLog.Warn("软件页初始扫描失败: " + ex.Message);
+                    try
+                    {
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            if (!root.Children.Contains(loadingBorder)) return;
+                            root.Children.Remove(loadingBorder);
+                            var errPanel = new StackPanel { Margin = new Thickness(0, 30, 0, 30), HorizontalAlignment = HorizontalAlignment.Center };
+                            errPanel.Children.Add(new TextBlock { Text = "⚠ 软件扫描失败：" + ex.Message, Foreground = _accent, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 12) });
+                            var errBorder = new Border { Child = errPanel, VerticalAlignment = VerticalAlignment.Stretch, HorizontalAlignment = HorizontalAlignment.Stretch, Background = _bgCard, CornerRadius = new CornerRadius(12), BorderBrush = _panelBorder, BorderThickness = new Thickness(1), Padding = new Thickness(16) };
+                            Grid.SetRow(errBorder, 2);
+                            root.Children.Add(errBorder);
+                            errPanel.Children.Add(Btn("🔄 重新扫描", true, () =>
+                            {
+                                if (root.Children.Contains(errBorder)) root.Children.Remove(errBorder);
+                                log.Clear();
+                                if (!root.Children.Contains(loadingBorder)) { Grid.SetRow(loadingBorder, 2); root.Children.Add(loadingBorder); }
+                                System.Threading.ThreadPool.QueueUserWorkItem(_ => scanAndBuild());
+                            }, 120));
+                        }));
+                    }
+                    catch { /* 窗口已关闭，忽略 */ }
+                }
+            };
+            System.Threading.ThreadPool.QueueUserWorkItem(_ => scanAndBuild());
 
             return root;
         }
