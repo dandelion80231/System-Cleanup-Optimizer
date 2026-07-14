@@ -411,9 +411,13 @@ namespace CpqSystemTool
                     MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
-                VersionSwitch.BackupActivation(text => sharedLog.AppendText(text + "\r\n"));
                 pb.Visibility = Visibility.Visible;
-                RunInBg(sharedLog, l => VersionSwitch.SwitchEdition(edition, key, l), "版本转换结束", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; vsRestoreBtn.IsEnabled = true; });
+                RunInBg(sharedLog, l =>
+                {
+                    // [Q29] 备份激活(slmgr /dlv, 1-5s)原在 UI 线程跑子进程会阻塞窗口；移入后台任务、用 bg 日志 l
+                    VersionSwitch.BackupActivation(l);
+                    VersionSwitch.SwitchEdition(edition, key, l);
+                }, "版本转换结束", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; vsRestoreBtn.IsEnabled = true; });
             };
             vsRestoreBtn.Click += (s, e) =>
             {
