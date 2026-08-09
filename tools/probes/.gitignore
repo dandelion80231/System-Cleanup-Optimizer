@@ -1,0 +1,9 @@
+# 依赖与运行产物（由 install_deps.ps1 生成，不应提交）
+node_modules/
+.tools/
+
+# 日志 / 临时文件
+*.log
+*.tmp
+*.txt.bak
+b_probe_out.txt

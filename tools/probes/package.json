@@ -1,0 +1,9 @@
+{
+  "name": "official-exe-finder-probes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "官方软件安装包 exe 直链通用探针（仅依赖 playwright）",
+  "dependencies": {
+    "playwright": "^1.62.1"
+  }
+}

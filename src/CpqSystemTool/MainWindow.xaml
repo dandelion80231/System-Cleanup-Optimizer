@@ -1,0 +1,127 @@
+﻿<Window x:Class="CpqSystemTool.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="系统清理与优化工具" Height="740" Width="1200"
+        WindowStartupLocation="CenterScreen" FontFamily="Segoe UI" Icon="brush.ico">
+    <Window.Resources>
+        <!-- 滚动条滑块颜色 + 悬浮高亮色：由 ApplyShellColors 按主题更新 -->
+        <SolidColorBrush x:Key="ScrollThumbBrush" Color="#3C4654"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="#16E0BD"/>
+        <!-- 按钮悬浮背景色（深/浅模式不同）：由 Theme.cs 动态设置 -->
+        <SolidColorBrush x:Key="ButtonHoverBrush" Color="#16089182"/>
+        <!-- 注：RowHoverBrush 曾由 Theme.cs 动态设置，现已移除（直接复用 _rowHover 笔刷，无独立资源）；下方资源仍由 Theme.cs 切换主题时更新 -->
+        <!-- 按钮模板内用 DynamicResource 引用，Theme.cs 切换主题时自动更新 -->
+
+        <!-- 圆角按钮模板：悬浮高亮在 ControlTemplate 内部用 TargetName 实现
+             原因：Style 级 Trigger 设 BorderBrush 会被代码 local value 覆盖；
+             而 ControlTemplate 内的 TargetName Setter 优先级高于 local value，保证生效。 -->
+        <Style TargetType="Button">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="PART_Border" CornerRadius="8"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <!-- 悬浮：背景半透明填充 + 边框变青绿
+                                 TargetName 优先级高于 local value，确保对 primary/non-primary 按钮都生效
+                                 non-primary（透明底）→ 显示明显填充；primary（accent 底）→ 叠加后微亮 -->
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="PART_Border" Property="Background" Value="{DynamicResource ButtonHoverBrush}"/>
+                                <Setter TargetName="PART_Border" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            </Trigger>
+                            <!-- 按下 -->
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Opacity" Value="0.80"/>
+                            </Trigger>
+                            <!-- 禁用 -->
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 统一细窄圆角滚动条 -->
+        <Style TargetType="ScrollBar">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Width" Value="9"/>
+            <Setter Property="MinWidth" Value="9"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent">
+                            <Track Name="PART_Track"
+                                   Value="{TemplateBinding Value}"
+                                   Minimum="{TemplateBinding Minimum}"
+                                   Maximum="{TemplateBinding Maximum}"
+                                   ViewportSize="{TemplateBinding ViewportSize}"
+                                   IsDirectionReversed="True">
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border CornerRadius="4" Background="{DynamicResource ScrollThumbBrush}"/>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Height" Value="9"/>
+                    <Setter Property="MinHeight" Value="9"/>
+                    <Setter Property="Width" Value="Auto"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+    <Grid x:Name="MainGrid">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="180" x:Name="SidebarCol"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <!-- 背景图（跨两列，作为最底层；由 ApplyShellColors 动态切换深/浅色图）
+             Stretch=Fill：忽略原图比例彻底铺满窗口（最大化时无死角）
+             原 UniformToFill 在超宽屏可能露出边缘透明像素 -->
+        <Image x:Name="BgImage" Grid.ColumnSpan="2" Stretch="Fill" IsHitTestVisible="False"/>
+        <!-- 侧边栏 -->
+        <Border Grid.Column="0" x:Name="Sidebar" Background="#10151C" BorderBrush="#1E2630" BorderThickness="0,0,1,0"/>
+        <!-- 右边缘拖拽条（替代 GridSplitter，避免白屏） -->
+        <Border Grid.Column="0" x:Name="SidebarDragger"
+                HorizontalAlignment="Right" Width="5" Cursor="SizeWE"
+                Background="Transparent" ToolTip="拖动调整侧边栏宽度"
+                MouseLeftButtonDown="Dragger_MouseDown"
+                MouseMove="Dragger_MouseMove"
+                MouseLeftButtonUp="Dragger_MouseUp"/>
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" x:Name="TopBar" Background="#121821" BorderBrush="#1E2630" BorderThickness="0,0,0,1" Padding="22,14">
+                <Grid>
+                    <TextBlock x:Name="PageTitle" Text="系统优化" FontSize="22" FontWeight="Bold" Foreground="#E6EDF3" VerticalAlignment="Center" Margin="0"/>
+                    <Button x:Name="ThemeToggleBtn" HorizontalAlignment="Right" VerticalAlignment="Center"
+                            Width="36" Height="36" Cursor="Hand" ToolTip="切换主题"
+                            BorderThickness="0" Background="Transparent" Foreground="#8B98A5"
+                            FontSize="16" Content="🌙" Click="ThemeToggle_Click"/>
+                </Grid>
+            </Border>
+            <ScrollViewer Grid.Row="1" x:Name="ContentArea" Margin="22" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Background="Transparent"/>
+            <Border Grid.Row="2" x:Name="StatusBar" Background="#0B0E12" BorderBrush="#1E2630" BorderThickness="0,1,0,0" Padding="22,8">
+                <TextBlock x:Name="StatusText" Text="就绪" FontSize="12"/>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

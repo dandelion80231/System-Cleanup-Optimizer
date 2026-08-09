@@ -1,0 +1,52 @@
+# Build output
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+.vs/
+
+# Logs
+*.log
+build_err*.txt
+build_out*.txt
+crash.log
+
+# Backups / temp
+*.bak
+*.bak.*
+nul
+
+# User runtime data / config
+Config/
+custom_software.json
+autosave.json
+*.autosave
+
+# Tool internals
+.workbuddy/
+.cleanup_trash/
+.archive_reports/
+backup/
+
+# 3rd-party deps
+node_modules/
+tools/probes/node_modules/
+
+# Large binaries / release artifacts (publish as GitHub Release instead)
+*.exe
+*.exe.config
+*.msi
+*.zip
+!src/CpqSystemTool/src.zip   # 源码导出包：随源码提交，构建必需（否则克隆后报 CS1566）
+*.psd
+*.pdb
+
+# OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Non-project memory dump
+MEMORY_full.md
