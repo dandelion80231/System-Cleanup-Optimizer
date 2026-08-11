@@ -24,6 +24,7 @@ namespace CpqSystemTool
         // 关于页「下载更新」按钮与待下载版本标签（由 CheckForUpdate 设置）。
         private Button _aboutDownloadUpdateBtn;
         private string _pendingUpdateTag;
+        private string _pendingUpdateUrl;   // 从 GitHub API 取得的真实浏览器下载直链（含正确的资产文件名）
 
         /// <summary>MakeCheck 复选框勾选态的语义：勾选 = 禁用，还是勾选 = 启用。</summary>
         private enum CheckSemantics { CheckedMeansDisable, CheckedMeansEnable }
@@ -1845,7 +1846,8 @@ namespace CpqSystemTool
             return root;
         }
 
-        // .NET Framework 的 WebClient 无 Timeout 属性（.NET 5+ 才有）；通过重写 GetWebRequest 设置底层请求超时（10 秒），避免 CheckForUpdate 无限等待。
+        // .NET Framework 的 WebClient 无 Timeout 属性（.NET 5+ 才有）；通过重写 GetWebRequest 设置底层请求超时。
+        // Proxy 继承自基类 WebClient，外部可直接设置 wc.Proxy。
         private class WebClientWithTimeout : System.Net.WebClient
         {
             public int TimeoutMs { get; set; } = 10000;
@@ -1857,6 +1859,65 @@ namespace CpqSystemTool
             }
         }
 
+        /// <summary>返回候选代理列表：系统代理 → 直连 → Watt Toolkit 本地 HTTP 代理。</summary>
+        private static System.Net.IWebProxy[] GetProxyCandidates()
+        {
+            return new System.Net.IWebProxy[]
+            {
+                System.Net.WebRequest.DefaultWebProxy,              // 1) 系统代理（Watt Toolkit System 模式等）
+                null,                                               // 2) 直连（无代理）
+                new System.Net.WebProxy("http://127.0.0.1:26561", false) // 3) Watt Toolkit 本地端口（PAC/System 模式）
+            };
+        }
+
+        /// <summary>依次尝试多种代理方式下载字符串，任一成功即返回；全部失败抛出汇总异常。</summary>
+        private static string DownloadStringWithProxyFallback(string url)
+        {
+            System.Exception last = null;
+            foreach (var proxy in GetProxyCandidates())
+            {
+                try
+                {
+                    using (var wc = new WebClientWithTimeout { TimeoutMs = 10000, Proxy = proxy })
+                    {
+                        wc.Headers.Add("User-Agent", "CpqSystemTool");
+                        return wc.DownloadString(url);
+                    }
+                }
+                catch (System.Exception ex) { last = ex; }
+            }
+            throw new System.Exception("所有网络方式均失败：" + (last?.Message ?? "未知错误"), last);
+        }
+
+        /// <summary>依次尝试多种代理方式下载文件，任一成功即返回；全部失败抛出汇总异常。</summary>
+        private static async System.Threading.Tasks.Task DownloadFileWithProxyFallback(string url, string fileName, string tag, System.Windows.Threading.Dispatcher disp, System.Action<int> onProgress)
+        {
+            System.Exception last = null;
+            foreach (var proxy in GetProxyCandidates())
+            {
+                try
+                {
+                    using (var wc = new WebClientWithTimeout { TimeoutMs = 120000, Proxy = proxy })
+                    {
+                        wc.Headers.Add("User-Agent", "CpqSystemTool");
+                        wc.DownloadProgressChanged += (s, e) => onProgress?.Invoke(e.ProgressPercentage);
+                        var tcs = new System.Threading.Tasks.TaskCompletionSource<object>();
+                        wc.DownloadFileCompleted += (s, e) =>
+                        {
+                            if (e.Error != null) tcs.TrySetException(e.Error);
+                            else if (e.Cancelled) tcs.TrySetCanceled();
+                            else tcs.TrySetResult(null);
+                        };
+                        wc.DownloadFileAsync(new Uri(url), fileName);
+                        await tcs.Task;
+                        return;
+                    }
+                }
+                catch (System.Exception ex) { last = ex; }
+            }
+            throw new System.Exception("所有网络方式均失败：" + (last?.Message ?? "未知错误"), last);
+        }
+
         /// <summary>检查 GitHub Release 是否有新版本，结果经 Dispatcher 回到 UI 线程写入状态栏。</summary>
         private void CheckForUpdate()
         {
@@ -1866,41 +1927,40 @@ namespace CpqSystemTool
             {
                 try
                 {
-                    using (var wc = new WebClientWithTimeout { TimeoutMs = 10000 })
+                    var json = DownloadStringWithProxyFallback("https://api.github.com/repos/dandelion80231/System-Cleanup-Optimizer/releases/latest");
+                    var m = System.Text.RegularExpressions.Regex.Match(json, "\"tag_name\"\\s*:\\s*\"([^\"]+)\"");
+                    if (!m.Success) { disp.Invoke(() => SetStatus("检查更新：未获取到版本信息")); return; }
+                    var latest = m.Groups[1].Value.Trim();
+                    // 从同一份 JSON 提取真实浏览器下载直链（含正确的资产文件名，可能是中文也可能是英文），避免自己拼文件名导致 404。
+                    var urlMatch = System.Text.RegularExpressions.Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.exe)\"");
+                    _pendingUpdateUrl = urlMatch.Success ? urlMatch.Groups[1].Value : "";
+                    var cmp = CompareVersion(APP_VERSION, latest);
+                    if (cmp < 0)
                     {
-                        wc.Headers.Add("User-Agent", "CpqSystemTool");
-                        var json = wc.DownloadString("https://api.github.com/repos/dandelion80231/System-Cleanup-Optimizer/releases/latest");
-                        var m = System.Text.RegularExpressions.Regex.Match(json, "\"tag_name\"\\s*:\\s*\"([^\"]+)\"");
-                        if (!m.Success) { disp.Invoke(() => SetStatus("检查更新：未获取到版本信息")); return; }
-                        var latest = m.Groups[1].Value.Trim();
-                        var cmp = CompareVersion(APP_VERSION, latest);
-                        if (cmp < 0)
+                        _pendingUpdateTag = latest;
+                        disp.Invoke(() =>
                         {
-                            _pendingUpdateTag = latest;
-                            disp.Invoke(() =>
-                            {
-                                SetStatus("发现新版本 " + latest + "，可点击右侧「下载更新」保存到本地");
-                                if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Visible;
-                            });
-                        }
-                        else if (cmp == 0)
+                            SetStatus("发现新版本 " + latest + "，可点击右侧「下载更新」保存到本地");
+                            if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Visible;
+                        });
+                    }
+                    else if (cmp == 0)
+                    {
+                        _pendingUpdateTag = null;
+                        disp.Invoke(() =>
                         {
-                            _pendingUpdateTag = null;
-                            disp.Invoke(() =>
-                            {
-                                SetStatus("当前已是最新版本 " + APP_VERSION);
-                                if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Collapsed;
-                            });
-                        }
-                        else
+                            SetStatus("当前已是最新版本 " + APP_VERSION);
+                            if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Collapsed;
+                        });
+                    }
+                    else
+                    {
+                        _pendingUpdateTag = null;
+                        disp.Invoke(() =>
                         {
-                            _pendingUpdateTag = null;
-                            disp.Invoke(() =>
-                            {
-                                SetStatus("当前版本 " + APP_VERSION + " 已高于线上 " + latest);
-                                if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Collapsed;
-                            });
-                        }
+                            SetStatus("当前版本 " + APP_VERSION + " 已高于线上 " + latest);
+                            if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Collapsed;
+                        });
                     }
                 }
                 catch (System.Net.WebException ex)
@@ -1930,7 +1990,7 @@ namespace CpqSystemTool
         }
 
         /// <summary>用户点击「下载更新」后：弹出 SaveFileDialog 自选保存路径，然后从 GitHub Release 下载对应版本 exe。</summary>
-        private void DownloadUpdate()
+        private async void DownloadUpdate()
         {
             if (string.IsNullOrEmpty(_pendingUpdateTag))
             {
@@ -1951,47 +2011,27 @@ namespace CpqSystemTool
 
             if (dlg.ShowDialog() != true) return;
 
-            var url = $"https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/download/{tag}/{fileName}";
+            // 优先使用从 GitHub API 取得的真实浏览器下载直链（文件名正确，避免 404）；仅在缺失时回退到本地拼装。
+            var url = _pendingUpdateUrl;
+            if (string.IsNullOrEmpty(url)) url = $"https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/download/{tag}/{fileName}";
             SetStatus($"正在下载 {tag} …");
             var disp = Dispatcher;
-            Task.Run(() =>
+            try
             {
-                try
+                await DownloadFileWithProxyFallback(url, dlg.FileName, tag, disp, pct =>
                 {
-                    using (var wc = new WebClientWithTimeout { TimeoutMs = 120000 })
-                    {
-                        wc.Headers.Add("User-Agent", "CpqSystemTool");
-                        wc.DownloadProgressChanged += (s, e) =>
-                        {
-                            disp.Invoke(() => SetStatus($"正在下载 {tag}：{e.ProgressPercentage}%"));
-                        };
-                        wc.DownloadFileCompleted += (s, e) =>
-                        {
-                            disp.Invoke(() =>
-                            {
-                                if (e.Error != null)
-                                    SetStatus($"下载失败：{e.Error.Message}");
-                                else if (e.Cancelled)
-                                    SetStatus("下载已取消");
-                                else
-                                {
-                                    SetStatus($"新版本已保存：{dlg.FileName}");
-                                    if (MessageBox.Show("下载完成，是否打开所在文件夹？", "下载完成", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
-                                    {
-                                        try { System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{dlg.FileName}\""); } catch { }
-                                    }
-                                }
-                            });
-                        };
-                        wc.DownloadFileAsync(new Uri(url), dlg.FileName);
-                        while (wc.IsBusy) System.Threading.Thread.Sleep(100);
-                    }
-                }
-                catch (System.Exception ex)
+                    disp.Invoke(() => SetStatus($"正在下载 {tag}：{pct}%"));
+                });
+                SetStatus($"新版本已保存：{dlg.FileName}");
+                if (MessageBox.Show("下载完成，是否打开所在文件夹？", "下载完成", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
                 {
-                    disp.Invoke(() => SetStatus($"下载失败：{ex.Message}"));
+                    try { System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{dlg.FileName}\""); } catch { }
                 }
-            });
+            }
+            catch (System.Exception ex)
+            {
+                SetStatus($"下载失败：{ex.Message}");
+            }
         }
 
         /// <summary>开源引用清单的一行：名称 + 许可证标签 + 一个或多个可点击来源链接。</summary>
