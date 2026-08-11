@@ -1,0 +1,17 @@
+# 规范化行尾，消除 CRLF/LF diff 噪声
+# 文本文件统一以 LF 存储，检出时按平台转换
+* text=auto eol=lf
+
+# 明确标记为二进制的文件，禁止行尾转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.exe binary
+*.dll binary
+*.zip binary
+*.psd binary
+*.pdb binary
+*.msi binary
+*.pdf binary

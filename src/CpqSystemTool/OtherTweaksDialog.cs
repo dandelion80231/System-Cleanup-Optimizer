@@ -140,15 +140,15 @@ namespace CpqSystemTool
             AddToggle(root, "内存压缩",
                 "MemoryCompression 使用 CPU 压缩内存以节省物理内存（需SysMain已启用）",
                 () => { var o = Exec.RunPowerShellGet("(Get-MMAgent).MemoryCompression", null); return o?.Trim() == "True"; },
-                on => Exec.RunCmd(new[] { "powershell", "-Command", (on ? "enable" : "disable") + "-mmagent -MemoryCompression" }, _ => { }));
+                on => Exec.RunPowerShell((on ? "enable" : "disable") + "-mmagent -MemoryCompression", _ => { }));
             AddToggle(root, "应用预启动",
                 "ApplicationPreLaunch 根据使用习惯预启动应用（需SysMain已启用）",
                 () => { var o = Exec.RunPowerShellGet("(Get-MMAgent).ApplicationPreLaunch", null); return o?.Trim() == "True"; },
-                on => Exec.RunCmd(new[] { "powershell", "-Command", (on ? "enable" : "disable") + "-mmagent -ApplicationPreLaunch" }, _ => { }));
+                on => Exec.RunPowerShell((on ? "enable" : "disable") + "-mmagent -ApplicationPreLaunch", _ => { }));
             AddToggle(root, "页面合并",
                 "PageCombining 合并物理内存中相同内容的页面以降低内存使用",
                 () => { var o = Exec.RunPowerShellGet("(Get-MMAgent).PageCombining", null); return o?.Trim() == "True"; },
-                on => Exec.RunCmd(new[] { "powershell", "-Command", (on ? "enable" : "disable") + "-mmagent -PageCombining" }, _ => { }));
+                on => Exec.RunPowerShell((on ? "enable" : "disable") + "-mmagent -PageCombining", _ => { }));
 
             // 第3组：远程管理
             root.Children.Add(SectionHeader("远程管理"));
@@ -481,9 +481,9 @@ namespace CpqSystemTool
                 return;
             }
             RegistryHelper.SetDword(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp", "PortNumber", port, _ => { });
-            Exec.RunCmd(new[] { "powershell", "-Command",
+            Exec.RunPowerShell(
                 $"Remove-NetFirewallRule -DisplayName 'RDPPORT-TCP-In' -ErrorAction SilentlyContinue;" +
-                $"New-NetFirewallRule -DisplayName 'RDPPORT-TCP-In' -Direction Inbound -Action Allow -Protocol TCP -LocalPort {port}" }, _ => { });
+                $"New-NetFirewallRule -DisplayName 'RDPPORT-TCP-In' -Direction Inbound -Action Allow -Protocol TCP -LocalPort {port}", _ => { });
             MessageBox.Show($"远程桌面端口已更改为 {port}。\n防火墙规则已添加（TCP）。\n重启后生效。", "完成", MessageBoxButton.OK, MessageBoxImage.Information);
             Close();
         }

@@ -29,17 +29,26 @@ autosave.json
 .cleanup_trash/
 .archive_reports/
 backup/
+# 临时 diff 对比文件，不应提交
+cr_tmp/
 
 # 3rd-party deps
 node_modules/
 tools/probes/node_modules/
+# NuGet 还原产物（WebView2 等），不应提交
+runtimes/
+# Edge 离线安装包（201M），通过 Release 分发，不进仓库
+tools/edge_offline/
 
 # Large binaries / release artifacts (publish as GitHub Release instead)
 *.exe
 *.exe.config
+# NuGet 还原的运行时 DLL（WebView2 等），不应提交
+*.dll
 *.msi
 *.zip
-!src/CpqSystemTool/src.zip   # 源码导出包：随源码提交，构建必需（否则克隆后报 CS1566）
+# 源码导出包：随源码提交，构建必需（否则克隆后报 CS1566）
+!src/CpqSystemTool/src.zip
 *.psd
 *.pdb
 

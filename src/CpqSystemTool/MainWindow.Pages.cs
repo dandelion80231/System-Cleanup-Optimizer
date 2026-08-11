@@ -1772,7 +1772,7 @@ namespace CpqSystemTool
             updateInner.Children.Add(updateHeaderRow);
             updateInner.Children.Add(new TextBlock
             {
-                Text = "v1.01（2026-08-06）\n• 初始版本发布，完成系统清理、优化与维护核心功能。\n• 系统优化：提供一键/按需系统调校项，支持操作前创建还原点。\n• 清理优化：支持 6 大类 34 项细粒度清理，涵盖缓存、系统残留、更新文件、浏览器数据、日志历史与大空间回收；支持先扫描后清理、安全项一键勾选与分类并行加速。\n• 服务优化：支持系统服务的批量禁用/恢复与依赖检查。\n• Appx 商店 / Appx 管理：提供 Windows 应用商店应用的一键安装/卸载与管理能力。\n• 常用软件：内置常用软件清单，支持官方直链下载、自定义软件维护与静默安装。\n• 安全防护：集成 Windows 安全中心、防火墙与 Defender 相关快捷管理。\n• Edge 管理：支持 Edge 浏览器缓存、配置与通道管理。\n• 隐私设置：提供常见隐私项的快速开关与系统遥测管理。\n• 系统工具：集合实用的系统级快捷操作。\n• 激活工具：在用户授权后调用 Microsoft Activation Scripts（MAS）在线脚本完成系统激活。\n• 系统信息：双列展示硬件、系统与运行环境关键信息。\n• 维护工具：提供系统维护常用脚本与一键修复入口。\n• 配置管理：支持主题切换、还原点策略与个性化设置持久化。",
+                Text = "v1.02（2026-08-10）\n• 修复官方 exe 直链探针在 QQ 等动态渲染站点上的抓取稳定性：解决脚本语法错误导致整段返回 null、SKIP 非安装包（如 .js）混入结果、404 死链（旧版本/非 x64 CDN 链接）仍显示的问题。\n• WebView2 探针可靠性增强：修复 SetupCdp 在 UI/STA 线程同步阻塞导致的 20 秒初始化死锁；新增运行时目录主动扫描兜底；初始化失败时改为显式弹窗询问是否切换到 Node + Playwright + Chromium 方案。\n• PowerShell 调用统一化：将 Tweaks / RestorePoint / OtherTweaksDialog / EdgeCore / Theme.cs 中残留的 powershell -Command 调用迁移到 -EncodedCommand，避免中文/引号乱码。\n• 维护工具依赖管理：Node + Playwright + Chromium 回退路径代码审查完成，安装脚本与 C# 解析逻辑保持健壮。\n• 软件版本号与交付文件名规范化：exe 文件名追加版本号，便于多版本并存与 GitHub Release 分发。\n\nv1.01（2026-08-06）\n• 初始版本发布，完成系统清理、优化与维护核心功能。\n• 系统优化：提供一键/按需系统调校项，支持操作前创建还原点。\n• 清理优化：支持 6 大类 34 项细粒度清理，涵盖缓存、系统残留、更新文件、浏览器数据、日志历史与大空间回收；支持先扫描后清理、安全项一键勾选与分类并行加速。\n• 服务优化：支持系统服务的批量禁用/恢复与依赖检查。\n• Appx 商店 / Appx 管理：提供 Windows 应用商店应用的一键安装/卸载与管理能力。\n• 常用软件：内置常用软件清单，支持官方直链下载、自定义软件维护与静默安装。\n• 安全防护：集成 Windows 安全中心、防火墙与 Defender 相关快捷管理。\n• Edge 管理：支持 Edge 浏览器缓存、配置与通道管理。\n• 隐私设置：提供常见隐私项的快速开关与系统遥测管理。\n• 系统工具：集合实用的系统级快捷操作。\n• 激活工具：在用户授权后调用 Microsoft Activation Scripts（MAS）在线脚本完成系统激活。\n• 系统信息：双列展示硬件、系统与运行环境关键信息。\n• 维护工具：提供系统维护常用脚本与一键修复入口。\n• 配置管理：支持主题切换、还原点策略与个性化设置持久化。",
                 FontSize = 12,
                 Foreground = _textMain,
                 TextWrapping = TextWrapping.Wrap,
@@ -3255,11 +3255,7 @@ namespace CpqSystemTool
             {
                 pb.Visibility = Visibility.Visible;
                 // 改为 RunInBg 异步执行：下载+安装是网络/IO 操作，同步跑会卡住 UI 线程（进度条来不及渲染即 Collapsed）
-                RunInBg(log, l =>
-                {
-                    Exec.RunCmd(new[] { "powershell", "-Command", "Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile \"$env:TEMP\\MicrosoftEdgeWebview2Setup.exe\"" }, l);
-                    Exec.RunCmd(new[] { "cmd", "/c", $"\"{Environment.GetEnvironmentVariable("TEMP")}\\MicrosoftEdgeWebview2Setup.exe\"", "/silent", "/install" }, l);
-                }, "WebView2 安装/升级完成", () => pb.Visibility = Visibility.Collapsed);
+                RunInBg(log, EdgeCore.InstallWebView2, "WebView2 安装/升级完成", () => pb.Visibility = Visibility.Collapsed);
             }, 110);
             Grid.SetColumn(w1Btn, 1);
             w1Row.Children.Add(w1Btn);
@@ -3275,7 +3271,7 @@ namespace CpqSystemTool
             var w2Btn = Btn("🗑 卸载", false, () =>
             {
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, l => Exec.RunCmd(new[] { "cmd", "/c", "%ProgramFiles(x86)%\\Microsoft\\EdgeWebView\\Application\\*.*\\Installer\\setup.exe --uninstall --force-uninstall --system-level" }, l), "WebView2 卸载完成", () => pb.Visibility = Visibility.Collapsed);
+                RunInBg(log, EdgeCore.UninstallWebView2, "WebView2 卸载完成", () => pb.Visibility = Visibility.Collapsed);
             }, 110);
             Grid.SetColumn(w2Btn, 1);
             w2Row.Children.Add(w2Btn);

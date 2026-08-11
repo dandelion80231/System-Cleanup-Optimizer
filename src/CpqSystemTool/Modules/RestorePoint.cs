@@ -28,7 +28,7 @@ namespace CpqSystemTool
         {
             log("创建系统还原点：" + desc);
             string script = "Checkpoint-Computer -Description " + QuoteArg(desc) + " -RestorePointType 'MODIFY_SETTINGS'";
-            int r = Exec.RunCmd(new[] { "powershell", "-NoProfile", "-Command", script }, log);
+            int r = Exec.RunPowerShell(script, log);
             if (r == 0) log("  [OK] 还原点已创建（可在「系统还原」中查看/还原）");
             else log("  [!] 创建失败（可能系统还原未启用、VSS 服务未运行或权限不足）");
         }
@@ -39,7 +39,7 @@ namespace CpqSystemTool
             var list = new List<RestoreInfo>();
             string script = "Get-ComputerRestorePoint -EA 0 | ForEach-Object { " +
                 "Write-Output ($_.SequenceNumber.ToString() + '|' + $_.Description + '|' + $_.CreationTime.ToString('yyyy-MM-dd HH:mm')) }";
-            string outp = Exec.RunCmdGet(new[] { "powershell", "-NoProfile", "-Command", script }, log);
+            string outp = Exec.RunPowerShellGet(script, log);
             if (!string.IsNullOrEmpty(outp))
             {
                 foreach (var line in outp.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
@@ -61,7 +61,7 @@ namespace CpqSystemTool
         {
             log("请求系统还原到序号 " + seq + "（完成后需重启电脑）");
             string script = "Get-ComputerRestorePoint -SequenceNumber " + seq.ToString() + " -EA 0 | Restore-Computer";
-            Exec.RunCmd(new[] { "powershell", "-NoProfile", "-Command", script }, log);
+            Exec.RunPowerShell(script, log);
             log("  [OK] 已发起还原，请重启电脑以生效");
         }
 

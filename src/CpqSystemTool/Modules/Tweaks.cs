@@ -483,24 +483,24 @@ namespace CpqSystemTool
             {
                 Group = "性能优化", Id = "mem_compress", Name = "内存压缩",
                 Desc = "启用/禁用系统内存压缩（Enable/Disable-MMAgent -mc）", Risk = "mid",
-                Enable = log => RegistryHelper.RunCommand("powershell", "-NoProfile -Command Enable-MMAgent -mc", log),
-                Disable = log => RegistryHelper.RunCommand("powershell", "-NoProfile -Command Disable-MMAgent -mc", log),
+                Enable = log => Exec.RunPowerShell("Enable-MMAgent -mc", log),
+                Disable = log => Exec.RunPowerShell("Disable-MMAgent -mc", log),
                 State = () => MMAgentProp("MemoryCompression")
             });
             L.Add(new TweakEntry
             {
                 Group = "性能优化", Id = "page_combining", Name = "内存页面合并",
                 Desc = "启用/禁用内存页面合并（Enable/Disable-MMAgent -PageCombining）", Risk = "mid",
-                Enable = log => RegistryHelper.RunCommand("powershell", "-NoProfile -Command Enable-MMAgent -PageCombining", log),
-                Disable = log => RegistryHelper.RunCommand("powershell", "-NoProfile -Command Disable-MMAgent -PageCombining", log),
+                Enable = log => Exec.RunPowerShell("Enable-MMAgent -PageCombining", log),
+                Disable = log => Exec.RunPowerShell("Disable-MMAgent -PageCombining", log),
                 State = () => MMAgentProp("PageCombining")
             });
             L.Add(new TweakEntry
             {
                 Group = "性能优化", Id = "app_prelaunch", Name = "应用预启动",
                 Desc = "启用/禁用应用预启动（Enable/Disable-MMAgent -ApplicationPreLaunch）", Risk = "mid",
-                Enable = log => RegistryHelper.RunCommand("powershell", "-NoProfile -Command Enable-MMAgent -ApplicationPreLaunch", log),
-                Disable = log => RegistryHelper.RunCommand("powershell", "-NoProfile -Command Disable-MMAgent -ApplicationPreLaunch", log),
+                Enable = log => Exec.RunPowerShell("Enable-MMAgent -ApplicationPreLaunch", log),
+                Disable = log => Exec.RunPowerShell("Disable-MMAgent -ApplicationPreLaunch", log),
                 State = () => MMAgentProp("ApplicationPreLaunch")
             });
             L.Add(new TweakEntry
@@ -559,12 +559,12 @@ namespace CpqSystemTool
                 Enable = log =>
                 {
                     string ps = "Set-ItemProperty 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name fDenyTSConnections -Value 0; Enable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue";
-                    RegistryHelper.RunCommand("powershell", "-NoProfile -Command \"" + ps + "\"", log);
+                    Exec.RunPowerShell(ps, log);
                 },
                 Disable = log =>
                 {
                     string ps = "Set-ItemProperty 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name fDenyTSConnections -Value 1; Disable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue";
-                    RegistryHelper.RunCommand("powershell", "-NoProfile -Command \"" + ps + "\"", log);
+                    Exec.RunPowerShell(ps, log);
                 },
                 State = () => RegistryHelper.GetDword(HKLM, @"SYSTEM\CurrentControlSet\Control\Terminal Server", "fDenyTSConnections", 1) == 0
             });
@@ -575,12 +575,12 @@ namespace CpqSystemTool
                 Enable = log =>
                 {
                     string ps = "Set-ItemProperty 'HKLM:\\System\\CurrentControlSet\\Control\\Remote Assistance' -Name fAllowToGetHelp -Value 1; New-NetFirewallRule -Name 'AllowRA' -DisplayGroup 'Remote Assistance' -Enabled True -Direction Inbound -Protocol TCP -ErrorAction SilentlyContinue";
-                    RegistryHelper.RunCommand("powershell", "-NoProfile -Command \"" + ps + "\"", log);
+                    Exec.RunPowerShell(ps, log);
                 },
                 Disable = log =>
                 {
                     string ps = "Set-ItemProperty 'HKLM:\\System\\CurrentControlSet\\Control\\Remote Assistance' -Name fAllowToGetHelp -Value 0; Remove-NetFirewallRule -Name 'AllowRA' -ErrorAction SilentlyContinue";
-                    RegistryHelper.RunCommand("powershell", "-NoProfile -Command \"" + ps + "\"", log);
+                    Exec.RunPowerShell(ps, log);
                 },
                 State = () => RegistryHelper.GetDword(HKLM, @"SYSTEM\CurrentControlSet\Control\Remote Assistance", "fAllowToGetHelp", 0) == 1
             });
@@ -853,7 +853,7 @@ namespace CpqSystemTool
         // ---- MMAgent 属性查询（(Get-MMAgent).Xxx 返回 True/False）----
         private static bool MMAgentProp(string name)
         {
-            var outp = Exec.RunCmdGet(new[] { "powershell", "-NoProfile", "-Command", "(Get-MMAgent)." + name }, _ => { });
+            var outp = Exec.RunPowerShellGet("(Get-MMAgent)." + name, _ => { });
             return outp.Trim().ToLower() == "true";
         }
 

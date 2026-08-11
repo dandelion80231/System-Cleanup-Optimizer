@@ -118,8 +118,12 @@ namespace CpqSystemTool
                 if (pwshPath != null)
                 {
                     string tmpPng = Path.Combine(Path.GetTempPath(), Path.GetFileNameWithoutExtension(path) + "_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".png");
+                    // 用 -EncodedCommand（Base64 UTF-16LE）替代 -Command 的手工引号转义：脚本内容含单引号路径与
+                    // [System.Drawing.Image] 调用，直接 -Command "..." 包裹在含特殊字符时易破坏引号配对导致静默失败。
+                    string psScript = "$img = [System.Drawing.Image]::FromFile('" + path.Replace("'", "''") + "'); $img.Save('" + tmpPng.Replace("'", "''") + "', [System.Drawing.Imaging.ImageFormat]::Png)";
+                    string psEncoded = System.Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(psScript));
                     var psi = new System.Diagnostics.ProcessStartInfo(pwshPath,
-                        $"-NoProfile -ExecutionPolicy Bypass -Command \"$img = [System.Drawing.Image]::FromFile('{path.Replace("'", "''")}'); $img.Save('{tmpPng.Replace("'", "''")}', [System.Drawing.Imaging.ImageFormat]::Png)\"")
+                        "-NoProfile -ExecutionPolicy Bypass -EncodedCommand " + psEncoded)
                     {
                         UseShellExecute = false, CreateNoWindow = true,
                         RedirectStandardOutput = true, RedirectStandardError = true

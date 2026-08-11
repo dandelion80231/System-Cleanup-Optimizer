@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
@@ -22,7 +22,7 @@ namespace CpqSystemTool
             var root = new StackPanel { Margin = new Thickness(24, 16, 24, 16) };
 
             // 顶部说明
-            root.Children.Add(Header("", "维护工具：抓取官网软件安装包（exe）直链、管理本地探针依赖等。首次使用需先安装探针依赖（Node + Chromium）——点击「抓取直链」会自动检测并在缺失时一键安装。"));
+            root.Children.Add(Header("", "维护工具：抓取官网软件安装包（exe）直链、管理本地探针依赖等。探针支持两种驱动：WebView2 Runtime（优先，复用系统 Edge，无需下载）或 Node + Playwright + Chromium（兜底）。点击「管理依赖」可分别安装/卸载两种环境。"));
 
             // ========== 探针卡片 ==========
             var probeCard = new Border
@@ -75,7 +75,7 @@ namespace CpqSystemTool
             };
             probeInner.Children.Add(inputBox);
 
-            // 选项 + 按钮行（4 列均分占满整行：跳过检测 / 抓取直链 / 安装依赖 / 管理软件）
+            // 选项 + 按钮行（4 列均分占满整行：跳过检测 / 抓取直链 / 管理依赖 / 管理软件）
             var optRow = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 10, 0, 0) };
             optRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             optRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -97,10 +97,64 @@ namespace CpqSystemTool
             Grid.SetColumn(fetchBtn, 1);
             optRow.Children.Add(fetchBtn);
 
-            var installBtn = Btn("安装/修复依赖", false, null, 150);
-            installBtn.HorizontalAlignment = HorizontalAlignment.Center;
-            Grid.SetColumn(installBtn, 2);
-            optRow.Children.Add(installBtn);
+            // 「管理依赖」按钮：带下拉菜单（ToggleButton + Popup），支持 Node / WebView2 两种方案的安装、卸载、清理。
+            // 真实根因（已由 D:\电脑桌面\deps_diag.log 证实）：此前用 StaysOpen=false，弹窗打开后
+            // RefreshDepStatus 触发的 WebView2 宿主（隐藏 WinForms Form）会抢占窗口激活，Light-Dismiss
+            // 把这次激活误判为"外部点击"，在 ~110ms 内自动关闭弹窗 → 用户只见"点不开"。
+            // catBtn 不闪，是因为它打开时从不调用任何会激活外部窗口的逻辑，并非模板差异。
+            // 修复：Popup.StaysOpen = true（不再自动关闭），改由窗口级 PreviewMouseDown（点外部关闭）
+            // 与菜单项点击（MakeMenuItem 已置 IsOpen=false）手动关闭。
+            // 选中态填充：accent 更高不透明度，比 hover 更明显（仍与主题一致）
+            var depsSelectedBrush = _isDarkMode
+                ? new SolidColorBrush(Color.FromArgb(0x73, 0x16, 0xE0, 0xBD))  // #16E0BD @ ~45%
+                : new SolidColorBrush(Color.FromArgb(0x8C, 0x08, 0x91, 0x82)); // #089182 @ ~55%
+            var depsBtnTemplate = new ControlTemplate(typeof(ToggleButton));
+            var depsBtnBd = new FrameworkElementFactory(typeof(Border), "Bd");
+            depsBtnBd.SetBinding(Border.BackgroundProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(BackgroundProperty) });
+            depsBtnBd.SetBinding(Border.BorderBrushProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(BorderBrushProperty) });
+            depsBtnBd.SetBinding(Border.BorderThicknessProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(BorderThicknessProperty) });
+            depsBtnBd.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+            depsBtnBd.SetBinding(Border.PaddingProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(PaddingProperty) });
+            var depsBtnCp = new FrameworkElementFactory(typeof(ContentPresenter));
+            depsBtnCp.SetBinding(ContentPresenter.HorizontalAlignmentProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(ToggleButton.HorizontalContentAlignmentProperty) });
+            depsBtnCp.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            depsBtnBd.AppendChild(depsBtnCp);
+            depsBtnTemplate.VisualTree = depsBtnBd;
+            var depsBtnHover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+            depsBtnHover.Setters.Add(new Setter(Border.BackgroundProperty, new DynamicResourceExtension("ButtonHoverBrush"), "Bd"));
+            var depsBtnChecked = new Trigger { Property = ToggleButton.IsCheckedProperty, Value = true };
+            depsBtnChecked.Setters.Add(new Setter(Border.BackgroundProperty, depsSelectedBrush, "Bd"));
+            depsBtnTemplate.Triggers.Add(depsBtnHover);
+            depsBtnTemplate.Triggers.Add(depsBtnChecked);
+
+            var manageDepsBtn = new ToggleButton
+            {
+                Content = "管理依赖 ▼",
+                MinWidth = 100,
+                MinHeight = 34,
+                Padding = new Thickness(8, 7, 8, 7),
+                Cursor = Cursors.Hand,
+                FontSize = 12,
+                FontWeight = FontWeights.Normal,
+                Background = _btnSecondaryBg,
+                Foreground = _btnSecondaryFg,
+                BorderThickness = new Thickness(1),
+                BorderBrush = _panelBorder,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                Template = depsBtnTemplate
+            };
+            Grid.SetColumn(manageDepsBtn, 2);
+            optRow.Children.Add(manageDepsBtn);
+
+            // 临时诊断：记录「管理依赖」弹窗交互序列，便于定位"点不开"到底是哪一步未发生。
+            // 仅写文件、不抛异常、不影响 UI；问题定位后可整体删除。
+            var depsDiagPath = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "deps_diag.log");
+            Action<string> depsDiag = m =>
+            {
+                try { System.IO.File.AppendAllText(depsDiagPath, $"[{DateTime.Now:HH:mm:ss.fff}] {m}\n"); } catch { }
+            };
 
             var manageBtn = Btn("管理软件", false, null, 150);
             manageBtn.HorizontalAlignment = HorizontalAlignment.Center;
@@ -115,13 +169,187 @@ namespace CpqSystemTool
             optRow.Children.Add(manageBtn);
             probeInner.Children.Add(optRow);
 
-            // 日志区（声明提前，事件处理需要引用 logBox；视觉顺序放到最下方，与其他页面统一）
+            // 日志区（声明提前：下方菜单事件需要引用 logBox；视觉顺序放到最下方）
             var logBox = MakeLogBox();
             logBox.Height = 120;                    // 固定高度，不随日志内容自动扩展（MakeLogBox 已启用滚动条）
             logBox.Foreground = _textMain;          // 深色/浅色模式下都保证足够对比度
             var logBorder = WrapLogBox(logBox);
             // 保持透明，不额外加填充；靠 _textMain 主题文字色保证可读
             logBorder.Background = Brushes.Transparent;
+
+            // ========== 「管理依赖」下拉菜单 ==========
+            // 完全使用 Popup + 自定义 Border/StackPanel/TextBlock 实现，不再用 WPF ContextMenu/MenuItem。
+            // 原因：ContextMenu 默认模板左侧有固定图标槽/gutter，背景读系统色，深/浅色主题下会出现白色竖边（用户截图）。
+            // 自定义面板所有背景、文字、边框、hover 色都来自当前主题笔刷，四周颜色完全一致。
+            var depsPopup = new Popup
+            {
+                PlacementTarget = manageDepsBtn,
+                Placement = PlacementMode.Bottom,
+                HorizontalOffset = 0,
+                VerticalOffset = 2,
+                StaysOpen = true,   // 关键修复：手动管理关闭。StaysOpen=false 时 Light-Dismiss 会把打开弹窗触发的
+                                    // WebView2 宿主窗体激活误判为"外部点击"而立即自关（诊断日志证实 Opened 后~110ms 即 Closed）。
+                                    // 现在由窗口级 PreviewMouseDown（点外部关闭）与菜单项点击手动关闭。
+                AllowsTransparency = true
+            };
+            var menuPanel = new StackPanel { Background = _windowBg };
+            var menuBorder = new Border
+            {
+                Background = _windowBg,
+                BorderBrush = _panelBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(1),
+                MinWidth = 205,
+                Child = menuPanel
+            };
+            depsPopup.Child = menuBorder;
+
+            var nodeHeader = MakeMenuHeader("Node + Playwright + Chromium（检测中…）");
+            var nodeInstall = MakeMenuItem("安装 / 修复", depsPopup, () =>
+            {
+                RunInBg(logBox, logf =>
+                {
+                    var probesDir = ResolveProbesDir();
+                    var installPs = Path.Combine(probesDir, "install_deps.ps1");
+                    if (!File.Exists(installPs))
+                    {
+                        logf("[!] 找不到 install_deps.ps1（目录：" + probesDir + "）");
+                        return;
+                    }
+                    logf("[*] 开始安装/修复 Node + Playwright + Chromium 依赖……");
+                    // 安装脚本失败时以 exit 1 退出；必须校验脚本退出码 + 重新校验 Node 与 Playwright 目录，
+                    // 否则会出现“安装失败却报成功”的误判（此前踩过的坑）。
+                    bool ok = RunPowerShellScript(probesDir, installPs, logf);
+                    var dep = IsNodeDepsReady(probesDir);
+                    if (ok && dep.Ready)
+                        logf("[✓] Node 依赖安装完成（Node + Playwright 就绪）。");
+                    else
+                    {
+                        logf("[!] Node 依赖安装未完成（脚本退出码=" + (ok ? "0" : "非零") +
+                             "，Node=" + (dep.NodeExe != null ? "就绪" : "缺失") +
+                             "，Playwright=" + (dep.PlaywrightExists ? "就绪" : "缺失") + "）。");
+                        logf("    请检查网络后重试，或手动在 probes 目录运行 install_deps.ps1。");
+                    }
+                }, "依赖安装结束", null);
+            });
+            var nodeUninstall = MakeMenuItem("卸载本地依赖", depsPopup, () =>
+            {
+                var confirm = MessageBox.Show(
+                    "确定要卸载本地 Node 依赖吗？\n\n将删除以下目录：\n" +
+                    "- tools/probes/.tools\n" +
+                    "- tools/probes/node_modules\n\n" +
+                    "系统 PATH 中的 Node（如有）不会受影响。",
+                    "卸载 Node 依赖", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (confirm != MessageBoxResult.Yes) return;
+                RunInBg(logBox, logf =>
+                {
+                    var probesDir = ResolveProbesDir();
+                    if (probesDir == null)
+                    {
+                        logf("[!] 未找到 probes 目录");
+                        return;
+                    }
+                    var dirs = new[] { Path.Combine(probesDir, ".tools"), Path.Combine(probesDir, "node_modules") };
+                    foreach (var d in dirs)
+                    {
+                        try
+                        {
+                            if (Directory.Exists(d))
+                            {
+                                Directory.Delete(d, true);
+                                logf("[✓] 已删除：" + d);
+                            }
+                            else logf("[*] 目录不存在，跳过：" + d);
+                        }
+                        catch (Exception ex) { logf("[!] 删除失败：" + d + " — " + ex.Message); }
+                    }
+                    logf("[✓] Node 本地依赖卸载完成。");
+                }, "卸载完成", null);
+            });
+            var wvHeader = MakeMenuHeader("WebView2 Runtime（系统 Edge）（检测中…）");
+            var wvInstall = MakeMenuItem("安装 / 升级 / 修复", depsPopup, () =>
+            {
+                // RepairWebView2 会下载官方引导程序执行静默安装；若引导程序 no-op 则扫描磁盘并修复注册表指针。
+                RunInBg(logBox, EdgeCore.RepairWebView2, "WebView2 修复完成", null);
+            });
+            var wvUninstall = MakeMenuItem("卸载", depsPopup, () =>
+            {
+                var confirm = MessageBox.Show(
+                    "WebView2 Runtime 是系统级组件，Edge 和部分应用可能依赖它。\n\n" +
+                    "确定要继续卸载吗？卸载后可能导致依赖 WebView2 的程序无法运行。",
+                    "卸载 WebView2 Runtime", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                if (confirm != MessageBoxResult.Yes) return;
+                RunInBg(logBox, EdgeCore.UninstallWebView2, "WebView2 卸载完成", null);
+            });
+            var wvClean = MakeMenuItem("清理探针缓存", depsPopup, () =>
+            {
+                RunInBg(logBox, logf =>
+                {
+                    var tmpRoot = Path.GetTempPath();
+                    try
+                    {
+                        int cleaned = 0;
+                        foreach (var d in Directory.GetDirectories(tmpRoot, "CpqProbeWebView2*"))
+                        {
+                            try { Directory.Delete(d, true); cleaned++; }
+                            catch (Exception ex) { logf("[!] 清理失败：" + d + " — " + ex.Message); }
+                        }
+                        if (cleaned > 0) logf("[✓] 已清理 " + cleaned + " 个探针缓存目录。");
+                        else logf("[*] 未发现探针缓存目录。");
+                    }
+                    catch (Exception ex) { logf("[!] 清理失败：" + ex.Message); }
+                }, "缓存清理完成", null);
+            });
+
+            menuPanel.Children.Add(nodeHeader);
+            menuPanel.Children.Add(nodeInstall);
+            menuPanel.Children.Add(nodeUninstall);
+            menuPanel.Children.Add(MakeMenuSeparator());
+            menuPanel.Children.Add(wvHeader);
+            menuPanel.Children.Add(wvInstall);
+            menuPanel.Children.Add(wvUninstall);
+            menuPanel.Children.Add(wvClean);
+
+            // 与 MainWindow.Pages.cs 里分类下拉 catBtn 完全一致的稳定写法：
+            // 在 Click 事件里【同步】切换 IsOpen（不延迟），并用 Opened/Closed 同步 ToggleButton 的 IsChecked。
+            // 打开的同时刷新依赖状态（Node 就绪 / WebView2 就绪）。
+            // 注：此前"点不开"与 ControlTemplate 无关，根因是 StaysOpen=false 的 Light-Dismiss 自关（见上方说明）。
+            manageDepsBtn.Click += (s, e) =>
+            {
+                depsDiag($"Click IsOpen={depsPopup.IsOpen} IsChecked={manageDepsBtn.IsChecked}");
+                depsPopup.IsOpen = !depsPopup.IsOpen;
+                depsDiag($"  -> set IsOpen={depsPopup.IsOpen}");
+                if (depsPopup.IsOpen) RefreshDepStatus(nodeHeader, wvHeader);
+            };
+            depsPopup.Opened += (s, e) =>
+            {
+                depsDiag($"Opened IsChecked={manageDepsBtn.IsChecked}");
+                manageDepsBtn.IsChecked = true;
+                depsPopup.Width = Math.Max(manageDepsBtn.ActualWidth, 205);
+            };
+            depsPopup.Closed += (s, e) =>
+            {
+                depsDiag($"Closed IsChecked={manageDepsBtn.IsChecked}");
+                manageDepsBtn.IsChecked = false;
+            };
+
+            // 手动管理"点击弹窗外部关闭"：StaysOpen=true 后不再自动关闭，需自行处理。
+            // 点在按钮本身或弹窗内容内 → 不关闭（按钮 Click 负责切换；弹窗内点击由各项自关）。
+            this.PreviewMouseDown += (s, e) =>
+            {
+                if (!depsPopup.IsOpen) return;
+                var cur = e.OriginalSource as DependencyObject;
+                while (cur != null)
+                {
+                    if (ReferenceEquals(cur, manageDepsBtn) || ReferenceEquals(cur, menuBorder) || ReferenceEquals(cur, menuPanel))
+                        return;
+                    cur = VisualTreeHelper.GetParent(cur) as DependencyObject
+                          ?? LogicalTreeHelper.GetParent(cur) as DependencyObject;
+                }
+                depsPopup.IsOpen = false;
+                depsDiag("OutsideClick -> manual close");
+            };
 
             // 推荐直链区
             probeInner.Children.Add(new TextBlock
@@ -380,38 +608,99 @@ namespace CpqSystemTool
                 finally { copyRecBtn.IsEnabled = true; }
             };
 
-            // 「安装/修复依赖」：单独跑 install_deps.ps1（强制安装/修复）
-            installBtn.Click += (s, e) =>
-            {
-                var originalBg = installBtn.Background;
-                var originalFg = installBtn.Foreground;
-                installBtn.IsEnabled = false;
-                installBtn.Content = "安装中...";
-                installBtn.Background = _accent;
-                installBtn.Foreground = _btnPrimaryFg;
-                RunInBg(logBox, logf =>
-                {
-                    var probesDir = ResolveProbesDir();
-                    var installPs = Path.Combine(probesDir, "install_deps.ps1");
-                    if (!File.Exists(installPs))
-                    {
-                        logf("[!] 找不到 install_deps.ps1（目录：" + probesDir + "）");
-                        return;
-                    }
-                    logf("[*] 开始安装/修复依赖（Node + Playwright + Chromium）……");
-                    // 统一走 RunPowerShellScript（-EncodedCommand + 强制 UTF-8），与抓取路径一致，避免重定向输出乱码
-                    RunPowerShellScript(probesDir, installPs, logf);
-                    logf("[✓] 依赖安装流程结束，可回到上方点击「抓取直链」。");
-                }, "依赖安装结束", () =>
-                {
-                    installBtn.IsEnabled = true;
-                    installBtn.Content = "安装/修复依赖";
-                    installBtn.Background = originalBg;
-                    installBtn.Foreground = originalFg;
-                });
-            };
-
             return root;
+        }
+
+        // =====================================================================
+        //  「管理依赖」自定义下拉菜单辅助（Popup + 自定义面板，避免 ContextMenu 白边）
+        // =====================================================================
+
+        /// <summary>创建菜单分组标题（固定 accent 色，无 hover）。</summary>
+        private TextBlock MakeMenuHeader(string text)
+        {
+            return new TextBlock
+            {
+                Text = text,
+                Foreground = _accent,
+                FontWeight = FontWeights.Bold,
+                FontSize = 12.0,
+                Padding = new Thickness(8, 5, 8, 3),
+                Background = _windowBg,
+                TextTrimming = TextTrimming.None,
+                TextWrapping = TextWrapping.NoWrap
+            };
+        }
+
+        /// <summary>创建自定义菜单项：透明背景、hover 行变色、点击后关闭 Popup 并执行 action。</summary>
+        private Border MakeMenuItem(string text, Popup popup, Action click = null)
+        {
+            var tb = new TextBlock
+            {
+                Text = text,
+                Foreground = _textMain,
+                FontSize = 12.5,
+                Padding = new Thickness(8, 5, 8, 5),
+                Background = Brushes.Transparent
+            };
+            var border = new Border
+            {
+                Child = tb,
+                Background = Brushes.Transparent,
+                CornerRadius = new CornerRadius(3),
+                Cursor = Cursors.Hand
+            };
+            border.MouseEnter += (s, e) => border.Background = _rowHover;
+            border.MouseLeave += (s, e) => border.Background = Brushes.Transparent;
+            border.MouseLeftButtonDown += (s, e) =>
+            {
+                e.Handled = true;
+                popup.IsOpen = false;
+                click?.Invoke();
+            };
+            return border;
+        }
+
+        private FrameworkElement MakeMenuSeparator()
+        {
+            return new Border
+            {
+                Height = 1,
+                Background = _panelBorder,
+                Margin = new Thickness(8, 3, 8, 3)
+            };
+        }
+
+        // =====================================================================
+        //  依赖状态刷新（维护工具页「管理依赖」菜单）
+        // =====================================================================
+
+        /// <summary>
+        /// 刷新「管理依赖」下拉面板中两种方案的状态文字。
+        /// Node 就绪 = 本机或 probes/.tools 存在 node.exe 且 node_modules/playwright 存在。
+        /// WebView2 就绪 = 真正创建离屏窗口并 EnsureCoreWebView2Async 初始化成功
+        ///   （复用探针实际初始化路径，能识别「Runtime 已装但初始化挂起」这种此前误报就绪的故障）。
+        /// </summary>
+        private async void RefreshDepStatus(TextBlock nodeHeader, TextBlock wvHeader)
+        {
+            if (nodeHeader != null) nodeHeader.Text = "Node + Playwright + Chromium\n（检测中…）";
+            if (wvHeader != null) wvHeader.Text = "WebView2 Runtime（系统 Edge）\n（检测中…）";
+
+            var probesDir = ResolveProbesDir();
+            var nodeReady = false;
+            try
+            {
+                nodeReady = IsNodeDepsReady(probesDir).Ready;
+            }
+            catch { }
+
+            // 真实初始化校验：复用 InitAsync（离屏窗口渲染 + EnsureCoreWebView2Async），
+            // 给足超时（15s）容纳版本预检与浏览器进程初始化，避免把“可用”误判为“超时未就绪”。
+            var (wvReady, wvError) = await ProbeBrowserHost.CheckWebView2ReadyAsync(TimeSpan.FromSeconds(15));
+
+            if (nodeHeader != null)
+                nodeHeader.Text = "Node + Playwright + Chromium\n" + (nodeReady ? "（已就绪）" : "（未安装）");
+            if (wvHeader != null)
+                wvHeader.Text = "WebView2 Runtime（系统 Edge）\n" + (wvReady ? "（已就绪）" : "（未安装" + (string.IsNullOrEmpty(wvError) ? "" : "：" + wvError) + "）");
         }
     }
 }

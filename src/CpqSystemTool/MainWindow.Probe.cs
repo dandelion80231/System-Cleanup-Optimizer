@@ -12,7 +12,7 @@ namespace CpqSystemTool
     public partial class MainWindow
     {
         // ===================== 结果面板行模型（DataGrid 绑定） =====================
-        private class ProbeCandidateRow
+        internal class ProbeCandidateRow
         {
             public string Source { get; set; }        // 来源入口
             public string Url { get; set; }           // 直链
@@ -160,6 +160,20 @@ namespace CpqSystemTool
             return null;
         }
 
+        /// <summary>
+        /// 判定 Node + Playwright 依赖是否就绪（探针安装、依赖状态刷新、依赖安装后校验三处共用，抽此一处避免散落重复）。
+        /// Ready = 解析到 Node 可执行文件 且 node_modules/playwright 目录存在；
+        /// NodeExe = 解析到的 node 路径（可能为 null）；
+        /// PlaywrightExists = node_modules/playwright 目录是否存在（用于区分“Node 缺失”还是“Playwright 缺失”的日志提示）。
+        /// </summary>
+        private static (bool Ready, string NodeExe, bool PlaywrightExists) IsNodeDepsReady(string probesDir)
+        {
+            var nodeExe = ResolveNodeExe(probesDir);
+            var pwDir = Path.Combine(probesDir ?? "", "node_modules", "playwright");
+            bool pw = Directory.Exists(pwDir);
+            return (nodeExe != null && pw, nodeExe, pw);
+        }
+
         // ===================== 子进程运行（实时流式输出） =====================
 
         /// <summary>
@@ -222,21 +236,157 @@ namespace CpqSystemTool
         /// <summary>
         /// 以 -EncodedCommand 调用 PowerShell 脚本，并在脚本执行前强制 stdout 编码为 UTF-8。
         /// 解决中文 Windows（尤其是开启“Beta: 使用 UTF-8”）上 PowerShell 重定向输出乱码的问题。
+        /// 同时过滤 PowerShell CLIXML 进度/信息流噪声，但保留 ErrorRecord 中的人类可读错误文本。
         /// </summary>
         private bool RunPowerShellScript(string workingDir, string scriptPath, Action<string> logf)
         {
             var psCmd = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; & '" + scriptPath.Replace("'", "''") + "'";
             var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(psCmd));
-            return RunProbeProcess(workingDir, "powershell", "-NoProfile -ExecutionPolicy Bypass -EncodedCommand " + encoded, null, logf, out _);
+            bool inClixml = false;
+            var clixmlLock = new object();
+            Action<string> cleanLog = s =>
+            {
+                if (string.IsNullOrWhiteSpace(s)) return;
+                var t = s.Trim();
+                lock (clixmlLock)
+                {
+                    // PowerShell 信息/错误流默认以 CLIXML 序列化输出。stdout 的信息流（进度、HostInformationMessage）
+                    // 对人类无用；stderr 的 ErrorRecord 包含有用错误信息，需要提取 Message/ToString 字段保留。
+                    if (inClixml)
+                    {
+                        if (t.Contains("</Objs>")) inClixml = false;
+                        var txt = ExtractClixmlHumanText(t);
+                        if (!string.IsNullOrWhiteSpace(txt)) logf(txt);
+                        return;
+                    }
+                    if (t.StartsWith("#<CLIXML>", StringComparison.Ordinal) || t.Contains("<Objs"))
+                    {
+                        if (!t.Contains("</Objs>")) inClixml = true;
+                        var txt = ExtractClixmlHumanText(t);
+                        if (!string.IsNullOrWhiteSpace(txt)) logf(txt);
+                        return;
+                    }
+                }
+                // 零星 XML 标签（进度 / 信息记录内部字段）也过滤。
+                if (t.StartsWith("<Obj S=", StringComparison.Ordinal) ||
+                    t.StartsWith("<TN", StringComparison.Ordinal) ||
+                    t.StartsWith("<MS>", StringComparison.Ordinal) ||
+                    t.StartsWith("<Props>", StringComparison.Ordinal) ||
+                    t.StartsWith("<S N=", StringComparison.Ordinal) ||
+                    t.StartsWith("<B N=", StringComparison.Ordinal) ||
+                    t.StartsWith("<DT N=", StringComparison.Ordinal) ||
+                    t.StartsWith("<U32", StringComparison.Ordinal) ||
+                    t.StartsWith("<I64", StringComparison.Ordinal) ||
+                    t.StartsWith("<LST>", StringComparison.Ordinal) ||
+                    t.StartsWith("</", StringComparison.Ordinal))
+                    return;
+                logf(s);
+            };
+            return RunProbeProcess(workingDir, "powershell", "-NoProfile -ExecutionPolicy Bypass -EncodedCommand " + encoded, null, cleanLog, out _);
+        }
+
+        /// <summary>
+        /// 从 PowerShell CLIXML 片段中提取 ErrorRecord 的 Message / ToString 字段的人类可读文本。
+        /// 进度/信息流的 CLIXML 不含这些字段，会被自然丢弃。
+        /// </summary>
+        private static string ExtractClixmlHumanText(string line)
+        {
+            // 匹配 <S N="Message">...</S> 或 <S N="ToString">...</S> 中的文本，做最基本的 XML 实体反转义。
+            string Pick(string field)
+            {
+                string open = "<S N=\"" + field + "\">";
+                int i = line.IndexOf(open, StringComparison.Ordinal);
+                if (i < 0) return null;
+                i += open.Length;
+                int j = line.IndexOf("</S>", i, StringComparison.Ordinal);
+                if (j < 0) return null;
+                return line.Substring(i, j - i)
+                    .Replace("&lt;", "<").Replace("&gt;", ">").Replace("&amp;", "&").Replace("&quot;", "\"").Replace("&apos;", "'");
+            }
+            var msg = Pick("Message");
+            if (!string.IsNullOrWhiteSpace(msg)) return msg;
+            var tos = Pick("ToString");
+            if (!string.IsNullOrWhiteSpace(tos)) return tos;
+            return null;
         }
 
         // ===================== 一键抓取（先装依赖再跑探针） =====================
 
         /// <summary>
-        /// 执行一次完整抓取：若本地依赖（Node/Playwright）缺失则先跑 install_deps.ps1，
-        /// 然后用本地 Node 运行 official_exe_finder.js --json，解析结果。
+        /// 执行一次完整抓取：优先使用进程内 WebView2 探针（直接调用本机 Edge，无需 Node/Chromium）。
+        /// WebView2 失败时不再静默回退 Node，而是询问用户是否切换到 Node + Playwright 方案。
         /// </summary>
         private void RunProbeInternal(string input, bool skipDownloadCheck, Action<string> logf,
+            out List<ProbeCandidateRow> rows, out string recommended, out bool searchLocated)
+        {
+            rows = new List<ProbeCandidateRow>();
+            recommended = "";
+            searchLocated = false;
+
+            // 优先尝试 WebView2 进程内探针（替代 Node + Chromium 依赖）。
+            // CreateAsync 会通过系统注册表定位 Runtime；若注册表损坏则 ProbeBrowserHost 内部已改为显式扫描磁盘目录兜底。
+            bool webView2Succeeded = false;
+            try
+            {
+                logf("[*] 尝试 WebView2 进程内探针（直接调用本机 Edge，无需下载依赖）…");
+                using (var host = new ProbeBrowserHost())
+                {
+                    if (host.InitAsync(TimeSpan.FromSeconds(20), logf).GetAwaiter().GetResult())
+                    {
+                        var res = ProbeEngine.RunAsync(input, skipDownloadCheck, host, logf).GetAwaiter().GetResult();
+                        if (res != null && res.Rows.Count > 0)
+                        {
+                            rows = res.Rows;
+                            recommended = res.Recommended;
+                            searchLocated = res.SearchLocated;
+                            logf("[✓] WebView2 探针完成（候选 " + rows.Count + " 个）");
+                            webView2Succeeded = true;
+                            return;
+                        }
+                        logf("[*] WebView2 探针未产出可用结果。");
+                    }
+                    else
+                    {
+                        var detail = host.InitError;
+                        logf("[!] WebView2 初始化失败（未安装 WebView2 Runtime 或不可用）"
+                            + (string.IsNullOrEmpty(detail) ? "" : "：" + detail));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logf("[!] WebView2 探针异常: " + ex.Message);
+            }
+
+            if (webView2Succeeded) return;
+
+            // 不再自动回退 Node：由用户选择，避免在用户已删 Node 测试 WebView2 时强行跑安装脚本。
+            bool switchToNode = false;
+            Dispatcher.Invoke(new Action(() =>
+            {
+                var result = MessageBox.Show(this,
+                    "WebView2 探针无法使用（详见日志），是否切换到 Node + Playwright 方案继续抓取？\n\n" +
+                    "选「是」将安装/使用本地 Node 依赖；选「否」可在「维护工具 → 管理依赖 → 安装/升级/修复 WebView2 Runtime」中修复。",
+                    "WebView2 不可用", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                switchToNode = result == MessageBoxResult.Yes;
+            }));
+
+            if (switchToNode)
+            {
+                logf("[*] 用户选择切换到 Node 探针…");
+                RunProbeInternalNode(input, skipDownloadCheck, logf, out rows, out recommended, out searchLocated);
+            }
+            else
+            {
+                logf("[*] 已取消自动回退。可在「维护工具 → 管理依赖」中修复 WebView2 Runtime 或安装 Node 方案后再试。");
+            }
+        }
+
+        /// <summary>
+        /// 回退路径：若本地依赖（Node/Playwright）缺失则先跑 install_deps.ps1，
+        /// 然后用本地 Node 运行 official_exe_finder.js --json，解析结果。
+        /// </summary>
+        private void RunProbeInternalNode(string input, bool skipDownloadCheck, Action<string> logf,
             out List<ProbeCandidateRow> rows, out string recommended, out bool searchLocated)
         {
             rows = new List<ProbeCandidateRow>();
@@ -251,9 +401,9 @@ namespace CpqSystemTool
                 return;
             }
             logf("[*] 探针目录: " + probesDir);
-            var nodeExe = ResolveNodeExe(probesDir);
-            var playwrightDir = Path.Combine(probesDir, "node_modules", "playwright");
-            bool depsReady = nodeExe != null && Directory.Exists(playwrightDir);
+            var dep = IsNodeDepsReady(probesDir);
+            string nodeExe = dep.NodeExe;
+            bool depsReady = dep.Ready;
 
             if (!depsReady)
             {
@@ -264,15 +414,23 @@ namespace CpqSystemTool
                     logf("[!] 找不到 install_deps.ps1，无法自动安装依赖。请手动在 probes 目录运行。");
                     return;
                 }
-                RunPowerShellScript(probesDir, installPs, logf);
-                // 安装后重新解析 Node（可能已被脚本下载到 .tools，或脚本检测到系统 Node）
-                nodeExe = ResolveNodeExe(probesDir);
-                if (nodeExe == null)
+                // install_deps.ps1 在失败时以 exit 1 退出（npm install / playwright install chromium 失败都会 throw）。
+                // 必须校验脚本退出码 + 重新校验 Node 与 Playwright 目录，否则会出现“安装失败却报成功”的误判。
+                bool installOk = RunPowerShellScript(probesDir, installPs, logf);
+                // 安装后重新解析：脚本可能把 Node 下载到 .tools，或检测到系统 PATH 的 Node；
+                // 同时重新校验 node_modules/playwright 是否真正落地（仅 Node 就绪而 Playwright 缺失仍不可用）。
+                dep = IsNodeDepsReady(probesDir);
+                nodeExe = dep.NodeExe;
+                bool depsNowReady = installOk && dep.Ready;
+                if (!depsNowReady)
                 {
-                    logf("[!] 依赖安装未成功（Node 仍未就绪）。请检查网络后重试，或手动运行 install_deps.ps1。");
+                    logf("[!] 依赖安装未完成（脚本退出码=" + (installOk ? "0" : "非零") +
+                         "，Node=" + (dep.NodeExe != null ? "就绪" : "缺失") +
+                         "，Playwright=" + (dep.PlaywrightExists ? "就绪" : "缺失") + "）。");
+                    logf("    请检查网络后重试，或手动在 probes 目录运行 install_deps.ps1。");
                     return;
                 }
-                logf("[✓] 依赖安装完成。");
+                logf("[✓] 依赖安装完成（Node + Playwright 就绪）。");
             }
             else
             {
