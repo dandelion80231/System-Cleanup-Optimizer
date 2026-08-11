@@ -15,8 +15,8 @@ namespace CpqSystemTool
     public partial class MainWindow
     {
         // 软件版本号：左下角显示（同 BuildAbout 关于页更新日志）。
-        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.2.0 ↔ v1.02），两处保持一致。
-        private const string APP_VERSION = "v1.02";
+        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.3.0 ↔ v1.03），两处保持一致。
+        private const string APP_VERSION = "v1.03";
 
         private void BuildSidebar()
         {
@@ -75,7 +75,7 @@ namespace CpqSystemTool
             // 左下角版本+关于入口：文字颜色随主题切换，统一由 UpdateSidebarTitleColors 刷新
             var verTb = new TextBlock
             {
-                Text = "关于 V" + APP_VERSION.Substring(1), // APP_VERSION = "v1.01" → "关于 V1.01"
+                Text = "关于 V" + APP_VERSION.Substring(1), // APP_VERSION = "v1.03" → "关于 V1.03"
                 FontSize = 12,
                 Foreground = _textMain,
                 VerticalAlignment = VerticalAlignment.Center,

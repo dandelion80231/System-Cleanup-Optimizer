@@ -106,9 +106,13 @@ namespace CpqSystemTool
                 return;
             }
 
-            if (!File.Exists(bootstrapper))
+            // 安全加固：下载后校验文件存在且非空，避免后续对损坏/截断的引导程序静默执行
+            bool bootstrapperOk = false;
+            try { bootstrapperOk = File.Exists(bootstrapper) && new FileInfo(bootstrapper).Length > 0; }
+            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); }
+            if (!bootstrapperOk)
             {
-                log("[!] 下载后引导程序文件缺失，无法继续。");
+                log("[!] 下载后引导程序文件缺失或损坏（为空），无法继续。");
                 return;
             }
 

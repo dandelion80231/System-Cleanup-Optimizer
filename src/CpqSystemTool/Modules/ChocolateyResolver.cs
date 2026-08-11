@@ -103,6 +103,10 @@ namespace CpqSystemTool
         private static bool ResolveCandidate(HttpClient client, string id, out string url, out string sha256, out string[] args)
         {
             url = null; sha256 = null; args = null;
+            // 安全加固：id 直接拼入 OData 过滤串（Id eq '...'），先做白名单校验，
+            // 仅允许 [A-Za-z0-9.-]，避免注入破坏 OData 查询或引发异常。
+            if (!Regex.IsMatch(id ?? "", @"^[A-Za-z0-9.\-]+$"))
+                return false;
             try
             {
                 string odata = client.GetStringAsync(

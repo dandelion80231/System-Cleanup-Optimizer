@@ -59,6 +59,66 @@ namespace CpqSystemTool
             btnStyle.Setters.Add(new Setter(Control.TemplateProperty, btnTpl));
             w.Resources[typeof(Button)] = btnStyle;
         }
+
+        /// <summary>统一淡入错误提示（替代原生 MessageBox，风格与主界面一致）。</summary>
+        internal static void ShowError(TextBlock tb, string msg)
+        {
+            tb.Text = msg;
+            tb.Visibility = Visibility.Visible;
+            tb.Opacity = 0;
+            tb.BeginAnimation(UIElement.OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160)));
+        }
+
+        /// <summary>
+        /// 构建通用标题栏（可拖拽 + 关闭X）。返回 Border 由调用方加入布局。
+        /// danger 为关闭按钮 hover 前景色，panelBorder 为标题栏底部分隔线颜色；差异用参数区分。
+        /// </summary>
+        internal static Border BuildTitleBar(Window w, string title, Brush fg, Brush dim, Brush danger, Brush panelBorder)
+        {
+            var titleBar = new Border
+            {
+                Background = Brushes.Transparent,
+                CornerRadius = new CornerRadius(12, 12, 0, 0),
+                Padding = new Thickness(16, 12, 12, 12),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                BorderBrush = panelBorder,
+                Cursor = Cursors.SizeAll
+            };
+            var titleGrid = new Grid();
+            titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            titleGrid.Children.Add(new TextBlock
+            {
+                Text = title,
+                FontSize = 15,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = fg,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            var closeBtn = new Button
+            {
+                Content = "✕",
+                Width = 28,
+                Height = 28,
+                FontSize = 13,
+                Cursor = Cursors.Hand,
+                Background = Brushes.Transparent,
+                Foreground = dim,
+                BorderThickness = new Thickness(0)
+            };
+            closeBtn.Click += (s, e) => w.DialogResult = false;
+            closeBtn.MouseEnter += (s, e) => closeBtn.Foreground = danger;
+            closeBtn.MouseLeave += (s, e) => closeBtn.Foreground = dim;
+            Grid.SetColumn(closeBtn, 1);
+            titleGrid.Children.Add(closeBtn);
+            titleBar.Child = titleGrid;
+            titleBar.MouseLeftButtonDown += (s, e) =>
+            {
+                if (e.OriginalSource is DependencyObject src && closeBtn.IsAncestorOf(src)) return;
+                w.DragMove();
+            };
+            return titleBar;
+        }
     }
 
     /// <summary>
@@ -108,45 +168,7 @@ namespace CpqSystemTool
             var stack = new StackPanel();
 
             // 标题栏（可拖拽 + 关闭）
-            var titleBar = new Border
-            {
-                Background = Brushes.Transparent,
-                CornerRadius = new CornerRadius(12, 12, 0, 0),
-                Padding = new Thickness(16, 12, 12, 12),
-                BorderThickness = new Thickness(0, 0, 0, 1),
-                BorderBrush = panelBorder,
-                Cursor = Cursors.SizeAll
-            };
-            var titleGrid = new Grid();
-            titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            titleGrid.Children.Add(new TextBlock
-            {
-                Text = Title,
-                FontSize = 15,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = fg,
-                VerticalAlignment = VerticalAlignment.Center
-            });
-            var closeBtn = new Button
-            {
-                Content = "✕",
-                Width = 28,
-                Height = 28,
-                FontSize = 13,
-                Cursor = Cursors.Hand,
-                Background = Brushes.Transparent,
-                Foreground = dim,
-                BorderThickness = new Thickness(0)
-            };
-            closeBtn.Click += (s, e) => DialogResult = false;
-            closeBtn.MouseEnter += (s, e) => closeBtn.Foreground = danger;
-            closeBtn.MouseLeave += (s, e) => closeBtn.Foreground = dim;
-            Grid.SetColumn(closeBtn, 1);
-            titleGrid.Children.Add(closeBtn);
-            titleBar.Child = titleGrid;
-            titleBar.MouseLeftButtonDown += (s, e) => { if (e.OriginalSource is DependencyObject src && closeBtn.IsAncestorOf(src)) return; DragMove(); };
-            stack.Children.Add(titleBar);
+            stack.Children.Add(DialogChrome.BuildTitleBar(this, Title, fg, dim, danger, panelBorder));
 
             // 内容区（可滚动，字段较多）
             var body = new StackPanel { Margin = new Thickness(20, 16, 20, 16) };
@@ -301,7 +323,6 @@ namespace CpqSystemTool
             var regGrid = new Grid();
             regGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             regGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            regGrid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
             regGrid.Margin = new Thickness(0, 0, 0, 8);
             _regKeyBox = MakeField("HKEY_LOCAL_MACHINE\\...\\Uninstall\\...", isEdit ? existing.regKey : "");
             _regKey2Box = MakeField("备用注册表路径（如 WOW6432Node）", isEdit ? existing.regKey2 : "");
@@ -507,10 +528,7 @@ namespace CpqSystemTool
 
         private void ShowError(string message)
         {
-            _errText.Text = message;
-            _errText.Visibility = Visibility.Visible;
-            _errText.Opacity = 0;
-            _errText.BeginAnimation(UIElement.OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160)));
+            DialogChrome.ShowError(_errText, message);
         }
     }
 
@@ -559,45 +577,7 @@ namespace CpqSystemTool
             var stack = new StackPanel();
 
             // 标题栏
-            var titleBar = new Border
-            {
-                Background = Brushes.Transparent,
-                CornerRadius = new CornerRadius(12, 12, 0, 0),
-                Padding = new Thickness(16, 12, 12, 12),
-                BorderThickness = new Thickness(0, 0, 0, 1),
-                BorderBrush = panelBorder,
-                Cursor = Cursors.SizeAll
-            };
-            var titleGrid = new Grid();
-            titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            titleGrid.Children.Add(new TextBlock
-            {
-                Text = "管理常用软件",
-                FontSize = 15,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = fg,
-                VerticalAlignment = VerticalAlignment.Center
-            });
-            var closeBtn = new Button
-            {
-                Content = "✕",
-                Width = 28,
-                Height = 28,
-                FontSize = 13,
-                Cursor = Cursors.Hand,
-                Background = Brushes.Transparent,
-                Foreground = dim,
-                BorderThickness = new Thickness(0)
-            };
-            closeBtn.Click += (s, e) => DialogResult = false;
-            closeBtn.MouseEnter += (s, e) => closeBtn.Foreground = owner?._dangerRed ?? Brushes.Red;
-            closeBtn.MouseLeave += (s, e) => closeBtn.Foreground = dim;
-            Grid.SetColumn(closeBtn, 1);
-            titleGrid.Children.Add(closeBtn);
-            titleBar.Child = titleGrid;
-            titleBar.MouseLeftButtonDown += (s, e) => { if (e.OriginalSource is DependencyObject src && closeBtn.IsAncestorOf(src)) return; DragMove(); };
-            stack.Children.Add(titleBar);
+            stack.Children.Add(DialogChrome.BuildTitleBar(this, "管理常用软件", fg, dim, owner?._dangerRed ?? Brushes.Red, panelBorder));
 
             var body = new StackPanel { Margin = new Thickness(20, 16, 20, 16) };
             body.Children.Add(new TextBlock

@@ -256,11 +256,15 @@ namespace CpqSystemTool
 
             try
             {
-                // 安全加固：改用 -EncodedCommand（Base64 UTF-16LE）传递脚本，规避 -Command 的引号转义陷阱
-                // （与 Helpers/Exec.cs 的 RunPS 编码方式一致）；同时保留 UseShellExecute + Verb=runas 提权，
-                // 让 MAS 能写入激活信息。
+                // 安全加固：
+                // 1) 复用 Helpers/Exec.cs 取得 powershell 完整路径（%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe），
+                //    避免依赖 PATH 解析裸 "powershell.exe" 被同名恶意程序劫持（PATH hijacking）；
+                // 2) 继续用 -EncodedCommand（Base64 UTF-16LE）传递脚本，规避 -Command 引号转义陷阱（与 Exec.RunPS 一致）；
+                // 3) 保留 UseShellExecute + Verb=runas 提权，让 MAS 能写入激活信息。
+                // 依赖 HTTPS 信任：脚本经官方 get.activated.win 下载，未做哈希钉扎（MAS 脚本内容随版本更新会变化，以官方地址为准）。
+                var psPath = System.IO.Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
                 var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(ps));
-                var psi = new ProcessStartInfo("powershell.exe",
+                var psi = new ProcessStartInfo(psPath,
                     "-NoProfile -ExecutionPolicy Bypass -EncodedCommand " + encoded)
                 {
                     UseShellExecute = true,

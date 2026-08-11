@@ -85,7 +85,11 @@ namespace CpqSystemTool
                     wc.Headers.Add("User-Agent", "Mozilla/5.0");
                     wc.DownloadFile(url, setup);
                 }
-                if (File.Exists(setup) && new FileInfo(setup).Length > 100000) return setup;
+                // 安全加固：下载后校验文件存在且大小合理（非空），避免后续对损坏/截断的 setup.exe 静默执行
+                bool setupOk = false;
+                try { setupOk = File.Exists(setup) && new FileInfo(setup).Length > 100000; }
+                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); }
+                if (setupOk) return setup;
                 log("  [!] 下载的 setup.exe 无效");
             }
             catch (Exception ex)
@@ -112,8 +116,8 @@ namespace CpqSystemTool
             }
             else
             {
-                sb.AppendLine("  <Add OfficeClientEdition=\"" + arch + "\" Channel=\"" + channel + "\">");
-                sb.AppendLine("    <Product ID=\"" + pid + "\">");
+                sb.AppendLine("  <Add OfficeClientEdition=\"" + arch + "\" Channel=\"" + System.Security.SecurityElement.Escape(channel) + "\">");
+                sb.AppendLine("    <Product ID=\"" + System.Security.SecurityElement.Escape(pid) + "\">");
                 sb.AppendLine("      <Language ID=\"zh-CN\" />");
                 sb.AppendLine("      <Language ID=\"en-US\" />");
                 sb.AppendLine("    </Product>");

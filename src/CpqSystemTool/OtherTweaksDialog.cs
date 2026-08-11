@@ -128,7 +128,7 @@ namespace CpqSystemTool
                 on => Exec.RunCmd(new[] { "cmd", "/c", on ? "powercfg /h on" : "powercfg /h off" }, _ => { }));
             AddToggle(root, "快速启动",
                 "启用/禁用混合启动（启用后加快开机速度）",
-                () => { try { using (var k = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Session Manager\Power")) return k?.GetValue("HiberbootEnabled") is int v && v == 1; } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; } },
+                () => RegistryHelper.GetDwordState(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager\Power", "HiberbootEnabled", 1),
                 on => RegistryHelper.SetDword(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager\Power", "HiberbootEnabled", on ? 1 : 0, _ => { }));
 
             // 第2组：SysMain 服务及关联
@@ -154,11 +154,11 @@ namespace CpqSystemTool
             root.Children.Add(SectionHeader("远程管理"));
             AddToggle(root, "远程协助",
                 "允许/禁止远程协助连接到此计算机",
-                () => { try { using (var k = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Remote Assistance")) return k?.GetValue("fAllowToGetHelp") is int v && v == 1; } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; } },
+                () => RegistryHelper.GetDwordState(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Remote Assistance", "fAllowToGetHelp", 1),
                 on => RegistryHelper.SetDword(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Remote Assistance", "fAllowToGetHelp", on ? 1 : 0, _ => { }));
             AddToggle(root, "远程桌面",
                 "启用/禁用远程桌面连接",
-                () => { try { using (var k = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Terminal Server")) return k?.GetValue("fDenyTSConnections") is int v && v == 0; } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; } },
+                () => RegistryHelper.GetDwordState(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Terminal Server", "fDenyTSConnections", 0),
                 on => RegistryHelper.SetDword(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Terminal Server", "fDenyTSConnections", on ? 0 : 1, _ => { }));
             AddButtonItem(root, "远程桌面端口设置",
                 "更改远程桌面监听端口（默认3389），会自动添加防火墙规则",
@@ -191,8 +191,7 @@ namespace CpqSystemTool
                 "终止并重新启动 Explorer.exe",
                 "重启", () =>
                 {
-                    Exec.RunCmd(new[] { "taskkill", "/f", "/im", "explorer.exe" }, _ => { });
-                    try { System.Diagnostics.Process.Start("explorer.exe"); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                    RegistryHelper.RestartExplorer(_ => { });
                 });
             AddButtonItem(root, "修改 HOSTS 文件",
                 "用记事本打开 %SystemRoot%\\drivers\\etc\\hosts",
@@ -205,7 +204,7 @@ namespace CpqSystemTool
             root.Children.Add(SectionHeader("系统保护"));
             AddToggle(root, "禁止 UCPD 驱动",
                 "UCPD (User Choice Protection Driver) 防止第三方修改注册表。关闭 UCPD 使优化项成功设置",
-                () => { try { using (var k = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\UCPD")) return k?.GetValue("Start") is int v && v == 4; } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; } },
+                () => RegistryHelper.GetDwordState(Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Services\UCPD", "Start", 4),
                 on => Exec.RunCmd(new[] { "cmd", "/c", on ? "sc config UCPD start= disabled" : "sc config UCPD start= auto && sc start UCPD" }, _ => { }));
 
             var closeBtn = new Button
@@ -232,11 +231,6 @@ namespace CpqSystemTool
             rootGrid.Children.Add(scroll);
             Content = rootGrid;
         }
-
-        /// <summary>
-        /// 生成带圆角边框的 Button ControlTemplate（独立 Window 不继承主窗口 XAML Style）
-        /// 已移至 DialogBtnFx.RoundedTemplate() 共享方法
-        /// </summary>
 
         private Border SectionHeader(string text)
         {

@@ -4,6 +4,23 @@
 
 ---
 
+## [v1.03] - 2026-08-11
+
+> 相对 v1.02 的源码变更：三遍代码审查发现项修复 + 代码清理（详见 code-fix-2026-08-11.md）。
+
+### 🐛 修复
+- **安全加固（信任边界）**：MAS 激活改走系统目录完整路径 `powershell.exe` + `-EncodedCommand`，消除 PATH 劫持风险；Chocolatey OData 过滤的 `id` 加白名单 `^[A-Za-z0-9.\-]+$` 校验；Office 部署 XML 中 `pid`/`channel` 用户值用 `SecurityElement.Escape` 转义；WebView2 引导程序与 Office 安装包下载加存在性与非空校验，避免对损坏文件静默执行。
+- **健壮性**：维护工具依赖检测异常由空 `catch{}` 改为 `Debug.WriteLine` 可见日志，不再把检测异常误报为 Node 未安装；`ProbeBrowserHost` 同步异常路径经 `TaskCompletionSource` 传播，避免调用方 `.GetAwaiter().GetResult()` 永久挂起。
+
+### 🔧 变更 / 清理
+- **Dialog 脚手架复用**：标题栏与错误提示公共逻辑提取到 `DialogChrome`（新增 `ShowError` / `BuildTitleBar`），3 个 Dialog 复用，减少重复；删除 `Theme.cs` 冗余 `Debug.WriteLine`、死文档注释、冗余列宽赋值。
+- **Tier3 勾选大小求和修复**：原写法在非连续勾选时会错位，改为索引对齐配对遍历。
+- **注册表 Dword 读取模板统一**：多处 `try{OpenSubKey...is int v}` 模板收敛为 `RegistryHelper.GetDwordState`。
+- **关于页更新体验增强**：检测到新版本后新增「下载更新」按钮，支持自选保存路径下载新 exe；更新日志区域增加 `ScrollViewer` 并限制最大高度，避免版本增多后卡片无限拉长。
+- **版本号规范化**：v1.02 → v1.03，同步 6 处。
+
+---
+
 ## [v1.02] - 2026-08-11
 
 > 相对 v1.01 的源码变更面：14 个文件修改（+1093 / −667 行），新增 2 个源码模块与 1 个构建资源。

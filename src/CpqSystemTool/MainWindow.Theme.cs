@@ -145,9 +145,9 @@ namespace CpqSystemTool
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                System.Diagnostics.Debug.WriteLine($"[TryLoadImageAny] {path} channel2 (pwsh7) failed: {ex.GetType().Name}: {ex.Message}");
+                // pwsh7 通道失败，静默忽略（已回退到其它加载通道）
             }
             return null;
         }
@@ -381,8 +381,6 @@ namespace CpqSystemTool
             UpdateSidebarTitleColors();
             // 用保存的 key 重建当前页（_activeNavKey 在 Navigate 中更新）
             Navigate(_activeNavKey);
-            // 调试：确认切换后的状态
-            System.Diagnostics.Debug.WriteLine($"[ThemeToggle] isDarkMode={_isDarkMode} bg type={Background?.GetType().Name}");
         }
 
         private void ApplyTheme(bool dark)

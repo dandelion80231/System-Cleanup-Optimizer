@@ -14,6 +14,12 @@ namespace CpqSystemTool
             // 子进程等待退出超时（毫秒）：15 分钟；超时强制 Kill，避免 UI 永久挂起
             private const int PROCESS_TIMEOUT_MS = 900000;
 
+        /// <summary>等待子进程退出；超时则强制 Kill，避免 UI 永久挂起。吞掉 Kill 可能的异常。</summary>
+        private static void KillIfTimeout(System.Diagnostics.Process p, int timeoutMs)
+        {
+            if (!p.WaitForExit(timeoutMs)) { try { p.Kill(); } catch { } }
+        }
+
         public static string ExpandEnv(string p)
         {
             if (string.IsNullOrEmpty(p)) return p;
@@ -88,7 +94,7 @@ namespace CpqSystemTool
                     if (p == null) return (-1, "", "无法启动 powershell");
                     string outp = p.StandardOutput.ReadToEnd();
                     string errp = p.StandardError.ReadToEnd();
-                    if (!p.WaitForExit(PROCESS_TIMEOUT_MS)) { try { p.Kill(); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  } }
+                    KillIfTimeout(p, PROCESS_TIMEOUT_MS);
                     // 清洗 PowerShell 在非交互重定向下把错误序列化成 CLIXML 的噪声（#< CLIXML ... </Objs>），
                     // 否则日志框会被一坨 XML 刷屏（如 Edge 缓存清理时文件被占用）。
                     return (p.ExitCode, SanitizeClixml(outp), SanitizeClixml(errp));
@@ -215,11 +221,11 @@ namespace CpqSystemTool
                     if (capture)
                     {
                         string outp = p.StandardOutput.ReadToEnd();
-                        if (!p.WaitForExit(PROCESS_TIMEOUT_MS)) { try { p.Kill(); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  } }
+                        KillIfTimeout(p, PROCESS_TIMEOUT_MS);
                         if (!string.IsNullOrWhiteSpace(outp)) log(outp.Trim());
                         return p.ExitCode;
                     }
-                    if (!p.WaitForExit(PROCESS_TIMEOUT_MS)) { try { p.Kill(); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  } }
+                    KillIfTimeout(p, PROCESS_TIMEOUT_MS);
                     return p.ExitCode;
                 }
             }
@@ -251,7 +257,7 @@ namespace CpqSystemTool
                 {
                     if (p == null) { log("  [!] 无法启动: " + args[0]); return ""; }
                     string outp = p.StandardOutput.ReadToEnd();
-                    if (!p.WaitForExit(PROCESS_TIMEOUT_MS)) { try { p.Kill(); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  } }
+                    KillIfTimeout(p, PROCESS_TIMEOUT_MS);
                     return outp ?? "";
                 }
             }
@@ -274,11 +280,11 @@ namespace CpqSystemTool
                     if (capture)
                     {
                         string outp = p.StandardOutput.ReadToEnd();
-                        if (!p.WaitForExit(PROCESS_TIMEOUT_MS)) { try { p.Kill(); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  } }
+                        KillIfTimeout(p, PROCESS_TIMEOUT_MS);
                         if (!string.IsNullOrWhiteSpace(outp)) log(outp.Trim());
                         return p.ExitCode;
                     }
-                    if (!p.WaitForExit(PROCESS_TIMEOUT_MS)) { try { p.Kill(); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  } }
+                    KillIfTimeout(p, PROCESS_TIMEOUT_MS);
                     return p.ExitCode;
                 }
             }
@@ -295,7 +301,7 @@ namespace CpqSystemTool
                 {
                     if (p == null) { log("  [!] 无法启动 cscript"); return ""; }
                     string outp = p.StandardOutput.ReadToEnd();
-                    if (!p.WaitForExit(PROCESS_TIMEOUT_MS)) { try { p.Kill(); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  } }
+                    KillIfTimeout(p, PROCESS_TIMEOUT_MS);
                     return outp ?? "";
                 }
             }

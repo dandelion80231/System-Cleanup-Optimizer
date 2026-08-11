@@ -18,9 +18,9 @@
     <AssemblyProduct>系统清理与优化工具</AssemblyProduct>
     <AssemblyDescription>面向 Windows 10/11 的一体化系统清理、优化与维护工具</AssemblyDescription>
     <AssemblyCopyright>Copyright © 2026</AssemblyCopyright>
-    <AssemblyVersion>1.0.2.0</AssemblyVersion>
-    <FileVersion>1.0.2.0</FileVersion>
-    <InformationalVersion>1.0.2.0</InformationalVersion>
+    <AssemblyVersion>1.0.3.0</AssemblyVersion>
+    <FileVersion>1.0.3.0</FileVersion>
+    <InformationalVersion>1.0.3.0</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

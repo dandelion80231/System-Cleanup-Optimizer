@@ -691,7 +691,7 @@ namespace CpqSystemTool
             {
                 nodeReady = IsNodeDepsReady(probesDir).Ready;
             }
-            catch { }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("IsNodeDepsReady 检测异常: " + ex.Message); }
 
             // 真实初始化校验：复用 InitAsync（离屏窗口渲染 + EnsureCoreWebView2Async），
             // 给足超时（15s）容纳版本预检与浏览器进程初始化，避免把“可用”误判为“超时未就绪”。

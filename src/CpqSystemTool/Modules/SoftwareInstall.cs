@@ -201,7 +201,7 @@ namespace CpqSystemTool
             if (!VerifyIntegrity(dest, log)) return false;   // 下载文件完整性/签名校验
             string runPath = dest;
             bool extracted = false;
-            if (dest.ToLower().EndsWith(".zip"))
+            if (dest.ToLowerInvariant().EndsWith(".zip"))
             {
                 string inst = ExtractFirstInstaller(dest, log);
                 if (string.IsNullOrEmpty(inst)) { CleanupTemp(); return false; }

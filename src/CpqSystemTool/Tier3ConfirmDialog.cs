@@ -264,7 +264,7 @@ namespace CpqSystemTool
             void UpdateCount()
             {
                 int n = _boxes.Count(x => x.IsChecked == true);
-                double sum = Enumerable.Range(0, _all.Count).Where(i => _boxes[i].IsChecked == true).Sum(i => _all[i].SizeMB);
+                double sum = _all.Zip(_boxes, (it, b) => b.IsChecked == true ? it.SizeMB : 0).Sum();
                 countTb.Text = $"已选 {n}/{_boxes.Count} 项（约 {sum:F0} MB）";
             }
             selectAll.Click += (s, e) =>

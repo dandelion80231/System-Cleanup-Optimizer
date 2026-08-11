@@ -6,7 +6,6 @@ namespace CpqSystemTool
 {
     /// <summary>
     /// 注册表与命令执行辅助：普通读写走 Microsoft.Win32.Registry；外部命令走 RunCommand。
-    /// 普通读写走 Microsoft.Win32.Registry；外部命令走 RunCommand。
     /// </summary>
     internal static class RegistryHelper
     {
@@ -81,6 +80,20 @@ namespace CpqSystemTool
                 }
             }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine("RegistryHelper 读取失败: " + ex.Message); return def; }
+        }
+
+        /// <summary>读取注册表 Dword 并判断是否等于 onValue（用于 Tweaks 等开关状态查询）。键/值不存在或读取异常均返回 false。</summary>
+        public static bool GetDwordState(RegistryKey hive, string subPath, string name, int onValue)
+        {
+            try
+            {
+                using (var k = hive.OpenSubKey(subPath))
+                {
+                    if (k != null && k.GetValue(name) is int v) return v == onValue;
+                }
+            }
+            catch { }
+            return false;
         }
 
         public static string GetSz(RegistryKey hive, string path, string name, string def = "")
@@ -162,7 +175,7 @@ namespace CpqSystemTool
                 using (var p = Process.Start(psi))
                 {
                     if (p == null) { log("  [!] 无法启动: " + exe); return -1; }
-                    p.WaitForExit(timeoutMs);
+                    if (!p.WaitForExit(timeoutMs)) { try { p.Kill(); } catch { } }
                     return p.ExitCode;
                 }
             }

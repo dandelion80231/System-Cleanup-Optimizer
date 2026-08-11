@@ -21,6 +21,10 @@ namespace CpqSystemTool
 {
     public partial class MainWindow
     {
+        // 关于页「下载更新」按钮与待下载版本标签（由 CheckForUpdate 设置）。
+        private Button _aboutDownloadUpdateBtn;
+        private string _pendingUpdateTag;
+
         /// <summary>MakeCheck 复选框勾选态的语义：勾选 = 禁用，还是勾选 = 启用。</summary>
         private enum CheckSemantics { CheckedMeansDisable, CheckedMeansEnable }
 
@@ -1756,6 +1760,7 @@ namespace CpqSystemTool
             var updateHeaderRow = new Grid();
             updateHeaderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             updateHeaderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            updateHeaderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var updateTitle = SectionTitle("🔄 更新日志");
             updateTitle.Margin = new Thickness(0);
             Grid.SetColumn(updateTitle, 0);
@@ -1766,18 +1771,34 @@ namespace CpqSystemTool
             }, 90);
             checkUpdateBtn.FontSize = 11;
             checkUpdateBtn.Padding = new Thickness(10, 4, 10, 4);
-            checkUpdateBtn.Margin = new Thickness(0);
+            checkUpdateBtn.Margin = new Thickness(0, 0, 6, 0);
             Grid.SetColumn(checkUpdateBtn, 1);
             updateHeaderRow.Children.Add(checkUpdateBtn);
+            var downloadUpdateBtn = Btn("下载更新", true, () => DownloadUpdate(), 90);
+            downloadUpdateBtn.FontSize = 11;
+            downloadUpdateBtn.Padding = new Thickness(10, 4, 10, 4);
+            downloadUpdateBtn.Margin = new Thickness(0);
+            downloadUpdateBtn.Visibility = Visibility.Collapsed;
+            Grid.SetColumn(downloadUpdateBtn, 2);
+            updateHeaderRow.Children.Add(downloadUpdateBtn);
+            _aboutDownloadUpdateBtn = downloadUpdateBtn;
             updateInner.Children.Add(updateHeaderRow);
-            updateInner.Children.Add(new TextBlock
+            var changelogScroller = new ScrollViewer
             {
-                Text = "v1.02（2026-08-10）\n• 修复官方 exe 直链探针在 QQ 等动态渲染站点上的抓取稳定性：解决脚本语法错误导致整段返回 null、SKIP 非安装包（如 .js）混入结果、404 死链（旧版本/非 x64 CDN 链接）仍显示的问题。\n• WebView2 探针可靠性增强：修复 SetupCdp 在 UI/STA 线程同步阻塞导致的 20 秒初始化死锁；新增运行时目录主动扫描兜底；初始化失败时改为显式弹窗询问是否切换到 Node + Playwright + Chromium 方案。\n• PowerShell 调用统一化：将 Tweaks / RestorePoint / OtherTweaksDialog / EdgeCore / Theme.cs 中残留的 powershell -Command 调用迁移到 -EncodedCommand，避免中文/引号乱码。\n• 维护工具依赖管理：Node + Playwright + Chromium 回退路径代码审查完成，安装脚本与 C# 解析逻辑保持健壮。\n• 软件版本号与交付文件名规范化：exe 文件名追加版本号，便于多版本并存与 GitHub Release 分发。\n\nv1.01（2026-08-06）\n• 初始版本发布，完成系统清理、优化与维护核心功能。\n• 系统优化：提供一键/按需系统调校项，支持操作前创建还原点。\n• 清理优化：支持 6 大类 34 项细粒度清理，涵盖缓存、系统残留、更新文件、浏览器数据、日志历史与大空间回收；支持先扫描后清理、安全项一键勾选与分类并行加速。\n• 服务优化：支持系统服务的批量禁用/恢复与依赖检查。\n• Appx 商店 / Appx 管理：提供 Windows 应用商店应用的一键安装/卸载与管理能力。\n• 常用软件：内置常用软件清单，支持官方直链下载、自定义软件维护与静默安装。\n• 安全防护：集成 Windows 安全中心、防火墙与 Defender 相关快捷管理。\n• Edge 管理：支持 Edge 浏览器缓存、配置与通道管理。\n• 隐私设置：提供常见隐私项的快速开关与系统遥测管理。\n• 系统工具：集合实用的系统级快捷操作。\n• 激活工具：在用户授权后调用 Microsoft Activation Scripts（MAS）在线脚本完成系统激活。\n• 系统信息：双列展示硬件、系统与运行环境关键信息。\n• 维护工具：提供系统维护常用脚本与一键修复入口。\n• 配置管理：支持主题切换、还原点策略与个性化设置持久化。",
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                MaxHeight = 280
+            };
+            var changelogText = new TextBlock
+            {
+                Text = "v1.03（2026-08-11）\n• 安全加固：MAS 激活改走系统目录完整路径 powershell.exe 加 -EncodedCommand，消除 PATH 劫持风险；Chocolatey OData 过滤的 id 加白名单校验；Office 部署 XML 用户值转义；WebView2 引导程序与 Office 安装包下载加存在性与非空校验。\n• 健壮性：维护工具依赖检测异常改为可见日志，不再误报 Node 未安装；ProbeBrowserHost 同步异常路径经 TaskCompletionSource 传播，避免调用方永久挂起。\n• 代码清理与复用：删除冗余调试输出；将标题栏与错误提示脚手架提取到 DialogChrome 复用，减少重复；修复 Tier3 勾选项大小求和在非连续勾选时的错位；注册表 Dword 读取模板统一为 GetDwordState。\n• 关于页检查更新：检测到新版本后可直接点击「下载更新」保存新 exe，支持自选保存路径；更新日志区域增加 ScrollViewer，限制最大高度，避免版本增多后卡片无限拉长。\n\nv1.02（2026-08-10）\n• 修复官方 exe 直链探针在 QQ 等动态渲染站点上的抓取稳定性：解决脚本语法错误导致整段返回 null、SKIP 非安装包（如 .js）混入结果、404 死链（旧版本/非 x64 CDN 链接）仍显示的问题。\n• WebView2 探针可靠性增强：修复 SetupCdp 在 UI/STA 线程同步阻塞导致的 20 秒初始化死锁；新增运行时目录主动扫描兜底；初始化失败时改为显式弹窗询问是否切换到 Node + Playwright + Chromium 方案。\n• PowerShell 调用统一化：将 Tweaks / RestorePoint / OtherTweaksDialog / EdgeCore / Theme.cs 中残留的 powershell -Command 调用迁移到 -EncodedCommand，避免中文/引号乱码。\n• 维护工具依赖管理：Node + Playwright + Chromium 回退路径代码审查完成，安装脚本与 C# 解析逻辑保持健壮。\n• 软件版本号与交付文件名规范化：exe 文件名追加版本号，便于多版本并存与 GitHub Release 分发。\n\nv1.01（2026-08-06）\n• 初始版本发布，完成系统清理、优化与维护核心功能。\n• 系统优化：提供一键/按需系统调校项，支持操作前创建还原点。\n• 清理优化：支持 6 大类 34 项细粒度清理，涵盖缓存、系统残留、更新文件、浏览器数据、日志历史与大空间回收；支持先扫描后清理、安全项一键勾选与分类并行加速。\n• 服务优化：支持系统服务的批量禁用/恢复与依赖检查。\n• Appx 商店 / Appx 管理：提供 Windows 应用商店应用的一键安装/卸载与管理能力。\n• 常用软件：内置常用软件清单，支持官方直链下载、自定义软件维护与静默安装。\n• 安全防护：集成 Windows 安全中心、防火墙与 Defender 相关快捷管理。\n• Edge 管理：支持 Edge 浏览器缓存、配置与通道管理。\n• 隐私设置：提供常见隐私项的快速开关与系统遥测管理。\n• 系统工具：集合实用的系统级快捷操作。\n• 激活工具：在用户授权后调用 Microsoft Activation Scripts（MAS）在线脚本完成系统激活。\n• 系统信息：双列展示硬件、系统与运行环境关键信息。\n• 维护工具：提供系统维护常用脚本与一键修复入口。\n• 配置管理：支持主题切换、还原点策略与个性化设置持久化。",
                 FontSize = 12,
                 Foreground = _textMain,
                 TextWrapping = TextWrapping.Wrap,
                 LineHeight = 18
-            });
+            };
+            changelogScroller.Content = changelogText;
+            updateInner.Children.Add(changelogScroller);
 
             // 第三方开源组件 / OSS 声明卡：与免责声明并列，仅列运行时实际调用的第三方软件（MAS）。
             // 本工具自身代码为原创实现，未复制/打包其他项目代码；下列为唯一运行时调用的第三方开源软件。
@@ -1824,6 +1845,18 @@ namespace CpqSystemTool
             return root;
         }
 
+        // .NET Framework 的 WebClient 无 Timeout 属性（.NET 5+ 才有）；通过重写 GetWebRequest 设置底层请求超时（10 秒），避免 CheckForUpdate 无限等待。
+        private class WebClientWithTimeout : System.Net.WebClient
+        {
+            public int TimeoutMs { get; set; } = 10000;
+            protected override System.Net.WebRequest GetWebRequest(Uri uri)
+            {
+                var w = base.GetWebRequest(uri);
+                if (w != null) w.Timeout = TimeoutMs;
+                return w;
+            }
+        }
+
         /// <summary>检查 GitHub Release 是否有新版本，结果经 Dispatcher 回到 UI 线程写入状态栏。</summary>
         private void CheckForUpdate()
         {
@@ -1833,7 +1866,7 @@ namespace CpqSystemTool
             {
                 try
                 {
-                    using (var wc = new System.Net.WebClient())
+                    using (var wc = new WebClientWithTimeout { TimeoutMs = 10000 })
                     {
                         wc.Headers.Add("User-Agent", "CpqSystemTool");
                         var json = wc.DownloadString("https://api.github.com/repos/dandelion80231/System-Cleanup-Optimizer/releases/latest");
@@ -1842,11 +1875,32 @@ namespace CpqSystemTool
                         var latest = m.Groups[1].Value.Trim();
                         var cmp = CompareVersion(APP_VERSION, latest);
                         if (cmp < 0)
-                            disp.Invoke(() => SetStatus("发现新版本 " + latest + "，请到 GitHub Releases 下载"));
+                        {
+                            _pendingUpdateTag = latest;
+                            disp.Invoke(() =>
+                            {
+                                SetStatus("发现新版本 " + latest + "，可点击右侧「下载更新」保存到本地");
+                                if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Visible;
+                            });
+                        }
                         else if (cmp == 0)
-                            disp.Invoke(() => SetStatus("当前已是最新版本 " + APP_VERSION));
+                        {
+                            _pendingUpdateTag = null;
+                            disp.Invoke(() =>
+                            {
+                                SetStatus("当前已是最新版本 " + APP_VERSION);
+                                if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Collapsed;
+                            });
+                        }
                         else
-                            disp.Invoke(() => SetStatus("当前版本 " + APP_VERSION + " 已高于线上 " + latest));
+                        {
+                            _pendingUpdateTag = null;
+                            disp.Invoke(() =>
+                            {
+                                SetStatus("当前版本 " + APP_VERSION + " 已高于线上 " + latest);
+                                if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Collapsed;
+                            });
+                        }
                     }
                 }
                 catch (System.Net.WebException ex)
@@ -1873,6 +1927,71 @@ namespace CpqSystemTool
                 if (na != nb) return na.CompareTo(nb);
             }
             return 0;
+        }
+
+        /// <summary>用户点击「下载更新」后：弹出 SaveFileDialog 自选保存路径，然后从 GitHub Release 下载对应版本 exe。</summary>
+        private void DownloadUpdate()
+        {
+            if (string.IsNullOrEmpty(_pendingUpdateTag))
+            {
+                SetStatus("没有检测到可用的新版本，请先点击「检查更新」");
+                return;
+            }
+            var tag = _pendingUpdateTag;
+            var fileName = $"系统清理与优化工具_{tag}.exe";
+            var dlg = new SaveFileDialog
+            {
+                FileName = fileName,
+                DefaultExt = ".exe",
+                Filter = "可执行文件 (*.exe)|*.exe",
+                InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+            };
+            var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+            if (Directory.Exists(downloads)) dlg.InitialDirectory = downloads;
+
+            if (dlg.ShowDialog() != true) return;
+
+            var url = $"https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/download/{tag}/{fileName}";
+            SetStatus($"正在下载 {tag} …");
+            var disp = Dispatcher;
+            Task.Run(() =>
+            {
+                try
+                {
+                    using (var wc = new WebClientWithTimeout { TimeoutMs = 120000 })
+                    {
+                        wc.Headers.Add("User-Agent", "CpqSystemTool");
+                        wc.DownloadProgressChanged += (s, e) =>
+                        {
+                            disp.Invoke(() => SetStatus($"正在下载 {tag}：{e.ProgressPercentage}%"));
+                        };
+                        wc.DownloadFileCompleted += (s, e) =>
+                        {
+                            disp.Invoke(() =>
+                            {
+                                if (e.Error != null)
+                                    SetStatus($"下载失败：{e.Error.Message}");
+                                else if (e.Cancelled)
+                                    SetStatus("下载已取消");
+                                else
+                                {
+                                    SetStatus($"新版本已保存：{dlg.FileName}");
+                                    if (MessageBox.Show("下载完成，是否打开所在文件夹？", "下载完成", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+                                    {
+                                        try { System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{dlg.FileName}\""); } catch { }
+                                    }
+                                }
+                            });
+                        };
+                        wc.DownloadFileAsync(new Uri(url), dlg.FileName);
+                        while (wc.IsBusy) System.Threading.Thread.Sleep(100);
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    disp.Invoke(() => SetStatus($"下载失败：{ex.Message}"));
+                }
+            });
         }
 
         /// <summary>开源引用清单的一行：名称 + 许可证标签 + 一个或多个可点击来源链接。</summary>
@@ -2228,12 +2347,12 @@ namespace CpqSystemTool
             {
                 try
                 {
-                    string q = (keyword ?? "").Trim().ToLower();
+                    string q = (keyword ?? "").Trim().ToLowerInvariant();
                     string qClean = string.IsNullOrEmpty(q) ? "" : new string(q.Where(c => char.IsLetterOrDigit(c)).ToArray());
                     Func<string, bool> matchFn = name =>
                     {
                         if (string.IsNullOrEmpty(q)) return true;
-                        string n = name.ToLower();
+                        string n = name.ToLowerInvariant();
                         string nc = new string(n.Where(c => char.IsLetterOrDigit(c)).ToArray());
                         return n.Contains(q) || nc.Contains(qClean);
                     };
@@ -4043,7 +4162,7 @@ namespace CpqSystemTool
                         // 例："7z" → 匹配 "7-Zip"；"视频" → 匹配分类含「视频软件」的条目
                         void ApplyFilter()
                         {
-                            string q = searchBox.Text.Trim().ToLower();
+                            string q = searchBox.Text.Trim().ToLowerInvariant();
                             string qClean = string.IsNullOrEmpty(q) ? "" : new string(q.Where(c => char.IsLetterOrDigit(c)).ToArray());
                             string catSel = catList.SelectedIndex > 0 ? SoftwareInstall.SoftwareCategories[catList.SelectedIndex - 1] : null;
                             int visible = 0;
@@ -4055,12 +4174,12 @@ namespace CpqSystemTool
                                 else
                                 {
                                     string cat = t.Item3.Category ?? SoftwareInstall.DefaultCategory;
-                                    string nameLower = t.Item3.Name.ToLower();
+                                    string nameLower = t.Item3.Name.ToLowerInvariant();
                                     string nameClean = new string(nameLower.Where(c => char.IsLetterOrDigit(c)).ToArray());
                                     // 名称匹配：原文包含 或 去符号后包含（英文简称）；空 qClean 时不参与，避免非空查询误匹配全部
                                     bool nameTextMatch = nameLower.Contains(q) || (!string.IsNullOrEmpty(qClean) && nameClean.Contains(qClean));
                                     // 分类文字匹配：如搜「视频」可筛出分类含「视频软件」的条目
-                                    bool catTextMatch = !string.IsNullOrEmpty(q) && cat.ToLower().Contains(q);
+                                    bool catTextMatch = !string.IsNullOrEmpty(q) && cat.ToLowerInvariant().Contains(q);
                                     bool nameOrCatMatch = nameTextMatch || catTextMatch;
                                     // 分类下拉筛选（与文字搜索取交集）
                                     bool catDropMatch = catSel == null || string.Equals(cat, catSel, StringComparison.OrdinalIgnoreCase);

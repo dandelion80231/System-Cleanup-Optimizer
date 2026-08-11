@@ -281,6 +281,9 @@ namespace CpqSystemTool
     // ===================== 探针引擎（进程内，替代 Node + Playwright，优先 WebView2） =====================
     internal static class ProbeEngine
     {
+        // 重定向步数硬上限：手动跟随重定向（AllowAutoRedirect=false）时避免无限循环/环回
+        private const int MAX_REDIRECTS = 10;
+
         private static readonly HttpClient Http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
         {
             Timeout = TimeSpan.FromMilliseconds(ProbeData.VerifyTimeout)
@@ -441,7 +444,7 @@ namespace CpqSystemTool
         {
             try
             {
-                var got = await HttpGetAsync(entryUrl, ProbeData.MaxRedirect, 0, 8000);
+                var got = await HttpGetAsync(entryUrl, MAX_REDIRECTS, 0, 8000);
                 if (!got.ok) return null;
 
                 var found = new Dictionary<string, CandidateUrl>(StringComparer.OrdinalIgnoreCase);
@@ -577,7 +580,7 @@ namespace CpqSystemTool
 
         private static async Task<VerifyResult> VerifyExeAsync(string rawUrl, int depth)
         {
-            if (depth > ProbeData.MaxRedirect) return new VerifyResult { url = rawUrl, status = "TOO_MANY_REDIRECTS", verified = false, redirects = depth };
+            if (depth > MAX_REDIRECTS) return new VerifyResult { url = rawUrl, status = "TOO_MANY_REDIRECTS", verified = false, redirects = depth };
             if (!Uri.IsWellFormedUriString(rawUrl, UriKind.Absolute)) return new VerifyResult { url = rawUrl, status = "INVALID_URL", verified = false, redirects = depth };
             try
             {
