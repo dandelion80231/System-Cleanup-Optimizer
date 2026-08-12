@@ -89,11 +89,18 @@ namespace CpqSystemTool
                     log("  [OK]");
                 }
                 catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); 
-                    // 原生删除失败（权限/只读/占用），用 PowerShell 兜底（去掉 -EA 0 让错误如实暴露）
-                    Exec.RunPowerShell("Remove-Item -LiteralPath " + Exec.QuotePS(path) + " -Recurse -Force", log);
+                    // 原生删除失败（权限/只读/占用），用 PowerShell 兜底。
+                    // 「文件被另一进程使用」属预期（浏览器/程序运行中），降级为安静提示，不刷 [PS-ERR] 噪声；其余错误仍如实暴露，便于排查真实权限/路径问题。
+                    var (ecPS, soPS, sePS) = Exec.RunPowerShellGetFull("Remove-Item -LiteralPath " + Exec.QuotePS(path) + " -Recurse -Force", log);
+                    bool inUse = !string.IsNullOrWhiteSpace(sePS)
+                        && (sePS.Contains("正由另一进程使用") || sePS.Contains("being used by another process") || sePS.Contains("The process cannot access"));
                     // 兜底后再校验：真正删掉了才算成功，否则如实上报（不再谎报）
                     if (File.Exists(path) || Directory.Exists(path))
-                        log("  [SKIP] 部分残留（可能被占用，建议关闭相关程序后重试）");
+                    {
+                        if (inUse) log("  [SKIP] 部分文件被占用（建议关闭相关程序后重试）");
+                        else if (!string.IsNullOrWhiteSpace(sePS)) log("  [PS-ERR] " + sePS.Trim());
+                        else log("  [SKIP] 部分残留（可能被占用，建议关闭相关程序后重试）");
+                    }
                     else
                         log("  [OK] (PS 兜底)");
                 }

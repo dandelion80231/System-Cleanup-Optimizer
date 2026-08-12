@@ -66,7 +66,7 @@ namespace CpqSystemTool
 
             // Issue 21: 顶部只保留副标题说明（大标题已由顶部 PageTitle 显示）
             var titleBlock = new StackPanel();
-            titleBlock.Children.Add(Header("", $"共 {allTweaks.Count} 项优化。勾选要启用的项 → 点 「开始优化」 应用。已优化的项前面前会打勾。(提示：优化过的项目前面会打勾)"));
+            titleBlock.Children.Add(Header("", $"共 {allTweaks.Count} 项优化。勾选=启用优化、取消勾选=恢复默认；点「开始优化」按当前勾选状态应用全部项。优化过的项目前面会打勾。"));
             DockPanel.SetDock(titleBlock, Dock.Top);
             root.Children.Add(titleBlock);
 
@@ -248,6 +248,23 @@ namespace CpqSystemTool
                     SyncTweakTextColor(id);
                     UpdateSelectedPanel();
                     RefreshTweaksStatus();
+                    // Edge 优化：首次勾选开启时，提示组策略副作用（edge://management 会显示「由组织管理」，组策略固有表现，非故障）
+                    if (cb.IsChecked == true && !_edgeOptimWarnShown)
+                    {
+                        var t = Tweaks.All.FirstOrDefault(x => x.Id == id);
+                        if (t != null && t.Group == "Edge优化")
+                        {
+                            _edgeOptimWarnShown = true;
+                            var res = System.Windows.MessageBox.Show(this,
+                                "已开启 Edge 优化项。\n\n注意：这些优化通过写入 Edge 组策略（注册表 Policies\\Microsoft\\Edge）实现，开启后访问 edge://management/ 会显示「由你的组织管理」——这是组策略的固有表现，并非故障，重启 Microsoft Edge 后生效。\n\n是否继续开启？（本次会话不再提示）",
+                                "Edge 优化提示", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Information);
+                            if (res != System.Windows.MessageBoxResult.Yes)
+                            {
+                                cb.IsChecked = false;
+                                return;
+                            }
+                        }
+                    }
                 };
                 cb.Checked += markTouched;
                 cb.Unchecked += markTouched;
@@ -370,6 +387,7 @@ namespace CpqSystemTool
         private TextBlock TweaksOutputLine;   // ApplyTweaks 进度日志出口（原静态 outputLine 提升为字段）
         private HashSet<string> TweaksTouched; // 记录用户在状态加载完成前手动改动过的项
         private HashSet<string> TweaksOptimized; // 当前系统实际已处于优化状态的项（用于右侧「已优化」标识）
+        private bool _edgeOptimWarnShown; // Edge 优化组策略副作用提示：本会话仅提示一次
 
         private string _tweaksStatusBase = ""; // 窗口底部状态栏提示的“正文”，选中计数自动追加在后
 
@@ -484,23 +502,24 @@ namespace CpqSystemTool
             SetTweaksStatus(sel ? "已全选所有优化项目，点「开始优化」应用" : "已取消全部选择");
         }
 
-        // 底部"开始优化"按钮 = 应用已勾选项目
-        // 三态项按其勾选值纳入（开/关/系统默认 全部应用；系统默认=删除键值交还系统设定）；
-        // 二态项仅"勾选"者纳入（启用）。
+        // 底部"开始优化"按钮 = 按当前勾选状态应用【所有】项（WYSIWYG）：
+        // 勾选=启用优化(On)，取消勾选=还原系统默认(Off)；三态项的不确定=交还系统默认(Default)。
+        // 因此"取消勾选 + 开始优化"即可把该项恢复默认，无需动用"还原所有项"（避免误伤其它优化项）。
         private void ApplyChecked()
         {
+            if (TweaksCheckBoxes == null || TweaksCheckBoxes.Count == 0) { System.Windows.MessageBox.Show(this, "当前没有可优化的项目", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning); return; }
             var desired = new Dictionary<string, TweakState?>();
             foreach (var kv in TweaksCheckBoxes)
             {
                 var t = Tweaks.All.FirstOrDefault(x => x.Id == kv.Key);
                 if (t == null) continue;
                 var cb = kv.Value;
+                // 所有项都纳入：勾选框即为期望状态。二态项取消=Off(还原默认)，三态项按 On/Off/Default。
                 if (t.IsThreeState)
                     desired[kv.Key] = cb.IsChecked == true ? TweakState.On : cb.IsChecked == false ? TweakState.Off : TweakState.Default;
-                else if (cb.IsChecked == true)
-                    desired[kv.Key] = TweakState.On;
+                else
+                    desired[kv.Key] = cb.IsChecked == true ? TweakState.On : TweakState.Off;
             }
-            if (desired.Count == 0) { System.Windows.MessageBox.Show(this, "请先勾选要优化的项目", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning); return; }
             ApplyTweaks(desired, "开始优化（" + desired.Count + "项）");
         }
 
@@ -1308,7 +1327,14 @@ namespace CpqSystemTool
                 foreach (var t in VersionSwitch.GetTargetEditions(null))
                     items.Add(new ComboBoxItem { Content = ChineseEditionName(t) + " (" + t + ")", Tag = t });
                 vsTargetCombo.ItemsSource = items;
-                vsTargetCombo.SelectedIndex = 0;
+                int selIdx = 0;
+                if (!string.IsNullOrEmpty(cur))
+                {
+                    for (int i = 0; i < items.Count; i++)
+                        if (string.Equals(items[i].Tag as string, cur, StringComparison.OrdinalIgnoreCase))
+                        { selIdx = i; break; }
+                }
+                vsTargetCombo.SelectedIndex = selIdx;
                 vsTargetCombo.IsEnabled = true;
             }
             catch (Exception ex)
@@ -1792,7 +1818,7 @@ namespace CpqSystemTool
             };
             var changelogText = new TextBlock
             {
-                Text = "v1.03（2026-08-11）\n• 安全加固：MAS 激活改走系统目录完整路径 powershell.exe 加 -EncodedCommand，消除 PATH 劫持风险；Chocolatey OData 过滤的 id 加白名单校验；Office 部署 XML 用户值转义；WebView2 引导程序与 Office 安装包下载加存在性与非空校验。\n• 健壮性：维护工具依赖检测异常改为可见日志，不再误报 Node 未安装；ProbeBrowserHost 同步异常路径经 TaskCompletionSource 传播，避免调用方永久挂起。\n• 代码清理与复用：删除冗余调试输出；将标题栏与错误提示脚手架提取到 DialogChrome 复用，减少重复；修复 Tier3 勾选项大小求和在非连续勾选时的错位；注册表 Dword 读取模板统一为 GetDwordState。\n• 关于页检查更新：检测到新版本后可直接点击「下载更新」保存新 exe，支持自选保存路径；更新日志区域增加 ScrollViewer，限制最大高度，避免版本增多后卡片无限拉长。\n\nv1.02（2026-08-10）\n• 修复官方 exe 直链探针在 QQ 等动态渲染站点上的抓取稳定性：解决脚本语法错误导致整段返回 null、SKIP 非安装包（如 .js）混入结果、404 死链（旧版本/非 x64 CDN 链接）仍显示的问题。\n• WebView2 探针可靠性增强：修复 SetupCdp 在 UI/STA 线程同步阻塞导致的 20 秒初始化死锁；新增运行时目录主动扫描兜底；初始化失败时改为显式弹窗询问是否切换到 Node + Playwright + Chromium 方案。\n• PowerShell 调用统一化：将 Tweaks / RestorePoint / OtherTweaksDialog / EdgeCore / Theme.cs 中残留的 powershell -Command 调用迁移到 -EncodedCommand，避免中文/引号乱码。\n• 维护工具依赖管理：Node + Playwright + Chromium 回退路径代码审查完成，安装脚本与 C# 解析逻辑保持健壮。\n• 软件版本号与交付文件名规范化：exe 文件名追加版本号，便于多版本并存与 GitHub Release 分发。\n\nv1.01（2026-08-06）\n• 初始版本发布，完成系统清理、优化与维护核心功能。\n• 系统优化：提供一键/按需系统调校项，支持操作前创建还原点。\n• 清理优化：支持 6 大类 34 项细粒度清理，涵盖缓存、系统残留、更新文件、浏览器数据、日志历史与大空间回收；支持先扫描后清理、安全项一键勾选与分类并行加速。\n• 服务优化：支持系统服务的批量禁用/恢复与依赖检查。\n• Appx 商店 / Appx 管理：提供 Windows 应用商店应用的一键安装/卸载与管理能力。\n• 常用软件：内置常用软件清单，支持官方直链下载、自定义软件维护与静默安装。\n• 安全防护：集成 Windows 安全中心、防火墙与 Defender 相关快捷管理。\n• Edge 管理：支持 Edge 浏览器缓存、配置与通道管理。\n• 隐私设置：提供常见隐私项的快速开关与系统遥测管理。\n• 系统工具：集合实用的系统级快捷操作。\n• 激活工具：在用户授权后调用 Microsoft Activation Scripts（MAS）在线脚本完成系统激活。\n• 系统信息：双列展示硬件、系统与运行环境关键信息。\n• 维护工具：提供系统维护常用脚本与一键修复入口。\n• 配置管理：支持主题切换、还原点策略与个性化设置持久化。",
+                Text = "v1.0.4（2026-08-12）\n• Edge 优化「恢复不掉」修复：前 4 项 Edge 优化项的 Disable 改为删除策略值（原误写设值导致 edge://management 显示「由你的组织管理」且恢复不掉）。\n• Edge 组策略双 hive 处理：新增 RegistryHelper 双 hive 辅助方法，读写/删除/状态检测统一作用于 HKCU 与 HKLM，避免只清一侧残留。\n• WYSIWYG 应用策略：底部「开始优化」按当前勾选状态应用全部项——勾选=启用优化、取消勾选=还原系统默认；取消勾选 + 开始优化即可单独还原某项，无需动用「还原所有项」。\n• 首次勾选 Edge 优化组时弹提示，说明 edge://management「由你的组织管理」是组策略固有表现，避免误报。\n• 清理降级：删除失败改用 PowerShell 兜底并捕获 stderr/exitCode，文件被占用时降级为安静 [SKIP] 提示。\n• 版本切换下拉默认选中当前系统 EditionID。\n• 更新下载代理回退：依次尝试系统代理、直连、本地常见回环代理端口，并改 async/await 替代忙等轮询。\n• 系统信息版本显示本地化：按 CurrentBuild 判断 Windows 代际，EditionID/ProductName 版本片段映射中文（覆盖 Win10/11 全部主流版本含 N/S/IoT/服务器）；Build: 改为 版本号：。\n\nv1.03（2026-08-11）\n• 安全加固：MAS 激活改走系统目录完整路径 powershell.exe 加 -EncodedCommand，消除 PATH 劫持风险；Chocolatey OData 过滤的 id 加白名单校验；Office 部署 XML 用户值转义；WebView2 引导程序与 Office 安装包下载加存在性与非空校验。\n• 健壮性：维护工具依赖检测异常改为可见日志，不再误报 Node 未安装；ProbeBrowserHost 同步异常路径经 TaskCompletionSource 传播，避免调用方永久挂起。\n• 代码清理与复用：删除冗余调试输出；将标题栏与错误提示脚手架提取到 DialogChrome 复用，减少重复；修复 Tier3 勾选项大小求和在非连续勾选时的错位；注册表 Dword 读取模板统一为 GetDwordState。\n• 关于页检查更新：检测到新版本后可直接点击「下载更新」保存新 exe，支持自选保存路径；更新日志区域增加 ScrollViewer，限制最大高度，避免版本增多后卡片无限拉长。\n\nv1.02（2026-08-10）\n• 修复官方 exe 直链探针在 QQ 等动态渲染站点上的抓取稳定性：解决脚本语法错误导致整段返回 null、SKIP 非安装包（如 .js）混入结果、404 死链（旧版本/非 x64 CDN 链接）仍显示的问题。\n• WebView2 探针可靠性增强：修复 SetupCdp 在 UI/STA 线程同步阻塞导致的 20 秒初始化死锁；新增运行时目录主动扫描兜底；初始化失败时改为显式弹窗询问是否切换到 Node + Playwright + Chromium 方案。\n• PowerShell 调用统一化：将 Tweaks / RestorePoint / OtherTweaksDialog / EdgeCore / Theme.cs 中残留的 powershell -Command 调用迁移到 -EncodedCommand，避免中文/引号乱码。\n• 维护工具依赖管理：Node + Playwright + Chromium 回退路径代码审查完成，安装脚本与 C# 解析逻辑保持健壮。\n• 软件版本号与交付文件名规范化：exe 文件名追加版本号，便于多版本并存与 GitHub Release 分发。\n\nv1.01（2026-08-06）\n• 初始版本发布，完成系统清理、优化与维护核心功能。\n• 系统优化：提供一键/按需系统调校项，支持操作前创建还原点。\n• 清理优化：支持 6 大类 34 项细粒度清理，涵盖缓存、系统残留、更新文件、浏览器数据、日志历史与大空间回收；支持先扫描后清理、安全项一键勾选与分类并行加速。\n• 服务优化：支持系统服务的批量禁用/恢复与依赖检查。\n• Appx 商店 / Appx 管理：提供 Windows 应用商店应用的一键安装/卸载与管理能力。\n• 常用软件：内置常用软件清单，支持官方直链下载、自定义软件维护与静默安装。\n• 安全防护：集成 Windows 安全中心、防火墙与 Defender 相关快捷管理。\n• Edge 管理：支持 Edge 浏览器缓存、配置与通道管理。\n• 隐私设置：提供常见隐私项的快速开关与系统遥测管理。\n• 系统工具：集合实用的系统级快捷操作。\n• 激活工具：在用户授权后调用 Microsoft Activation Scripts（MAS）在线脚本完成系统激活。\n• 系统信息：双列展示硬件、系统与运行环境关键信息。\n• 维护工具：提供系统维护常用脚本与一键修复入口。\n• 配置管理：支持主题切换、还原点策略与个性化设置持久化。",
                 FontSize = 12,
                 Foreground = _textMain,
                 TextWrapping = TextWrapping.Wrap,

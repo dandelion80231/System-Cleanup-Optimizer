@@ -52,6 +52,9 @@ namespace CpqSystemTool
         {
             try
             {
+                // 键不存在 = 无需删除（常见于 HKCU 下没有 Edge 组策略键）。直接返回成功，避免误报"[!] 删键失败"。
+                using (var probe = hive.OpenSubKey(path, false))
+                    if (probe == null) return true;
                 hive.DeleteSubKeyTree(path, false);
                 // 二次验证：检查 key 是否真没了
                 using (var k = hive.OpenSubKey(path, false))
@@ -65,6 +68,65 @@ namespace CpqSystemTool
                 return true;
             }
             catch (Exception ex) { log("  [!] 删键 " + path + " 失败: " + ex.Message); return false; }
+        }
+
+        // ============================================================
+        //  Edge 组策略：同时作用于 HKCU 与 HKLM
+        //  背景：Edge 读取 HKLM 与 HKCU 的 Policies\Microsoft\Edge；
+        //  仅清 HKLM 会因 HKCU 残留而清不掉「由组织管理」状态。
+        //  这里统一在双 hive 上操作，使「禁用/恢复」能彻底清除。
+        // ============================================================
+        private static readonly RegistryKey[] EdgePolicyHives = { Registry.CurrentUser, Registry.LocalMachine };
+
+        public static void SetEdgePolicy(string name, int value, Action<string> log)
+        {
+            foreach (var hive in EdgePolicyHives)
+                SetDword(hive, @"SOFTWARE\Policies\Microsoft\Edge", name, value, log);
+        }
+
+        public static void SetEdgePolicyRecommended(string name, int value, Action<string> log)
+        {
+            foreach (var hive in EdgePolicyHives)
+                SetDword(hive, @"SOFTWARE\Policies\Microsoft\Edge\Recommended", name, value, log);
+        }
+
+        public static void DeleteEdgePolicy(string name, Action<string> log)
+        {
+            foreach (var hive in EdgePolicyHives)
+                DeleteValue(hive, @"SOFTWARE\Policies\Microsoft\Edge", name, log);
+        }
+
+        public static void DeleteEdgePolicyRecommended(string name, Action<string> log)
+        {
+            foreach (var hive in EdgePolicyHives)
+                DeleteValue(hive, @"SOFTWARE\Policies\Microsoft\Edge\Recommended", name, log);
+        }
+
+        /// <summary>删除 Edge 组策略键（含 Recommended 子键）。两 hive 都清，确保彻底移除。</summary>
+        public static bool DeleteEdgePolicyTree(Action<string> log)
+        {
+            bool ok = true;
+            foreach (var hive in EdgePolicyHives)
+            {
+                ok &= DeleteKeyTree(hive, @"SOFTWARE\Policies\Microsoft\Edge", log);
+                DeleteKeyTree(hive, @"SOFTWARE\Policies\Microsoft\Edge\Recommended", log);
+            }
+            return ok;
+        }
+
+        /// <summary>任一 hive 中该 Edge 策略值等于 onValue 即视为「开」。</summary>
+        public static bool GetEdgePolicyState(string name, int onValue)
+        {
+            foreach (var hive in EdgePolicyHives)
+                if (GetDwordState(hive, @"SOFTWARE\Policies\Microsoft\Edge", name, onValue)) return true;
+            return false;
+        }
+
+        public static bool GetEdgePolicyRecommendedState(string name, int onValue)
+        {
+            foreach (var hive in EdgePolicyHives)
+                if (GetDwordState(hive, @"SOFTWARE\Policies\Microsoft\Edge\Recommended", name, onValue)) return true;
+            return false;
         }
 
         public static int GetDword(RegistryKey hive, string path, string name, int def = 0)

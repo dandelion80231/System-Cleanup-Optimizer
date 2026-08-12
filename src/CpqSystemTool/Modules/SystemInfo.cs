@@ -77,6 +77,7 @@ namespace CpqSystemTool
                 // ====== 右侧：系统 + 网络 + 显卡 + 主板 + 硬盘 + 显示 ======
                 // 系统
                 string osName = Environment.OSVersion.VersionString.Trim();
+                string productName = GetRegSz(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "ProductName", "");
                 string edition = GetRegSz(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "EditionID", "");
                 string displayVer = GetRegSz(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "DisplayVersion", "");
                 string build = GetRegSz(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "CurrentBuild", "");
@@ -84,8 +85,16 @@ namespace CpqSystemTool
                 string installDate = GetRegSz(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "InstallDate", "");
                 string installDateHuman = ParseInstallDate(installDate);
                 right.AppendLine("【系统】");
-                right.AppendLine(osName.Replace("Microsoft Windows ", "Windows ") + " " + edition + " " + displayVer);
-                right.AppendLine("Build: " + build + "." + ubr);
+                // Issue: 系统信息版本字符串应显示为中文。注册表 ProductName 在部分系统（尤其 Windows 11）仍为英文
+                // （如 "Windows 10 Pro for Workstations"），因此按 CurrentBuild 判断 Windows 代际，再按 EditionID/ProductName
+                // 中的版本片段做中文映射，得到如 "Windows 11 专业工作站版 25H2"。
+                string winVer = GetWindowsVersionName(build);
+                string editionCn = LocalizeEdition(edition, productName);
+                string osDisplay = winVer;
+                if (!string.IsNullOrEmpty(editionCn)) osDisplay += " " + editionCn;
+                if (!string.IsNullOrEmpty(displayVer)) osDisplay += " " + displayVer;
+                right.AppendLine(osDisplay.Trim());
+                right.AppendLine("版本号：" + build + "." + ubr);
                 if (!string.IsNullOrEmpty(installDateHuman))
                     right.AppendLine("安装日期：" + installDateHuman);
                 right.AppendLine("当前用户：" + Environment.UserName);
@@ -297,6 +306,101 @@ namespace CpqSystemTool
             if (long.TryParse(raw, out long ticks) && ticks > 1_000_000_000_000L)
             {
                 try { return DateTime.FromFileTimeUtc(ticks).ToLocalTime().ToString("yyyy-MM-dd"); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            }
+            return "";
+        }
+
+        // Issue: 系统信息版本字符串应显示为中文。注册表 ProductName 在 Windows 11 上仍可能是英文
+        //（如 "Windows 10 Pro for Workstations"），因此按 EditionID / ProductName 中的版本片段做中文映射。
+        // 覆盖项目支持的 Windows 10/11 全部主流版本（含 N / S(LTSC) / S 模式 / IoT 企业版 / 服务器 / 多会话）。
+        private static readonly Dictionary<string, string> EditionChineseMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            // 工作站版（含 N）
+            { "ProfessionalWorkstationN", "专业工作站版 N" },
+            { "ProfessionalWorkstation", "专业工作站版" },
+            { "Pro for Workstations N", "专业工作站版 N" },
+            { "Pro for Workstations", "专业工作站版" },
+            // 专业版（含 N / 教育）
+            { "ProfessionalEducationN", "专业教育版 N" },
+            { "ProfessionalEducation", "专业教育版" },
+            { "ProfessionalN", "专业版 N" },
+            { "Professional", "专业版" },
+            { "Pro N", "专业版 N" },
+            { "Pro", "专业版" },
+            // 企业版（含 N / S(LTSC) / 评估 / 多会话）
+            { "EnterpriseSN", "企业版 SN" },
+            { "EnterpriseS", "企业版 S" },
+            { "EnterpriseEvaluation", "企业版 评估版" },
+            { "EnterpriseN", "企业版 N" },
+            { "Enterprise", "企业版" },
+            { "ServerRdsh", "企业版多会话" },
+            // 教育版（含 N）
+            { "EducationN", "教育版 N" },
+            { "Education", "教育版" },
+            // 家庭版（含单语言 / 中国 / N）
+            { "CoreSingleLanguage", "家庭单语言版" },
+            { "CoreCountrySpecific", "家庭中文版" },
+            { "CoreN", "家庭版 N" },
+            { "HomeSingleLanguage", "家庭单语言版" },
+            { "Home", "家庭版" },
+            { "Core", "家庭版" },
+            // S 模式（Cloud）
+            { "CloudN", "S 模式版 N" },
+            { "Cloud", "S 模式版" },
+            // IoT 企业版
+            { "IoTEnterpriseS", "IoT 企业版 S" },
+            { "IoTEnterprise", "IoT 企业版" },
+            // 服务器
+            { "ServerDatacenter", "服务器数据中心版" },
+            { "ServerStandard", "服务器标准版" },
+            { "Server", "服务器版" },
+            // 其它
+            { "Ultimate", "旗舰版" }
+        };
+
+        private static string GetWindowsVersionName(string currentBuild)
+        {
+            if (int.TryParse(currentBuild, out int b))
+            {
+                if (b >= 22000) return "Windows 11";
+                if (b >= 10240) return "Windows 10";
+                if (b >= 9600) return "Windows 8.1";
+                if (b >= 9200) return "Windows 8";
+                if (b >= 7601) return "Windows 7";
+            }
+            // 兜底：从 Environment.OSVersion 取最友好的前缀
+            string fallback = Environment.OSVersion.VersionString.Trim();
+            if (fallback.StartsWith("Microsoft Windows ")) return fallback.Substring(18).Trim();
+            return "Windows";
+        }
+
+        private static string LocalizeEdition(string edition, string productName)
+        {
+            if (!string.IsNullOrEmpty(edition) && EditionChineseMap.TryGetValue(edition, out string cn1))
+                return cn1;
+            // 从 ProductName 中匹配版本片段（如 "Windows 10 Pro for Workstations"）。
+            // 按键长降序匹配，确保 "Pro for Workstations N" 优先于 "Pro" 等短片段，且不依赖字典枚举顺序。
+            if (!string.IsNullOrEmpty(productName))
+            {
+                var keys = new List<string>(EditionChineseMap.Keys);
+                keys.Sort((a, b) => b.Length.CompareTo(a.Length));
+                foreach (var key in keys)
+                {
+                    if (productName.IndexOf(key, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return EditionChineseMap[key];
+                }
+            }
+            // 未匹配到中文：优雅降级为英文原文，绝不报错。
+            if (!string.IsNullOrEmpty(edition)) return edition;          // 优先回退 EditionID 英文
+            if (!string.IsNullOrEmpty(productName))                       // 否则取 ProductName 去掉 "Windows X " 前缀后的英文片段
+            {
+                string stripped = productName;
+                if (stripped.StartsWith("Windows ", StringComparison.OrdinalIgnoreCase))
+                {
+                    int sp = stripped.IndexOf(' ', 8);                    // 跳过 "Windows " 后找下一个空格
+                    if (sp > 0) stripped = stripped.Substring(sp + 1).Trim();
+                }
+                return stripped;
             }
             return "";
         }

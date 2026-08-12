@@ -4,6 +4,25 @@
 
 ---
 
+## [v1.0.4] - 2026-08-12
+
+> 相对 v1.03 的源码变更：Edge 组策略双 hive 修复 + WYSIWYG 应用策略 + 清理降级 + 更新下载代理回退（详见 code-review 全量检查）。
+
+### 🐛 修复
+- **Edge 优化「恢复不掉」根因修复（两层）**：① `Tweaks.cs` 前 4 个 Edge 优化项（欢迎页/标签页性能检测/新标签页资讯/个性化广告）的 `Disable` 原误写成「设值 0/1」而非「删除策略值」，Edge 检测到有值即视为「由组织管理」而恢复不掉；改为 `DeleteEdgePolicy` 彻底删除。② `ApplyChecked` 原只对勾选项做启用、不处理取消勾选项，导致「取消勾选 + 开始优化」什么都不做；改为 WYSIWYG 全量纳入。
+- **Edge 组策略双 hive 彻底清除**：`RegistryHelper` 新增 `EdgePolicyHives`（HKCU + HKLM）辅助块（`SetEdgePolicy` / `SetEdgePolicyRecommended` / `DeleteEdgePolicy` / `DeleteEdgePolicyRecommended` / `DeleteEdgePolicyTree` / `GetEdgePolicyState` / `GetEdgePolicyRecommendedState`）。仅清 HKLM 会因 HKCU 残留而清不掉「由组织管理」状态，现统一双 hive 操作。`EdgeCore` 的 `BlockEdgeUpdate` / `RestoreEdgeUpdate` / `SetStartupBoost` / `IsStartupBoostEnabled` 同步迁移到双 hive。`DeleteKeyTree` 增加「键不存在即视为成功」前置判断，避免 HKCU 无 Edge 键时的误报 `[!] 删键失败`。
+- **系统信息版本显示本地化**：`Modules/SystemInfo.cs` 按 `CurrentBuild` 判断 Windows 代际（11/10/8.1/8/7），并将 `EditionID` 与 `ProductName` 中的版本片段映射为中文（如 `ProfessionalWorkstation` / `Pro for Workstations` → "专业工作站版"）；原英文 `Build:` 改为中文 `版本号：`。映射表已覆盖 Windows 10/11 全部主流版本（含 N / S(LTSC) / S 模式 / IoT 企业版 / 服务器 / 多会话），并按键长降序匹配避免短片段误命中。**映射缺失时优雅降级为英文原文（EditionID 或 ProductName 去 "Windows X " 前缀后的片段），绝不报错。**
+
+### ♻️ 变更 / 策略
+- **WYSIWYG 应用策略（勾选即优化、取消即还原）**：底部「开始优化」按钮按当前勾选状态应用【所有】项——勾选=启用优化(On)，取消=还原系统默认(Off)；三态项的不确定=交还系统默认(Default)。因此「取消勾选 + 开始优化」即可单独还原某项，无需动用「还原所有项」误伤其它优化项。顶部说明文案同步更新。
+- **Edge 优化首次勾选提示**：首次勾选「Edge优化」组任一项时弹 YesNo 提示，说明组策略副作用（edge://management 显示「由你的组织管理」为固有表现，非故障），本次会话仅提示一次。
+- **清理兜底降级**：`Cleanup.cs` 删除失败改用 `Exec.RunPowerShellGetFull` 捕获 stderr/exitCode；「文件正被另一进程使用」属预期（程序运行中），降级为安静 `[SKIP]` 提示，不再刷 `[PS-ERR]` 噪声；其余真实错误仍如实暴露。
+- **版本切换下拉默认本机版本**：`vsTargetCombo` 默认选中当前系统 `EditionID`，不再固定首项。
+- **更新下载代理回退增强**：`DownloadStringWithProxyFallback` / `DownloadFileWithProxyFallback` 依次尝试 系统代理 → 直连 → 本地常见回环代理端口 三层自动回退；`DownloadUpdate` 改为 `async/await` 替代原 `Task.Run` + `while(IsBusy) Sleep` 忙等轮询。
+- **版本号规范化**：v1.03 → v1.0.4，同步 csproj（1.0.4.0）/ `APP_VERSION`（`v1.0.4`）；交付文件名 `系统清理与优化工具_v1.0.4.exe`。
+
+---
+
 ## [v1.03] - 2026-08-11
 
 > 相对 v1.02 的源码变更：三遍代码审查发现项修复 + 代码清理（详见 code-fix-2026-08-11.md）。

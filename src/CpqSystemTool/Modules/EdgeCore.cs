@@ -368,9 +368,9 @@ namespace CpqSystemTool
             // 删除更新注册表
             using (var k3 = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate", true)) k3?.DeleteSubKeyTree("", false);
 
-            // 阻止 Edge 启动增强
-            RegistryHelper.SetDword(Registry.LocalMachine, @"SOFTWARE\Policies\Microsoft\Edge", "StartupBoostEnabled", 0, log);
-            RegistryHelper.SetDword(Registry.LocalMachine, @"SOFTWARE\Policies\Microsoft\Edge", "BackgroundModeEnabled", 0, log);
+            // 阻止 Edge 启动增强（同时写 HKCU 与 HKLM，确保任一 hive 下都生效）
+            RegistryHelper.SetEdgePolicy("StartupBoostEnabled", 0, log);
+            RegistryHelper.SetEdgePolicy("BackgroundModeEnabled", 0, log);
 
             log("Edge 自动更新已禁止");
         }
@@ -379,7 +379,8 @@ namespace CpqSystemTool
         public static void RestoreEdgeUpdate(Action<string> log)
         {
             log("=== 恢复 Edge 自动更新 ===");
-            RegistryHelper.DeleteKeyTree(Registry.LocalMachine, @"SOFTWARE\Policies\Microsoft\Edge", log);
+            // 同时清 HKCU 与 HKLM（含 Recommended 子键），避免残留于任一 hive 导致 edge://management 仍报「由组织管理」
+            RegistryHelper.DeleteEdgePolicyTree(log);
             log("已清除 Edge 组策略限制");
         }
 
@@ -388,9 +389,13 @@ namespace CpqSystemTool
         {
             try
             {
-                using (var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Policies\Microsoft\Edge"))
+                // 任一 hive（HKCU/HKLM）将 StartupBoostEnabled 显式置 0 即视为已禁用
+                foreach (var hive in new[] { Registry.LocalMachine, Registry.CurrentUser })
                 {
-                    if (key?.GetValue("StartupBoostEnabled") is int val) return val != 0;
+                    using (var key = hive.OpenSubKey(@"SOFTWARE\Policies\Microsoft\Edge"))
+                    {
+                        if (key?.GetValue("StartupBoostEnabled") is int val && val == 0) return false;
+                    }
                 }
             }
             catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
@@ -400,9 +405,13 @@ namespace CpqSystemTool
         public static void SetStartupBoost(bool enabled, Action<string> log)
         {
             if (enabled)
-                RegistryHelper.DeleteKeyTree(Registry.LocalMachine, @"SOFTWARE\Policies\Microsoft\Edge", log);
+                // 恢复启动增强：两 hive 都清（含 Recommended 子键），移除 StartupBoostEnabled/BackgroundModeEnabled 等限制
+                RegistryHelper.DeleteEdgePolicyTree(log);
             else
-                RegistryHelper.SetDword(Registry.LocalMachine, @"SOFTWARE\Policies\Microsoft\Edge", "StartupBoostEnabled", 0, log);
+            {
+                RegistryHelper.SetEdgePolicy("StartupBoostEnabled", 0, log);
+                RegistryHelper.SetEdgePolicy("BackgroundModeEnabled", 0, log);
+            }
         }
     }
 }
