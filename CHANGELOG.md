@@ -4,7 +4,7 @@
 
 ---
 
-## [v1.0.4] - 2026-08-12
+## [v1.04] - 2026-08-12
 
 > 相对 v1.03 的源码变更：Edge 组策略双 hive 修复 + WYSIWYG 应用策略 + 清理降级 + 更新下载代理回退（详见 code-review 全量检查）。
 
@@ -19,7 +19,7 @@
 - **清理兜底降级**：`Cleanup.cs` 删除失败改用 `Exec.RunPowerShellGetFull` 捕获 stderr/exitCode；「文件正被另一进程使用」属预期（程序运行中），降级为安静 `[SKIP]` 提示，不再刷 `[PS-ERR]` 噪声；其余真实错误仍如实暴露。
 - **版本切换下拉默认本机版本**：`vsTargetCombo` 默认选中当前系统 `EditionID`，不再固定首项。
 - **更新下载代理回退增强**：`DownloadStringWithProxyFallback` / `DownloadFileWithProxyFallback` 依次尝试 系统代理 → 直连 → 本地常见回环代理端口 三层自动回退；`DownloadUpdate` 改为 `async/await` 替代原 `Task.Run` + `while(IsBusy) Sleep` 忙等轮询。
-- **版本号规范化**：v1.03 → v1.0.4，同步 csproj（1.0.4.0）/ `APP_VERSION`（`v1.0.4`）；交付文件名 `系统清理与优化工具_v1.0.4.exe`。
+- **版本号规范化（恢复两段式）**：v1.03 → v1.04，**统一回到本项目两段式惯例 `vX.YY`**（历史 v1.01 / v1.02 / v1.03 均为两段；上一版误用三段式 `v1.0.4` 导致「检查更新」段位错位误报「已高于线上」）。同步 csproj（1.0.4.0，内部程序集版本保持不变）/ `APP_VERSION`（`v1.04`）；交付文件名 `系统清理与优化工具_v1.04.exe`。`CompareVersion` 保留 `NormalizeVersion` 防御层（两段且第二段≤9 自动补 0），杜绝日后混用。
 
 ---
 
