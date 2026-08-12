@@ -55,7 +55,7 @@
 
 ## 4. GitHub Release 创建
 
-- 标题：`系统清理与优化工具 vX.XX`。
+- 标题：`系统清理与优化工具 vX.XX`（与历史 release 命名一致，勿只写 `vX.XX`）。
 - 附言：取自 `CHANGELOG.md` 对应版本段（可提取该段到临时 notes 文件，用 `gh release create ... --notes-file`）。
 - 标记 **Latest**。
 
@@ -66,6 +66,7 @@
 - 资产名用**英文名** `System-Cleanup-Optimizer_vX.XX.exe`（与 v1.03 线上资产命名一致；工具内置更新也按此名取 `browser_download_url`）。
 - 本地中文交付 `系统清理与优化工具_vX.XX.exe` **复制为英文名再上传**，传完删临时副本。
 - ⚠️ **切勿经 Git Bash 向 Windows 版 gh.exe 传中文参数**，否则资产名会被截断为 `_vX.XX.exe`。
+- ⚠️ **`gh release create "path#assetname"` 的重命名语法在本机不生效**（会静默回退为文件 basename）。因此**不要依赖 `#` 改名**，直接把临时副本命名为目标英文名 `System-Cleanup-Optimizer_vX.XX.exe` 再上传即可；上传后用 `gh release view vX.XX --json assets` 核验资产名。
 - 上传后**必须核验**：
   ```
   gh release view vX.XX --json assets
