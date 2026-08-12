@@ -2000,11 +2000,17 @@ namespace CpqSystemTool
             });
         }
 
-        /// <summary>去掉 v 前缀后按数字逐段比较版本号；a&lt;b 返回负数，相等返回 0，a&gt;b 返回正数。</summary>
+        /// <summary>
+        /// 语义化比较版本号；a&lt;b 返回负数，相等返回 0，a&gt;b 返回正数。
+        /// 每段按整数比较，缺失段视作 0，无法解析的段也视作 0（左对齐零填充，即标准 semver 比较）。
+        /// 兼容本项目早期把补丁号写在次版本位的简写：仅两段且第二段数值 ≤ 9 的写法 "vX.YY"（如 v1.03）
+        /// 会被规范为 "vX.0.YY"（即 1.0.3）再比较，避免 "1.03" 被误判为高于 "1.0.4"。
+        /// 规范做法：所有版本号统一使用三段式 vX.Y.Z（见 RELEASE_CHECKLIST）。
+        /// </summary>
         private static int CompareVersion(string a, string b)
         {
-            var pa = a.TrimStart('v', 'V').Split('.');
-            var pb = b.TrimStart('v', 'V').Split('.');
+            var pa = NormalizeVersion(a);
+            var pb = NormalizeVersion(b);
             int len = System.Math.Max(pa.Length, pb.Length);
             for (int i = 0; i < len; i++)
             {
@@ -2013,6 +2019,19 @@ namespace CpqSystemTool
                 if (na != nb) return na.CompareTo(nb);
             }
             return 0;
+        }
+
+        /// <summary>
+        /// 去掉 v/V 前缀并按 '.' 拆成数字段。兼容早期两段简写：当只有两段且第二段数值 ≤ 9 时
+        /// （如 "1.03"），在中间补 0 规范为三段（"1.0.3"），以匹配本项目 1.0.x 的版本习惯；
+        /// 第二段 &gt; 9（如 "1.10"）则保持原样（视为 1.10.0，避免误判）。
+        /// </summary>
+        private static string[] NormalizeVersion(string v)
+        {
+            var parts = v.TrimStart('v', 'V').Split('.');
+            if (parts.Length == 2 && int.TryParse(parts[1], out int second) && second <= 9)
+                return new[] { parts[0], "0", parts[1] };
+            return parts;
         }
 
         /// <summary>用户点击「下载更新」后：弹出 SaveFileDialog 自选保存路径，然后从 GitHub Release 下载对应版本 exe。</summary>
