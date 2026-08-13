@@ -34,6 +34,7 @@
 ## 2. 构建与部署
 
 - ⚠️ **构建前先重新生成嵌入源码包 `src.zip`**：用当前 `src/CpqSystemTool/` 源码（排除 `bin`/`obj`/`.vs` 及旧 `src.zip` 自身）重新打包，确保 exe 内嵌的「导出源码」与版本一致。`dotnet build` 不会自动重打包，`src.zip` 是手动维护的嵌入资源（v1.0.4 曾因漏此步，发布后 exe 内源码包仍是 v1.02）。
+  - ⚠️ **打包时一并纳入仓库根 `README.md`**：复制 `D:\电脑桌面\cpq\README.md` 到打包根目录（与 `App.xaml`/`Modules/` 同级），让「导出源码」目录自带功能介绍，用户下载 exe 后也能在导出包里看到 README（v1.04 起新增此要求；此前用户反馈 exe / 导出源码包都不含功能介绍）。
 - 构建（全局 nuget sources 为空，必须显式加源），目标 **0 错 0 警**：
   ```
   cd src\CpqSystemTool
@@ -67,6 +68,10 @@
 - 本地中文交付 `系统清理与优化工具_vX.XX.exe` **复制为英文名再上传**，传完删临时副本。
 - ⚠️ **切勿经 Git Bash 向 Windows 版 gh.exe 传中文参数**，否则资产名会被截断为 `_vX.XX.exe`。
 - ⚠️ **`gh release create "path#assetname"` 的重命名语法在本机不生效**（会静默回退为文件 basename）。因此**不要依赖 `#` 改名**，直接把临时副本命名为目标英文名 `System-Cleanup-Optimizer_vX.XX.exe` 再上传即可；上传后用 `gh release view vX.XX --json assets` 核验资产名。
+- ⚠️ **同时上传仓库根 `README.md` 作为 Release 资产**（v1.04 起新增）：用户下载 exe 时可一并下载功能介绍，弥补「exe / 导出源码包不含 README」的缺口。与 exe 资产一起上传、一起核验：
+  ```
+  gh release upload vX.XX "System-Cleanup-Optimizer_vX.XX.exe" "README.md" --clobber
+  ```
 - 上传后**必须核验**：
   ```
   gh release view vX.XX --json assets
