@@ -56,6 +56,7 @@
 
 ## 4. GitHub Release 创建
 
+- ⚠️ **创建 Release / 打 tag 之前，必须已完成第 2 步的 `src.zip` 重建并 push 到远程**：GitHub 自动生成的 `Source code (zip)` / `Source code (tar.gz)` 是基于创建 Release 时的 tag commit 快照生成的，**不会随后续 commit 自动刷新**。若 src.zip 重建晚于 Release 创建，自动 source zip 里的 `src.zip` 仍是旧版（v1.04 曾因此出现「导出源码包不含 README.md」的过期问题）。若已发生，按第 5 步上传 `System-Cleanup-Optimizer_vX.XX_src.zip` 资产补救。
 - 标题：`系统清理与优化工具 vX.XX`（与历史 release 命名一致，勿只写 `vX.XX`）。
 - 附言：取自 `CHANGELOG.md` 对应版本段（可提取该段到临时 notes 文件，用 `gh release create ... --notes-file`）。
 - 标记 **Latest**。
