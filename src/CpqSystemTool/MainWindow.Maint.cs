@@ -608,6 +608,46 @@ namespace CpqSystemTool
                 finally { copyRecBtn.IsEnabled = true; }
             };
 
+            // ========== 驱动管理卡片（参考 RAPR / Driver Store Explorer） ==========
+            var driverCard = new Border
+            {
+                Background = _isDarkMode ? Brushes.Transparent : _bgCard,
+                BorderBrush = _panelBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(16),
+                Margin = new Thickness(0, 0, 0, 14)
+            };
+            var driverInner = new StackPanel();
+            driverCard.Child = driverInner;
+            driverInner.Children.Add(new TextBlock
+            {
+                Text = "驱动管理（清理老旧冗余 / 备份导出）",
+                FontWeight = FontWeights.Bold,
+                Foreground = _accent,
+                FontSize = 14,
+                Margin = new Thickness(0, 0, 0, 8)
+            });
+            driverInner.Children.Add(new TextBlock
+            {
+                Text = "枚举系统已安装驱动包，识别同系列下的旧版本冗余驱动，支持一键导出备份与清理删除。正在使用的驱动会被自动保护，禁止误删。",
+                FontSize = 12,
+                Foreground = _textDim,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 10)
+            });
+            var driverBtnRow = new StackPanel { Orientation = Orientation.Horizontal };
+            var openDriverBtn = Btn("打开驱动管理", true, null, 160);
+            openDriverBtn.Click += (s, e) =>
+            {
+                var dlg = new DriverStoreDialog(this);
+                dlg.Owner = this;
+                dlg.ShowDialog();
+            };
+            driverBtnRow.Children.Add(openDriverBtn);
+            driverInner.Children.Add(driverBtnRow);
+            root.Children.Add(driverCard);
+
             return root;
         }
 
