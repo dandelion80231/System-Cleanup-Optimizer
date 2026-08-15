@@ -24,9 +24,10 @@
 - **全量代码审查必须调用 `code-review` skill 执行**（冗余清理 + bug 检查 + 修改），不要凭记忆手动过。
 - **版本四处一致**：`csproj(1.0.4.0)` ↔ `APP_VERSION(v1.04)` ↔ `git tag(v1.04)` ↔ 交付文件名版本段（本项目统一两段式 `vX.YY`）。
 - ⚠️ **版本号格式必须前后一致**：本项目历史版本均为两段式（`v1.01`/`v1.02`/`v1.03`），**统一沿用两段式 `vX.YY`**（如 `v1.04`）。检查更新 bug 的真正根因是**混用**两段式与三段式——`v1.03`（两段）vs `v1.0.4`（三段）段位错位，导致误判"已高于线上"。**只要所有版本同格式（全两段或全三段），`CompareVersion` 的位置比较就正确**。已发布的 `v1.0.4` 是唯一的异类，下一版改名为 `v1.04` 即与历史对齐，且已装的 v1.03 也会正确收到更新提示。`NormalizeVersion` 保留作防御层（兼容万一出现的混用）。
-- **两处更新日志都要补**（易漏）：
+- **两处更新日志都要补并同步措辞**（易漏）：
   - 仓库 `CHANGELOG.md` 新增对应版本段（Release 附言来源）；
   - **程序内 About 页「更新日志」TextBlock 也要加新版本条目**（区别于 CHANGELOG.md，之前漏过导致 GitHub 显示旧版本）。
+  - ⚠️ **已有版本段的措辞/条目变更（如功能描述修正、许可证声明、致谢）必须同步到 `src/CpqSystemTool/MainWindow.Pages.cs` 的硬编码 `changelogText`**。发布前用 `git diff src/CpqSystemTool/MainWindow.Pages.cs` 核对：About 页内容与 CHANGELOG.md 对应版本段语义一致（尤其避免"移植""参考"等关键措辞在 CHANGELOG 改了但 About 未改）。
 - 收尾卫生：辅助 `.ps1` 脚本整理归 `tools/`、**单独提交、不进版本 tag**；排查报告类 `.md` **不纳入发布**（保持 untracked 或移 `docs/`）。
 
 ---
