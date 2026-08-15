@@ -3394,7 +3394,7 @@ namespace CpqSystemTool
         }
 
         // =====================================================================
-        //  Module: Edge / WebView2 管理（移植自 Win11EasyConfig Form3，两列布局）
+        //  Module: Edge / WebView2 管理（参考 Win11EasyConfig Form3 设计，独立实现，两列布局）
         // =====================================================================
 
         private UIElement BuildEdge()
