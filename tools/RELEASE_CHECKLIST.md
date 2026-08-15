@@ -113,6 +113,8 @@
 
 ⚠️ **正确做法（更新现有 tag，非新建）：**
 
+> ⚠️ **若本轮源码有变更（bug 修复、About/CHANGELOG 改动等），须先 `regen_src_zip.py` 重生成并提交 `src.zip`、再重建并部署 exe**，然后才移动 tag——否则新 tag 指向 commit 内嵌的源码披露包与提交版 `src.zip` 不一致（本次 v1.05 一致性教训）。`regen_src_zip.py` 位于仓库 `tools/`，仅打包 `src/CpqSystemTool/` + 根 `README.md`。
+
 1. 先把 `CHANGELOG.md` 对应版本段补齐（🐛 修复 / ♻️ 打磨 等），提交到 `master`（得到新 HEAD，如 `2cc5e01`）。
 2. 移动现有 tag 到新 HEAD 并强制推送：
    ```
