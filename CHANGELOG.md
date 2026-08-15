@@ -25,6 +25,21 @@
 - **版本提升 v1.04 → v1.05**：同步 csproj（1.0.5.0）×3 / `APP_VERSION`（`v1.05`）/ 交付文件名 `系统清理与优化工具_v1.05.exe` / 关于页更新日志。
 - **UI 统一**：驱动清理页下拉框回归默认白底黑字样式，与首页 Office 风格一致；页面最大化时自动撑满视口；单元格支持鼠标悬停跟随提示；运行日志框与 DataGrid 各自独立滚动，避免外层整页滚动。
 
+### 🐛 修复
+- **PrivacyCore**：PowerShell 中 `%SystemRoot%` 不被展开，改为 `$env:SystemRoot`。
+- **Activation**：系统激活状态判定由严格整行匹配改为子串包含 `---LICENSED---`（兼容 `cscript /dstatusall` 输出左侧空格差异）。
+- **ConfigBackup**：`MiniJsonParser` 的 `\u` 转义越界保护，避免超长转义截断崩溃。
+- **RestorePoint**：还原前用 `Get-ComputerRestorePoint` 校验序号是否存在，避免无效序号静默谎报成功；引号处理统一改用 `Exec.QuotePS`。
+- **Updater / EdgeCore**：Updater 引号处理统一 `Exec.QuotePS`；EdgeCore 的 WebView2 卸载由 cmd 通配改为 C# 枚举版本目录、逐个 `setup.exe --uninstall`（修复通配被 cmd 忽略导致卸载静默 no-op）。
+- **MeteredConnection**：`SetDacl` 原生内存泄漏修复，所有 `AllocHGlobal` 在 `finally` 统一释放。
+- **VersionSwitch**：`MapChineseToEnglish` 死代码（中文键里搜英文子串恒为 false）改为 5 条直接回退（如「专业工作站」→ `ProfessionalWorkstation`）。
+- **ProbeBrowserHost**：`NavigateAndWaitAsync` 增加 20s 超时，避免永久挂起。
+- **MainWindow.Maint**：删除死诊断 `depsDiag` 与未用字段 `_depOutsideClick`（消除 CS0169 警告）。
+
+### ♻️ 质量打磨（行为保持）
+- **DriverStorePanel**：删除 4 个声明赋值后从未读取的死画刷字段；强制删除按钮去硬编码红边，改用主题画刷 `_dangerDark`。
+- **SoftwareInstall**：安装器等待逻辑加入心跳日志（每 10 秒输出一次进度），不加重试、保持原有超时/Kill/退出码行为。
+
 ---
 
 ## [v1.04] - 2026-08-12
