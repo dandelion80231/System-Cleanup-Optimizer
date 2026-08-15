@@ -27,7 +27,7 @@
 - **两处更新日志都要补并同步措辞**（易漏）：
   - 仓库 `CHANGELOG.md` 新增对应版本段（Release 附言来源）；
   - **程序内 About 页「更新日志」TextBlock 也要加新版本条目**（区别于 CHANGELOG.md，之前漏过导致 GitHub 显示旧版本）。
-  - ⚠️ **已有版本段的措辞/条目变更（如功能描述修正、许可证声明、致谢）必须同步到 `src/CpqSystemTool/MainWindow.Pages.cs` 的硬编码 `changelogText`**。发布前用 `git diff src/CpqSystemTool/MainWindow.Pages.cs` 核对：About 页内容与 CHANGELOG.md 对应版本段语义一致（尤其避免"移植""参考"等关键措辞在 CHANGELOG 改了但 About 未改）。
+  - About 页已改为运行时读取嵌入的 CHANGELOG.md（单一事实来源），发布前无需手动同步 About 措辞；CHANGELOG.md 即权威内容。
 - 收尾卫生：辅助 `.ps1` 脚本整理归 `tools/`、**单独提交、不进版本 tag**；排查报告类 `.md` **不纳入发布**（保持 untracked 或移 `docs/`）。
 
 ---
