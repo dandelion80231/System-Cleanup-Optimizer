@@ -85,7 +85,7 @@ namespace CpqSystemTool
             new AppxDef { Label="XboxTCUI", StoreId="9NKNC0LD5NN6", PackageFamily="Microsoft.Xbox.TCUI_8wekyb3d8bbwe", AutoRemove=true },
             new AppxDef { Label="HEVC(制造商)", StoreId="9N4WGH0Z6VHQ", PackageFamily="Microsoft.HEVCVideoExtension_8wekyb3d8bbwe", AutoRemove=false },
             new AppxDef { Label="HEVC(付费)", StoreId="9NMZLZ57R3T7", PackageFamily="Microsoft.HEVCVideoExtensions_8wekyb3d8bbwe", AutoRemove=false },
-            new AppxDef { Label="Microsoft Store", StoreId="9WZDNCRFJBH4", PackageFamily="Microsoft.WindowsStore_8wekyb3d8bbwe", AutoRemove=false },
+            new AppxDef { Label="Microsoft Store", StoreId="9WZDNCRFHVJL", PackageFamily="Microsoft.WindowsStore_8wekyb3d8bbwe", AutoRemove=false },
         };
 
         public static List<AppxInfo> ListInstalled(Action<string> log)

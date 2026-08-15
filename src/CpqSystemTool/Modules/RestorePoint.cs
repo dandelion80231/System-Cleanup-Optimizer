@@ -27,7 +27,7 @@ namespace CpqSystemTool
         public static void Create(string desc, Action<string> log)
         {
             log("创建系统还原点：" + desc);
-            string script = "Checkpoint-Computer -Description " + QuoteArg(desc) + " -RestorePointType 'MODIFY_SETTINGS'";
+            string script = "Checkpoint-Computer -Description " + Exec.QuotePS(desc) + " -RestorePointType 'MODIFY_SETTINGS'";
             int r = Exec.RunPowerShell(script, log);
             if (r == 0) log("  [OK] 还原点已创建（可在「系统还原」中查看/还原）");
             else log("  [!] 创建失败（可能系统还原未启用、VSS 服务未运行或权限不足）");
@@ -60,14 +60,18 @@ namespace CpqSystemTool
         public static void Restore(int seq, Action<string> log)
         {
             log("请求系统还原到序号 " + seq + "（完成后需重启电脑）");
+            // 先确认该序号的还原点存在，避免无效序号静默 no-op 却谎报成功
+            string check = Exec.RunPowerShellGet("Get-ComputerRestorePoint -SequenceNumber " + seq.ToString() + " -EA 0 | Measure-Object | Select-Object -ExpandProperty Count", null);
+            if (check?.Trim() != "1")
+            {
+                log("  [!] 未找到序号 " + seq + " 对应的系统还原点（可能已被清理或序号有误）");
+                return;
+            }
             string script = "Get-ComputerRestorePoint -SequenceNumber " + seq.ToString() + " -EA 0 | Restore-Computer";
-            Exec.RunPowerShell(script, log);
-            log("  [OK] 已发起还原，请重启电脑以生效");
+            int r = Exec.RunPowerShell(script, log);
+            if (r == 0) log("  [OK] 已发起还原，请重启电脑以生效");
+            else log("  [!] 还原请求失败（退出码 " + r + "）");
         }
 
-        private static string QuoteArg(string s)
-        {
-            return "'" + s.Replace("'", "''") + "'";
-        }
     }
 }

@@ -239,6 +239,7 @@ namespace CpqSystemTool
             _bgCard = Brushes.Transparent;
             _successGreen = new SolidColorBrush(Color.FromRgb(0x2E, 0xCC, 0x71));
             _dangerRed = new SolidColorBrush(Color.FromRgb(0xE7, 0x4C, 0x3C));
+            _dangerDark = new SolidColorBrush(Color.FromRgb(0x7A, 0x12, 0x12));   // 深色模式危急描边（与历史硬编码暗红一致）
             _warnOrange = new SolidColorBrush(Color.FromRgb(0xF3, 0x9C, 0x12));
             _bgDeep = Brushes.Transparent;
             _bgTable = Brushes.Transparent;
@@ -273,6 +274,7 @@ namespace CpqSystemTool
             _bgCard = Brushes.Transparent;
             _successGreen = new SolidColorBrush(Color.FromRgb(0x16, 0xA3, 0x4A));
             _dangerRed = new SolidColorBrush(Color.FromRgb(0xDC, 0x26, 0x26));
+            _dangerDark = new SolidColorBrush(Color.FromRgb(0x9B, 0x1C, 0x1C));   // 浅色模式危急描边（深于浅色 _dangerRed）
             _warnOrange = new SolidColorBrush(Color.FromRgb(0xD9, 0x77, 0x06));
             _bgDeep = Brushes.Transparent;
             _bgTable = Brushes.Transparent;
@@ -370,6 +372,7 @@ namespace CpqSystemTool
             Resources["ButtonHoverBrush"] = new SolidColorBrush(
                 _isDarkMode ? Color.FromArgb(0x38, 0x16, 0xE0, 0xBD)   // #16E0BD @ 22% (深色：亮叠加)
                               : Color.FromArgb(0x59, 0x08, 0x91, 0x82));  // #089182 @ 35% (浅色：暗叠加)
+
         }
 
         private void ThemeToggle_Click(object sender, RoutedEventArgs e)
@@ -379,6 +382,8 @@ namespace CpqSystemTool
             ApplyTheme(_isDarkMode);
             // 同步侧边栏标题颜色（标题 TextBlock 在 BuildSidebar 中创建时捕获了旧笔刷）
             UpdateSidebarTitleColors();
+            // 驱动清理页已缓存，主题变更后清空缓存以用新主题色重建
+            InvalidateDriverStoreCache();
             // 用保存的 key 重建当前页（_activeNavKey 在 Navigate 中更新）
             Navigate(_activeNavKey);
         }
@@ -444,6 +449,7 @@ namespace CpqSystemTool
                         _isDarkMode = newDark;
                         ApplyTheme(_isDarkMode);
                         UpdateSidebarTitleColors();
+                        InvalidateDriverStoreCache(); // 主题变更后重建驱动清理页
                         Navigate(_activeNavKey);
                     }
                 }));

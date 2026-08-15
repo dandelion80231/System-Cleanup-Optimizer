@@ -415,7 +415,7 @@ namespace CpqSystemTool
             });
         }
 
-        private async Task NavigateAndWaitAsync(string url)
+        private async Task<bool> NavigateAndWaitAsync(string url, int timeoutMs = 20000)
         {
             var tcs = new TaskCompletionSource<bool>();
             EventHandler<CoreWebView2NavigationCompletedEventArgs> handler = null;
@@ -426,7 +426,14 @@ namespace CpqSystemTool
             };
             _core.NavigationCompleted += handler;
             _core.Navigate(url);
-            await tcs.Task;
+            // 防止导航永远不完成（网络挂起/WebView2 卡死）导致调用方永久 await
+            var completed = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs));
+            if (completed != tcs.Task)
+            {
+                if (_core != null) _core.NavigationCompleted -= handler;
+                return false;
+            }
+            return await tcs.Task;
         }
 
         private Task<T> RunOnBrowserThread<T>(Func<Task<T>> func)

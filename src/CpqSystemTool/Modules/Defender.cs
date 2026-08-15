@@ -167,7 +167,7 @@ namespace CpqSystemTool
         public static bool GetCloud()
         {
             var policy = ReadPolicyDword(SPYNET_POLICY, "SpynetReporting");
-            if (policy.HasValue) return policy.Value == 0;  // 0=管理员强制关；1/2=启用
+            if (policy.HasValue) return policy.Value != 0;  // 0=管理员强制关；1/2=启用
             EnsureCache(); return _cacheCloud > 0;
         }
         public static bool SetCloud(bool enable, Action<string> log)

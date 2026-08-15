@@ -19,7 +19,9 @@ namespace CpqSystemTool
 
         private UIElement BuildMaintenanceTools()
         {
-            var root = new StackPanel { Margin = new Thickness(24, 16, 24, 16) };
+            // root 不再单独加边距，统一沿用 ContentArea 的 Margin(22,12,22,22)，
+            // 使顶部副标题高度与清理优化页一致、圆角卡片底部贴近窗口（与 Appx 管理页一致）。
+            var root = new StackPanel { Margin = new Thickness(0) };
 
             // 顶部说明
             root.Children.Add(Header("", "维护工具：抓取官网软件安装包（exe）直链、管理本地探针依赖等。探针支持两种驱动：WebView2 Runtime（优先，复用系统 Edge，无需下载）或 Node + Playwright + Chromium（兜底）。点击「管理依赖」可分别安装/卸载两种环境。"));
@@ -32,7 +34,8 @@ namespace CpqSystemTool
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(12),
                 Padding = new Thickness(16),
-                Margin = new Thickness(0, 0, 0, 14)
+                // 本卡片为页面最后一个元素，去掉底部外边距，使其贴近窗口底部（与 Appx 管理页一致）
+                Margin = new Thickness(0)
             };
             var probeInner = new StackPanel();
             probeCard.Child = probeInner;
@@ -146,15 +149,6 @@ namespace CpqSystemTool
             };
             Grid.SetColumn(manageDepsBtn, 2);
             optRow.Children.Add(manageDepsBtn);
-
-            // 临时诊断：记录「管理依赖」弹窗交互序列，便于定位"点不开"到底是哪一步未发生。
-            // 仅写文件、不抛异常、不影响 UI；问题定位后可整体删除。
-            var depsDiagPath = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "deps_diag.log");
-            Action<string> depsDiag = m =>
-            {
-                try { System.IO.File.AppendAllText(depsDiagPath, $"[{DateTime.Now:HH:mm:ss.fff}] {m}\n"); } catch { }
-            };
 
             var manageBtn = Btn("管理软件", false, null, 150);
             manageBtn.HorizontalAlignment = HorizontalAlignment.Center;
@@ -317,20 +311,16 @@ namespace CpqSystemTool
             // 注：此前"点不开"与 ControlTemplate 无关，根因是 StaysOpen=false 的 Light-Dismiss 自关（见上方说明）。
             manageDepsBtn.Click += (s, e) =>
             {
-                depsDiag($"Click IsOpen={depsPopup.IsOpen} IsChecked={manageDepsBtn.IsChecked}");
                 depsPopup.IsOpen = !depsPopup.IsOpen;
-                depsDiag($"  -> set IsOpen={depsPopup.IsOpen}");
                 if (depsPopup.IsOpen) RefreshDepStatus(nodeHeader, wvHeader);
             };
             depsPopup.Opened += (s, e) =>
             {
-                depsDiag($"Opened IsChecked={manageDepsBtn.IsChecked}");
                 manageDepsBtn.IsChecked = true;
                 depsPopup.Width = Math.Max(manageDepsBtn.ActualWidth, 205);
             };
             depsPopup.Closed += (s, e) =>
             {
-                depsDiag($"Closed IsChecked={manageDepsBtn.IsChecked}");
                 manageDepsBtn.IsChecked = false;
             };
 
@@ -348,7 +338,6 @@ namespace CpqSystemTool
                           ?? LogicalTreeHelper.GetParent(cur) as DependencyObject;
                 }
                 depsPopup.IsOpen = false;
-                depsDiag("OutsideClick -> manual close");
             };
 
             // 推荐直链区
@@ -608,47 +597,30 @@ namespace CpqSystemTool
                 finally { copyRecBtn.IsEnabled = true; }
             };
 
-            // ========== 驱动管理卡片（参考 RAPR / Driver Store Explorer） ==========
-            var driverCard = new Border
-            {
-                Background = _isDarkMode ? Brushes.Transparent : _bgCard,
-                BorderBrush = _panelBorder,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(16),
-                Margin = new Thickness(0, 0, 0, 14)
-            };
-            var driverInner = new StackPanel();
-            driverCard.Child = driverInner;
-            driverInner.Children.Add(new TextBlock
-            {
-                Text = "驱动管理（清理老旧冗余 / 备份导出）",
-                FontWeight = FontWeights.Bold,
-                Foreground = _accent,
-                FontSize = 14,
-                Margin = new Thickness(0, 0, 0, 8)
-            });
-            driverInner.Children.Add(new TextBlock
-            {
-                Text = "枚举系统已安装驱动包，识别同系列下的旧版本冗余驱动，支持一键导出备份与清理删除。正在使用的驱动会被自动保护，禁止误删。",
-                FontSize = 12,
-                Foreground = _textDim,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 10)
-            });
-            var driverBtnRow = new StackPanel { Orientation = Orientation.Horizontal };
-            var openDriverBtn = Btn("打开驱动管理", true, null, 160);
-            openDriverBtn.Click += (s, e) =>
-            {
-                var dlg = new DriverStoreDialog(this);
-                dlg.Owner = this;
-                dlg.ShowDialog();
-            };
-            driverBtnRow.Children.Add(openDriverBtn);
-            driverInner.Children.Add(driverBtnRow);
-            root.Children.Add(driverCard);
-
             return root;
+        }
+
+        /// <summary>
+        /// 构造 DataGrid 列头/单元格的通用主题样式（透明底 + 主题前景色 + 边框），
+        /// 供维护页与驱动管理页等需要透明网格的页面复用，避免样式代码散落重复。
+        /// 列头样式：透明底、主题文字色 fg、边框色 border；单元格样式：透明底、前景 fg、透明边框。
+        /// </summary>
+        internal static (Style Header, Style Cell) MakeDataGridStyles(Brush fg, Brush border)
+        {
+            var h = new Style(typeof(DataGridColumnHeader));
+            h.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
+            h.Setters.Add(new Setter(Control.ForegroundProperty, fg));
+            h.Setters.Add(new Setter(Control.BorderBrushProperty, border));
+            h.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Left));
+            h.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(6, 3, 6, 3)));
+
+            var c = new Style(typeof(DataGridCell));
+            c.Setters.Add(new Setter(DataGridCell.BackgroundProperty, Brushes.Transparent));
+            c.Setters.Add(new Setter(DataGridCell.ForegroundProperty, fg));
+            c.Setters.Add(new Setter(DataGridCell.BorderBrushProperty, Brushes.Transparent));
+            c.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(6, 2, 6, 2)));
+
+            return (h, c);
         }
 
         // =====================================================================

@@ -77,8 +77,24 @@ namespace CpqSystemTool
         public static void UninstallWebView2(Action<string> log)
         {
             log("正在卸载 WebView2 Runtime...");
-            Exec.RunCmd(new[] { "cmd", "/c", "%ProgramFiles(x86)%\\Microsoft\\EdgeWebView\\Application\\*.*\\Installer\\setup.exe --uninstall --force-uninstall --system-level" }, log);
-            log("WebView2 Runtime 卸载完成");
+            // cmd 不会解析路径中间的 *.* 通配符（%ProgramFiles(x86)%\...\Application\*.*\Installer\setup.exe），
+            // 改为在 C# 枚举真实存在的 setup.exe 逐个调用，避免静默 no-op。
+            string baseDir = Environment.ExpandEnvironmentVariables(@"%ProgramFiles(x86)%\Microsoft\EdgeWebView\Application");
+            bool found = false;
+            if (Directory.Exists(baseDir))
+            {
+                foreach (var verDir in Directory.GetDirectories(baseDir))
+                {
+                    string setup = Path.Combine(verDir, "Installer", "setup.exe");
+                    if (File.Exists(setup))
+                    {
+                        found = true;
+                        Exec.RunCmd(new[] { setup, "--uninstall", "--force-uninstall", "--system-level" }, log);
+                    }
+                }
+            }
+            if (!found) log("  [!] 未找到 WebView2 Runtime 安装目录（可能已卸载）");
+            else log("WebView2 Runtime 卸载完成");
         }
 
         /// <summary>

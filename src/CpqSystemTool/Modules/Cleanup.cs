@@ -24,6 +24,9 @@ namespace CpqSystemTool
         //  改用 System.IO 直接删除，避免每次启停 powershell.exe 的开销。
         //  出错时仍 fallback 到 PowerShell（处理权限/占用等极端情况）。
 
+        // 统一记录"已忽略的异常"，避免重复样板。
+        private static void LogIgnored(Exception ex) => System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + ex.Message);
+
         internal static void CleanDir(string name, string path, Action<string> log)
         {
             path = Exec.ExpandEnv(path);
@@ -47,8 +50,7 @@ namespace CpqSystemTool
             }
             catch (Exception caughtEx)
             {
-                System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);
-                // 原生批量删除失败，改为逐个文件/目录尝试删除，避免被占用文件导致整个目录无法清理
+                LogIgnored(caughtEx);// 原生批量删除失败，改为逐个文件/目录尝试删除，避免被占用文件导致整个目录无法清理
                 try
                 {
                     foreach (var file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
@@ -88,8 +90,7 @@ namespace CpqSystemTool
                         throw new IOException("删除后路径仍存在");
                     log("  [OK]");
                 }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); 
-                    // 原生删除失败（权限/只读/占用），用 PowerShell 兜底。
+                catch (Exception caughtEx) { LogIgnored(caughtEx);// 原生删除失败（权限/只读/占用），用 PowerShell 兜底。
                     // 「文件被另一进程使用」属预期（浏览器/程序运行中），降级为安静提示，不刷 [PS-ERR] 噪声；其余错误仍如实暴露，便于排查真实权限/路径问题。
                     var (ecPS, soPS, sePS) = Exec.RunPowerShellGetFull("Remove-Item -LiteralPath " + Exec.QuotePS(path) + " -Recurse -Force", log);
                     bool inUse = !string.IsNullOrWhiteSpace(sePS)
@@ -139,11 +140,18 @@ namespace CpqSystemTool
                 catch { return 0; }
             }
             if (!Directory.Exists(path)) return -1; // 标记不存在
+            long total = SumFileSizes(EnumerateFilesSafe(path));
+            return total / 1024.0 / 1024.0;
+        }
+
+        // 并行累加一组文件的大小（字节）；单文件读取失败忽略，目录无法枚举返回 0。
+        private static long SumFileSizes(IEnumerable<string> files, int maxFiles = int.MaxValue)
+        {
             long total = 0;
             try
             {
-                var files = EnumerateFilesSafe(path);
-                Parallel.ForEach<string, long>(files, () => 0L,
+                var limited = files.Take(maxFiles);
+                Parallel.ForEach<string, long>(limited, () => 0L,
                     (f, state, local) =>
                     {
                         try { local += new FileInfo(f).Length; } catch { }
@@ -152,7 +160,7 @@ namespace CpqSystemTool
                     local => Interlocked.Add(ref total, local));
             }
             catch { }
-            return total / 1024.0 / 1024.0;
+            return total;
         }
 
         // 批量并行计算多个路径大小，返回与输入同序的结果（日志按原顺序输出，不混乱）。
@@ -188,20 +196,19 @@ namespace CpqSystemTool
                             foreach (var cf in ckFiles)
                             {
                                 string fp = Path.Combine(nf, cf);
-                                try { if (File.Exists(fp)) File.Delete(fp); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                                try { if (File.Exists(fp)) File.Delete(fp); } catch (Exception caughtEx) { LogIgnored(caughtEx);}
                             }
                             // 删除剩余的 Cookies-* 文件
                             foreach (var cf in Directory.EnumerateFiles(nf, "Cookies-*", SearchOption.TopDirectoryOnly))
                             {
-                                try { File.Delete(cf); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                                try { File.Delete(cf); } catch (Exception caughtEx) { LogIgnored(caughtEx);}
                             }
                         }
                     }
                 }
                 log("  [OK]");
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); 
-                string script = "Get-ChildItem " + Exec.QuotePS(baseDir) + " -Directory -EA 0 | ForEach-Object { " +
+            catch (Exception caughtEx) { LogIgnored(caughtEx);string script = "Get-ChildItem " + Exec.QuotePS(baseDir) + " -Directory -EA 0 | ForEach-Object { " +
                     "$nf=Join-Path $_.FullName 'Network'; if(Test-Path $nf){ " +
                     "@('Cookies','Cookies-journal') | ForEach-Object { $f=Join-Path $nf $_; if(Test-Path $f){ Remove-Item $f -Force -EA 0 } }; " +
                     "Get-ChildItem $nf -Filter 'Cookies-*' -Force -EA 0 | Remove-Item -Force -EA 0 } }";
@@ -254,8 +261,8 @@ namespace CpqSystemTool
         internal static void IconCache(Action<string> log)
         {
             log("图标缓存");
-            Exec.RunCmd(new[] { "cmd", "/c", "del", "/f", "/q", Exec.ExpandEnv(@"%LOCALAPPDATA%\Microsoft\Windows\Explorer\iconcache*.db") }, log);
-            log("  [OK]");
+            int r = Exec.RunCmd(new[] { "cmd", "/c", "del", "/f", "/q", Exec.ExpandEnv(@"%LOCALAPPDATA%\Microsoft\Windows\Explorer\iconcache*.db") }, log);
+            log(r == 0 ? "  [OK]" : "  [FAIL] 图标缓存清理失败（退出码 " + r + "，可能未提权）");
         }
 
         internal static void FontCache(Action<string> log)
@@ -265,7 +272,7 @@ namespace CpqSystemTool
             // 清空 FontCache 目录（CleanDir 已改为原生 C#，不启 PowerShell）
             CleanDir("FontCache", @"%SystemRoot%\ServiceProfiles\LocalService\AppData\Local\FontCache", log);
             string fnt = Exec.ExpandEnv(@"%SystemRoot%\System32\FNTCACHE.DAT");
-            if (File.Exists(fnt)) { try { File.Delete(fnt); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  } }
+            if (File.Exists(fnt)) { try { File.Delete(fnt); } catch (Exception caughtEx) { LogIgnored(caughtEx);} }
             Exec.RunCmd(new[] { "net", "start", "FontCache" }, log);
             log("  [OK]");
         }
@@ -279,8 +286,9 @@ namespace CpqSystemTool
                                .Select(line => line.Trim())
                                .Where(s => !string.IsNullOrEmpty(s))
                                .ToList();
-            Parallel.ForEach(channels, InnerPar, ch => Exec.RunCmd(new[] { "wevtutil", "cl", ch }, log));
-            log("  [OK]");
+            int failed = 0;
+            Parallel.ForEach(channels, InnerPar, ch => { if (Exec.RunCmd(new[] { "wevtutil", "cl", ch }, log) != 0) Interlocked.Increment(ref failed); });
+            log(failed == 0 ? "  [OK]" : "  [FAIL] " + failed + " 个日志通道清空失败（可能未提权）");
         }
 
         internal static void CrashDumps(Action<string> log)
@@ -291,14 +299,15 @@ namespace CpqSystemTool
         internal static void Recent(Action<string> log)
         {
             log("最近使用 / 跳转列表");
+            int failed = 0;
             foreach (var p in new[] {
                 @"%APPDATA%\Microsoft\Windows\Recent\*.*",
                 @"%APPDATA%\Microsoft\Windows\Recent\AutomaticDestinations\*.*",
                 @"%APPDATA%\Microsoft\Windows\Recent\CustomDestinations\*.*" })
             {
-                Exec.RunCmd(new[] { "cmd", "/c", "del", "/f", "/q", Exec.ExpandEnv(p) }, log);
+                if (Exec.RunCmd(new[] { "cmd", "/c", "del", "/f", "/q", Exec.ExpandEnv(p) }, log) != 0) failed++;
             }
-            log("  [OK]");
+            log(failed == 0 ? "  [OK]" : "  [FAIL] " + failed + " 项最近使用清理失败（可能未提权）");
         }
 
         internal static void WuLogs(Action<string> log) { CleanDir("Windows Update 日志", @"%SystemRoot%\Logs\WindowsUpdate", log); }
@@ -307,8 +316,8 @@ namespace CpqSystemTool
         internal static void Notifications(Action<string> log)
         {
             log("通知数据库");
-            Exec.RunCmd(new[] { "cmd", "/c", "del", "/f", "/q", Exec.ExpandEnv(@"%LOCALAPPDATA%\Microsoft\Windows\Notifications\wpndatabase*.db") }, log);
-            log("  [OK]");
+            int r = Exec.RunCmd(new[] { "cmd", "/c", "del", "/f", "/q", Exec.ExpandEnv(@"%LOCALAPPDATA%\Microsoft\Windows\Notifications\wpndatabase*.db") }, log);
+            log(r == 0 ? "  [OK]" : "  [FAIL] 通知数据库清理失败（退出码 " + r + "，可能未提权）");
         }
 
         internal static void Spotlight(Action<string> log)
@@ -322,7 +331,7 @@ namespace CpqSystemTool
                     string assetsDir = Path.Combine(pkgDir, @"LocalState\Assets");
                     if (Directory.Exists(assetsDir))
                     {
-                        try { Directory.Delete(assetsDir, true); Directory.CreateDirectory(assetsDir); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                        try { Directory.Delete(assetsDir, true); Directory.CreateDirectory(assetsDir); } catch (Exception caughtEx) { LogIgnored(caughtEx);}
                     }
                 }
             }
@@ -350,14 +359,18 @@ namespace CpqSystemTool
                 () => BroCookies(@"%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data", "Brave", log),
                 () => BroCookies(@"%LOCALAPPDATA%\360Chrome\Chrome\User Data", "360安全浏览器", log),
                 () => {
-                    string fb = Exec.ExpandEnv(@"%LOCALAPPDATA%\Mozilla\Firefox\Profiles");
-                    if (Directory.Exists(fb))
+                    try
                     {
-                        string script = "Get-ChildItem " + Exec.QuotePS(fb) + " -Directory -EA 0 | ForEach-Object { " +
-                            "@('cookies.sqlite','cookies.sqlite-shm','cookies.sqlite-wal') | " +
-                            "ForEach-Object { $f=Join-Path $_.FullName $_; if(Test-Path $f){ Remove-Item $f -Force -EA 0 } } }";
-                        Exec.RunPowerShell(script, log);
+                        string fb = Exec.ExpandEnv(@"%LOCALAPPDATA%\Mozilla\Firefox\Profiles");
+                        if (Directory.Exists(fb))
+                        {
+                            string script = "Get-ChildItem " + Exec.QuotePS(fb) + " -Directory -EA 0 | ForEach-Object { " +
+                                "@('cookies.sqlite','cookies.sqlite-shm','cookies.sqlite-wal') | " +
+                                "ForEach-Object { $f=Join-Path $_.FullName $_; if(Test-Path $f){ Remove-Item $f -Force -EA 0 } } }";
+                            Exec.RunPowerShell(script, log);
+                        }
                     }
+                    catch (Exception caughtEx) { LogIgnored(caughtEx); }
                 }
             };
             Parallel.Invoke(InnerPar, jobs);
@@ -586,21 +599,7 @@ namespace CpqSystemTool
 
         private static long DirSizeCapped(string path, int maxFiles)
         {
-            long total = 0;
-            try
-            {
-                // Take(maxFiles) 提前终止枚举；Parallel 并行统计 FileInfo.Length，加速大目录。
-                var files = EnumerateFilesSafe(path).Take(maxFiles);
-                Parallel.ForEach<string, long>(files, () => 0L,
-                    (f, state, local) =>
-                    {
-                        try { local += new FileInfo(f).Length; } catch { }
-                        return local;
-                    },
-                    local => Interlocked.Add(ref total, local));
-            }
-            catch { }
-            return total;
+            return SumFileSizes(EnumerateFilesSafe(path), maxFiles);
         }
 
         private static void CollectTier3Sig(string root, List<string> outPaths, int maxDepth, int depth)
@@ -827,7 +826,5 @@ namespace CpqSystemTool
             Exec.RunCmd(new[] { "icacls", path, "/grant", "administrators:F", "/T" }, log);
             CleanPath("Windows.old 备份", @"%SystemDrive%\Windows.old", log);
         }
-
-        // ---- 注册表冗余清理（仅清理安全的残留/历史项，不动系统关键键）----
     }
 }

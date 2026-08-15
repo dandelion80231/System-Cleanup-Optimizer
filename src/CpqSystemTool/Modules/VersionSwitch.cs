@@ -274,35 +274,13 @@ namespace CpqSystemTool
             if (map.TryGetValue(cnName, out string en)) return en;
             // 模糊匹配：去掉前缀/版字后按关键字匹配（兼容中英混合输入）
             // 专业 + 教育 → ProfessionalEducation（必须优先，避免误命中普通 Professional）
-            if (cnName.Contains("专业") && cnName.Contains("教育"))
-            {
-                foreach (var kv in map)
-                    if (kv.Key.Contains("ProfessionalEducation")) return "ProfessionalEducation";
-            }
-            if (cnName.Contains("专业") && cnName.Contains("工作站"))
-            {
-                foreach (var kv in map)
-                    if (kv.Key.Contains("ProfessionalWorkstation")) return "ProfessionalWorkstation";
-            }
-            if (cnName.Contains("专业") && cnName.Contains("单语言"))
-            {
-                foreach (var kv in map)
-                    if (kv.Key.Contains("ProfessionalSingleLanguage")) return "ProfessionalSingleLanguage";
-            }
-            if (cnName.Contains("专业") && cnName.Contains("中文"))
-            {
-                foreach (var kv in map)
-                    if (kv.Key.Contains("ProfessionalCountrySpecific")) return "ProfessionalCountrySpecific";
-            }
-            // 普通专业版：排除 Education/Workstation/SingleLanguage/CountrySpecific 子项
-            if (cnName.Contains("专业"))
-            {
-                foreach (var kv in map)
-                    if (kv.Key.Contains("Professional") && !kv.Key.Contains("Education")
-                        && !kv.Key.Contains("Workstation") && !kv.Key.Contains("SingleLanguage")
-                        && !kv.Key.Contains("CountrySpecific")) return kv.Value;
-            }
-            if (cnName.Contains("教育") && map.TryGetValue("Education", out string en2)) return en2;
+            // 模糊匹配：在中文输入里按关键字直接映射英文 SKU（原实现误在中文 map 键里搜英文子串，恒为 false，整段失效）。
+            if (cnName.Contains("专业") && cnName.Contains("教育")) return "ProfessionalEducation";
+            if (cnName.Contains("专业") && cnName.Contains("工作站")) return "ProfessionalWorkstation";
+            if (cnName.Contains("专业") && cnName.Contains("单语言")) return "ProfessionalSingleLanguage";
+            if (cnName.Contains("专业") && cnName.Contains("中文")) return "ProfessionalCountrySpecific";
+            if (cnName.Contains("专业")) return "Professional";
+            if (cnName.Contains("教育")) return "Education";
             return null;
         }
 

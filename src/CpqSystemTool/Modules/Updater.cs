@@ -53,7 +53,7 @@ namespace CpqSystemTool
             log("3) 禁用更新计划任务...");
             foreach (var path in UPDATE_TASK_PATHS)
             {
-                Exec.RunPowerShell("Get-ScheduledTask -TaskPath " + MeteredQ(path) + " -ErrorAction SilentlyContinue | Disable-ScheduledTask | Out-Null", log);
+                Exec.RunPowerShell("Get-ScheduledTask -TaskPath " + Exec.QuotePS(path) + " -ErrorAction SilentlyContinue | Disable-ScheduledTask | Out-Null", log);
             }
             log("   [OK]");
 
@@ -79,7 +79,7 @@ namespace CpqSystemTool
             log("3) 启用更新计划任务...");
             foreach (var path in UPDATE_TASK_PATHS)
             {
-                Exec.RunPowerShell("Get-ScheduledTask -TaskPath " + MeteredQ(path) + " -ErrorAction SilentlyContinue | Enable-ScheduledTask | Out-Null", log);
+                Exec.RunPowerShell("Get-ScheduledTask -TaskPath " + Exec.QuotePS(path) + " -ErrorAction SilentlyContinue | Enable-ScheduledTask | Out-Null", log);
             }
             log("   [OK]");
 
@@ -194,7 +194,5 @@ namespace CpqSystemTool
             catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
         }
 
-        // 给 PowerShell 用的单引号转义（与 Exec.QuotePS 同义，避免循环依赖歧义）
-        private static string MeteredQ(string p) { return "'" + p.Replace("'", "''") + "'"; }
     }
 }

@@ -24,7 +24,8 @@
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <!-- 悬浮：背景半透明填充 + 边框变青绿
@@ -84,6 +85,9 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+        <!-- 下拉框（ComboBox）：使用 WPF 默认模板（白色背景 + 黑色文字），
+             与首页 Office 风格下拉框一致。用户明确选择“白底黑字”，故不覆盖主题色，
+             移除上一版深色主题化，避免深色模式下与参考观感不符。 -->
     </Window.Resources>
     <Grid x:Name="MainGrid">
         <Grid.ColumnDefinitions>
@@ -118,7 +122,7 @@
                             FontSize="16" Content="🌙" Click="ThemeToggle_Click"/>
                 </Grid>
             </Border>
-            <ScrollViewer Grid.Row="1" x:Name="ContentArea" Margin="22" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Background="Transparent"/>
+            <ScrollViewer Grid.Row="1" x:Name="ContentArea" Margin="22,12,22,22" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Background="Transparent"/>
             <Border Grid.Row="2" x:Name="StatusBar" Background="#0B0E12" BorderBrush="#1E2630" BorderThickness="0,1,0,0" Padding="22,8">
                 <TextBlock x:Name="StatusText" Text="就绪" FontSize="12"/>
             </Border>

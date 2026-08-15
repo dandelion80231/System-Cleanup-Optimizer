@@ -165,22 +165,25 @@ namespace CpqSystemTool
 
         private static void SetDacl(IntPtr hkey, IntPtr adminSid)
         {
-            IntPtr sd = GetSD(hkey);
+            // 所有原生缓冲区在 finally 中统一释放，避免异常路径泄漏句柄/内存
+            IntPtr sd = IntPtr.Zero;
+            IntPtr pInfo = IntPtr.Zero;
+            IntPtr aclNew = IntPtr.Zero;
+            IntPtr newSd = IntPtr.Zero;
             try
             {
+                sd = GetSD(hkey);
                 bool present, def; IntPtr pacl;
                 if (!GetSecurityDescriptorDacl(sd, out present, out pacl, out def))
                     throw new Win32Exception(Marshal.GetLastWin32Error(), "GetSecurityDescriptorDacl");
-                IntPtr aclNew;
                 if (present && pacl != IntPtr.Zero)
                 {
                     var info = new ACL_SIZE_INFORMATION();
-                    IntPtr pInfo = Marshal.AllocHGlobal(Marshal.SizeOf<ACL_SIZE_INFORMATION>());
+                    pInfo = Marshal.AllocHGlobal(Marshal.SizeOf<ACL_SIZE_INFORMATION>());
                     Marshal.StructureToPtr(info, pInfo, false);
                     if (!GetAclInformation(pacl, pInfo, (uint)Marshal.SizeOf<ACL_SIZE_INFORMATION>(), AclSizeInformation))
                         throw new Win32Exception(Marshal.GetLastWin32Error(), "GetAclInformation");
                     info = Marshal.PtrToStructure<ACL_SIZE_INFORMATION>(pInfo);
-                    Marshal.FreeHGlobal(pInfo);
                     uint need = info.AclBytesInUse + 256 + GetLengthSid(adminSid);
                     aclNew = Marshal.AllocHGlobal((int)need);
                     if (!InitializeAcl(aclNew, need, ACL_REVISION))
@@ -203,17 +206,21 @@ namespace CpqSystemTool
                 }
                 if (!AddAccessAllowedAce(aclNew, ACL_REVISION, KEY_ALL_ACCESS, adminSid))
                     throw new Win32Exception(Marshal.GetLastWin32Error(), "AddAccessAllowedAce");
-                IntPtr newSd = Marshal.AllocHGlobal(1024);
+                newSd = Marshal.AllocHGlobal(1024);
                 if (!InitializeSecurityDescriptor(newSd, 1))
                     throw new Win32Exception(Marshal.GetLastWin32Error(), "InitializeSecurityDescriptor");
                 if (!SetSecurityDescriptorDacl(newSd, true, aclNew, false))
                     throw new Win32Exception(Marshal.GetLastWin32Error(), "SetSecurityDescriptorDacl");
                 int r = RegSetKeySecurity(hkey, DACL_SECURITY_INFORMATION, newSd);
                 if (r != 0) throw new Win32Exception(r, "RegSetKeySecurity");
-                Marshal.FreeHGlobal(aclNew);
-                Marshal.FreeHGlobal(newSd);
             }
-            finally { Marshal.FreeHGlobal(sd); }
+            finally
+            {
+                if (pInfo != IntPtr.Zero) Marshal.FreeHGlobal(pInfo);
+                if (aclNew != IntPtr.Zero) Marshal.FreeHGlobal(aclNew);
+                if (newSd != IntPtr.Zero) Marshal.FreeHGlobal(newSd);
+                if (sd != IntPtr.Zero) Marshal.FreeHGlobal(sd);
+            }
         }
 
         private static IntPtr OpenKey(uint access)

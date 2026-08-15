@@ -18,15 +18,18 @@
     - [1. 系统优化](#1-系统优化)
     - [2. 清理优化](#2-清理优化)
     - [3. 服务优化](#3-服务优化)
-    - [4. Appx 管理](#4-appx-管理)
-    - [5. 常用软件](#5-常用软件)
-    - [6. 安全防护](#6-安全防护)
-    - [7. Edge 管理](#7-edge-管理)
-    - [8. 隐私设置](#8-隐私设置)
-    - [9. 系统工具](#9-系统工具)
-    - [10. 激活工具](#10-激活工具)
-    - [11. 系统信息](#11-系统信息)
-    - [12. 配置管理](#12-配置管理)
+    - [4. Appx 商店](#4-appx-商店)
+    - [5. Appx 管理](#5-appx-管理)
+    - [6. 常用软件](#6-常用软件)
+    - [7. 安全防护](#7-安全防护)
+    - [8. Edge 管理](#8-edge-管理)
+    - [9. 隐私设置](#9-隐私设置)
+    - [10. 系统工具](#10-系统工具)
+    - [11. 激活工具](#11-激活工具)
+    - [12. 系统信息](#12-系统信息)
+    - [13. 维护工具](#13-维护工具)
+    - [14. 驱动清理](#14-驱动清理)
+    - [15. 配置管理](#15-配置管理)
 - [技术架构](#技术架构)
 - [界面与交互实现](#界面与交互实现)
 - [构建与部署](#构建与部署)
@@ -39,14 +42,15 @@
 
 ## 功能概览
 
-系统清理与优化工具提供 **12 个主要功能页**（另含「关于」页，共 13 页），覆盖日常清理、系统优化、隐私安全、软件管理和系统维护。
+系统清理与优化工具提供 **15 个主要功能页**（另含「关于」页，共 16 页），覆盖日常清理、系统优化、隐私安全、软件管理、系统维护、驱动管理和官方安装包直链探针。
 
 | 模块 | 核心能力 | 实现规模 |
 |------|----------|----------|
 | 系统优化 | 注册表/策略类开关，7 大分组 | 116 项可勾选优化 |
 | 清理优化 | 缓存/系统/更新残留/浏览器/日志/大空间回收 | 34 项常规 + 5 项扩展清理 |
 | 服务优化 | 系统服务一键优化/还原 | 18 个预设推荐服务 |
-| Appx 管理 | UWP 应用卸载/安装/预配管理 | 59 个预置应用 |
+| Appx 商店 | 微软商店 59 款精选应用安装/卸载/预配移除 | 59 个预置 + winget/adguard/Store 三级回退 |
+| Appx 管理 | 系统中所有原始 AppX 包枚举与批量卸载 | Get-AppxPackage 原始列表 |
 | 常用软件 | 一键安装/卸载，自定义路径 | 48 款内置软件，16 大类 |
 | 安全防护 | Defender + 更新 + 防火墙 + 计量连接 | 多模块合并页 |
 | Edge 管理 | 多频道安装/卸载/禁更新/关启动增强 | 5 个频道支持 |
@@ -54,6 +58,8 @@
 | 系统工具 | 上帝模式/还原点/版本切换 | 3 个独立子模块 |
 | 激活工具 | 集成 MAS 五种激活方式 | 6 张卡片 (5 激活 + 1 诊断) |
 | 系统信息 | 硬件/软件信息汇总与导出 | WMI + 注册表 + P/Invoke |
+| 维护工具 | 官网 exe 直链探针 + 探针环境管理 | WebView2 Runtime / Node+Playwright 双驱动 |
+| 驱动清理 | 驱动枚举/在役保护/旧版清理/备份导出/添加安装 | pnputil + DISM 双后端 |
 | 配置管理 | 配置导出/导入/自动保存/源码导出 | 零依赖 JSON 序列化 |
 
 > 本章节所有数字、类名、方法名均对照 `src/CpqSystemTool` 实际源码核实。
@@ -161,17 +167,18 @@
 
 ---
 
-### 4. Appx 管理
+### 4. Appx 商店
 
-**核心能力**: 管理 59 个预置 UWP 应用，支持卸载、安装、预配移除。
+**核心能力**: 列出微软商店 59 款精选应用（含已安装与未安装），支持安装、卸载、预配移除；含搜索过滤与功能选项。
 
 **实现原理**:
+- 内置精选 Catalog（约 59 个 `AppxDef`，按 StoreId 索引），调用 `AppxManager.ListCatalogWithStatus` 合并本地安装状态。
 - 卸载：`Remove-AppxPackage` + `Remove-AppxProvisionedPackage -Online`（脚本经 Base64 UTF-16LE `-EncodedCommand` 执行）。
 - 安装三级回退：① `winget` 静默安装 → ② 从 `store.rg-adguard.net` 下载 `.appxbundle` 后 `Add-AppxPackage` → ③ 打开 Microsoft Store 页面手动安装。
-- 双列表：区分「已安装」与「已预配」，已安装绿色、未安装红色标识。
+- 双模式：「当前用户应用管理」与「系统预装应用卸载」，已安装绿色、未安装红色标识。
 
 **代码实现方法**:
-- `Modules/AppxManager.cs` — `public static class AppxManager`(:23)；`AppxDef`(:14) 预置 59 项（StoreId 目录 :30-88）；`ListInstalled`(:91)；`Uninstall`(:186) 调 `Remove-AppxPackage -Package`(:205) 与 `Remove-AppxProvisionedPackage -Online -PackageName`(:206)；`Install`(:219) 三级回退：`winget install --id <storeId> --source msstore`(:233) → `InstallViaAdguard`(:367, POST `https://store.rg-adguard.net/api/GetFiles`:413) → Store 页；`UninstallProvisioned`(:522) 调 `DISM.exe /Online /Remove-ProvisionedAppxPackage /PackageName:`(:527)。
+- `Modules/AppxManager.cs` — `public static class AppxManager`(:23)；`AppxDef`(:14) 预置 59 项（StoreId 目录 :30-88）；`ListCatalogWithStatus`(:131) 获取 Catalog 与状态；`Uninstall`(:186) 调 `Remove-AppxPackage -Package`(:205) 与 `Remove-AppxProvisionedPackage -Online -PackageName`(:206)；`Install`(:219) 三级回退：`winget install --id <storeId> --source msstore`(:233) → `InstallViaAdguard`(:367, POST `https://store.rg-adguard.net/api/GetFiles`:413) → Store 页；`UninstallProvisioned`(:522) 调 `DISM.exe /Online /Remove-ProvisionedAppxPackage /PackageName:`(:527)。
 - PowerShell 的 `-EncodedCommand`（Base64 UTF-16LE）封装统一在 `Helpers/Exec.cs` 的 `RunPS`(:62, 编码 :75)，不在 AppxManager 内。
 
 **使用方法**:
@@ -183,7 +190,28 @@
 
 ---
 
-### 5. 常用软件
+### 5. Appx 管理
+
+**核心能力**: 列出系统中所有原始 AppX 包（含系统组件），勾选后批量卸载。
+
+**实现原理**:
+- 直接枚举当前用户已安装的 AppX 包（`Get-AppxPackage`），显示友好名称与完整包名。
+- 勾选后批量调用 `Remove-AppxPackage` 卸载；不处理预配包。
+
+**代码实现方法**:
+- `Modules/AppxManager.cs` — `ListInstalled`(:91) 调用 PowerShell `Get-AppxPackage` 并解析为 `AppxInfo` 列表；`Uninstall`(:186) 按 `FullName` 移除。
+- `MainWindow.Pages.cs` — `BuildAppxRaw`(:2618) 构建原始包列表页，支持全选、反选、批量卸载与实时计数。
+
+**使用方法**:
+1. 进入「Appx 管理」页，等待列表加载。
+2. 勾选要卸载的原始 AppX 包（可「全选」）。
+3. 点击「卸载选中」批量移除。
+
+**权限/风险**: 卸载系统组件可能导致开始菜单/商店等功能异常，建议先确认包名；需管理员权限。
+
+---
+
+### 6. 常用软件
 
 **核心能力**: 48 款内置软件（浏览器、视频、压缩、通讯、开发、虚拟机等 16 大类）一键安装/卸载，支持自定义安装路径。
 
@@ -208,7 +236,7 @@
 
 ---
 
-### 6. 安全防护
+### 7. 安全防护
 
 **核心能力**: 合并 Defender 控制、Windows 更新管理、防火墙配置、计量连接四个子模块。
 
@@ -234,7 +262,7 @@
 
 ---
 
-### 7. Edge 管理
+### 8. Edge 管理
 
 **核心能力**: 支持 5 个频道（Stable/Beta/Dev/Canary/SxS）的版本检测、安装、卸载、禁用自动更新、关闭启动增强。
 
@@ -250,7 +278,7 @@
 
 ---
 
-### 8. 隐私设置
+### 9. 隐私设置
 
 **核心能力**: 12 项隐私注册表开关，覆盖云搜索、Web 搜索、广告 ID、遥测、传递优化、活动历史、搜索历史、墨迹词典、应用启动跟踪、语言列表、建议内容、MRT 大版本更新锁定等。
 
@@ -267,7 +295,7 @@
 
 ---
 
-### 9. 系统工具
+### 10. 系统工具
 
 **核心能力**: 上帝模式、系统还原点、Windows 版本切换三个子模块。
 
@@ -290,7 +318,7 @@
 
 ---
 
-### 10. 激活工具
+### 11. 激活工具
 
 **核心能力**: 6 张卡片（HWID/KMS38/Ohook/Online KMS/TSforge + 诊断），集成 Microsoft Activation Scripts (MAS)。
 
@@ -313,7 +341,7 @@
 
 ---
 
-### 11. 系统信息
+### 12. 系统信息
 
 **核心能力**: 汇总 CPU、内存、显卡、磁盘、网卡、主板等硬件信息，以及系统版本、EditionID、DisplayVersion、UBR、安装日期等软件信息，支持导出 TXT。
 
@@ -328,7 +356,61 @@
 
 ---
 
-### 12. 配置管理
+### 13. 维护工具
+
+**核心能力**: 抓取官网软件安装包（exe）直链，管理本地探针依赖（WebView2 Runtime / Node + Playwright + Chromium）。
+
+**实现原理**:
+- 官方 exe 直链探针：输入厂商名或入口 URL，调用浏览器 CDP（WebView2 Runtime 优先）或 Node + Playwright（兜底）抓取最终安装包直链。
+- 双驱动环境：优先复用系统已安装的 WebView2 Runtime；注册表损坏时主动扫描磁盘目录兜底；未就绪时自动提示切换 Node + Playwright 方案。
+- 环境管理：一键安装/卸载/修复 WebView2 或 Node + Playwright 依赖。
+
+**代码实现方法**:
+- `Modules/ProbeEngine.cs` — `ProbeEngine.RunAsync`(:299) 协调搜索流程；解析结果 `ProbeEngineResult`(:64)。
+- `Modules/ProbeBrowserHost.cs` — `ProbeBrowserHost`(:24) 基于 WinForms + WebView2 的 CDP 浏览器宿主；`CheckWebView2ReadyAsync`(:239) 检测环境；注册表损坏时显式扫描 EdgeWebView/Edge 目录(:327)。
+- `MainWindow.Maint.cs` — `BuildMaintenanceTools`(:20) 构建维护工具页；调用探针并管理依赖。
+- `MainWindow.Probe.cs` — 探针 UI 与结果展示。
+
+**使用方法**:
+1. 进入「维护工具」页，在输入框填入厂商名（如 `qq`、`douyin`）或官方下载页 URL。
+2. 点击探测，工具会尝试获取官方安装包直链。
+3. 若探针环境缺失，点击「管理依赖」安装 WebView2 Runtime 或 Node + Playwright 环境。
+
+**权限/风险**: 下载安装包仅获取直链，不自动执行安装；环境安装需联网下载官方/Node 组件。
+
+---
+
+### 14. 驱动清理
+
+**核心能力**: 移植 Driver Store Explorer（RAPR）核心能力，对系统驱动存储（Driver Store）进行枚举、识别、备份与清理；支持设备名称补全、列头三态排序、启动后台预加载与每次进入自动刷新。
+
+**实现原理**:
+- **枚举**: 默认 PnP 实用工具后端 `pnputil /enum-drivers`（仅含第三方驱动）解析 OEM 驱动列表；可切换 DISM 后端（`Get-WindowsDriver`）列出含系统内置驱动的全量清单（DISM 后端仅查看，删除/导出/安装按钮自动禁用，避免误操作）。
+- **在役保护**: 经 WMI `Win32_PnPSignedDriver` 取得当前在用设备的 INF 名集合，标记在役驱动，默认不可删。
+- **旧版冗余识别**: 同系列驱动仅保留最新版受保护，其余标记为可清理旧版；按 `DriverStore\FileRepository` 估算占用空间。
+- **设备名称补全**: 主源 SetupAPI（`SetupDiGetDeviceRegistryPropertyW`）枚举在役设备；WMI `Win32_PnPSignedDriver`/`Win32_PnPEntity` 双键（OemName/OriginalName）兜底；仍无匹配时按 `Provider + ClassDescription` 兜底，减少空白项。
+- **删除**: 默认不带 `/force`，仅删未在役的旧版 `oem#.inf`；删除前二次确认（危险操作红色提示）；勾选「包含启动关键驱动」方可操作 `BootCritical` 项（默认保护）。
+- **导出备份**: `pnputil /export-driver` 将选中（或未选则全部）驱动导出到指定目录，便于回滚。
+- **三态排序**: 点击列头循环「无 → 升序 → 降序 → 无」，方向 ▲/▼ 实时显示，按 backing 属性（日期/大小/版本）而非显示字符串排序。
+- **预加载与自动刷新**: 启动后在后台预加载驱动列表并缓存页面实例；每次进入「驱动清理」页都自动后台刷新（`Navigate` 触发 `Refresh()`），进入即见已加载数据。
+
+**代码实现方法**:
+- `Modules/DriverStore.cs` — `internal static class DriverStore`(:26)；`DriverEngine` 枚举(:29, `PnpUtil`/`Dism`)；`DriverInfo` 模型(:38, `DeviceName`/`IsDism`/`BootCritical` 等)；`Enumerate`(:292) 按引擎分发 `pnputil /enum-drivers`(:316) 或 `ParseDismOutput`(:616)；`ParseEnumOutput` 标签定位法容错（:333，兼容中文/英文/UTF-8 挤行）；`ResolveDeviceNames`(:511) 经 `BuildDeviceNameMapViaSetupApi`(:162, `SetupDiGetDeviceRegistryPropertyW`(:134)) 与 `BuildDeviceNameMapViaWmi`(:569, `Win32_PnPSignedDriver`(:575)/`Win32_PnPEntity`(:589)) 双源补全设备名；`GetActiveInfNames`(:735, `Win32_PnPSignedDriver`) 识别在役；`Delete`(:904, `/delete-driver` 默认不带 `/force`，`/force`:926)；`AddDriver`(:941, `/add-driver`)、`Export`(:968, `/export-driver`)、安装经 pnputil `/install-driver`。
+- `DriverStorePanel.cs` — `DriverStorePanel` 页 UI；`GroupMode` 枚举(:44, None/Class/Provider)；`_dg.Sorting += OnDataGridSorting`(:244)；`OnDataGridSorting`(:504) 三态，`ListCollectionView.SortDescriptions`(:523)；`ApplyGrouping` 经 `PropertyGroupDescription("ClassDescription"/"Provider")`(:557-558)；`Reenumerate`(:463) 后台枚举；`AddDriverDialog`(:603)/`InstallSelected`(:621)；`includeBootCritical`(:41) 启动关键保护；DISM 后端按钮禁用 `SetButtonEnabled`(:417-420) + 提示 `_dismHint`(:198)。
+- `MainWindow.DriverStore.cs` — `BuildDriverStore` 构建页面并缓存实例（`_cachedDriverStoreRoot`）；`PreloadDriverStore`（启动预加载）；`InvalidateDriverStoreCache`（主题切换时重建）。
+- `MainWindow.Nav.cs` — 导航项 `Key="driverstore", Title="驱动清理", Build=BuildDriverStore`(:38)；进入时触发 `_driverStorePanel?.Refresh()`(:180)。
+
+**使用方法**:
+1. 进入「驱动清理」页（启动即后台预加载，进入自动刷新）。
+2. 勾选要操作的驱动：在役驱动默认不可删（红色标识），旧版冗余标为可清理。
+3. 点击「删除选中」清理冗余驱动（二次确认）；点「导出」备份到目录；点「添加驱动包」/「安装选中」新增或安装驱动。
+4. 可按列头三态排序、按类别/供应商分组，切换 PnP 实用工具 / DISM 后端查看。
+
+**权限/风险**: 删除/导出/安装需管理员权限；默认保护在役与启动关键驱动，强制删除（`/force`）会移除仍在引用的包，属高风险操作，请先导出备份。
+
+---
+
+### 15. 配置管理
 
 **核心能力**: 全局配置导出/导入、自动保存、源码包导出、背景图设置。
 
@@ -361,13 +443,18 @@ MainWindow.Theme.cs          # 深/浅两套配色、系统主题跟随、背景
 MainWindow.Helpers.cs        # UI 辅助工厂
 MainWindow.Pages.cs          # 功能页 UI 构造函数（约 5200 行）
 MainWindow.Probe.cs          # 系统探针
-MainWindow.Pages.cs 页面构造器（Build*）:
-  BuildTweaks / BuildCleanup / BuildSystemTools / BuildActivation /
-  BuildAbout / BuildServices / BuildAppx / BuildSecurity / BuildEdge /
-  BuildPrivacy / BuildCommonSoftware / BuildSystemInfo / BuildConfig
-  （维护工具页 BuildMaintenanceTools 位于 MainWindow.Maint.cs）
+MainWindow.Maint.cs          # 维护工具页（官方 exe 直链探针）
+MainWindow.DriverStore.cs     # 驱动清理页构建 + 预加载缓存
+DriverStorePanel.cs          # 驱动清理页 UI（DataGrid 三态排序 / 分组 / 预加载）
+MainWindow.Pages.cs 页面构造器（Build*，按导航顺序）:
+  BuildTweaks / BuildCleanup / BuildServices /
+  BuildAppx / BuildAppxRaw / BuildCommonSoftware /
+  BuildSecurity / BuildEdge / BuildPrivacy / BuildSystemTools /
+  BuildActivation / BuildSystemInfo / BuildMaintenanceTools /
+  BuildDriverStore / BuildConfig /
+  BuildAbout（隐藏页）
 OtherTweaksDialog.cs         # 其他优化项对话框
-Modules/                     # 核心功能模块（21 个 .cs）
+Modules/                     # 核心功能模块（24 个 .cs）
 ├── Tweaks.cs                # 116 项注册表优化 (TweakEntry)
 ├── Cleanup.cs               # 磁盘清理核心 (Cleanup)
 ├── CleanupExt.cs            # 扩展清理 (CleanupExt, DISM WinSxS)
@@ -378,6 +465,7 @@ Modules/                     # 核心功能模块（21 个 .cs）
 ├── ServiceOptimizer.cs      # 服务枚举/优化 (ServiceEntry)
 ├── AppxManager.cs           # UWP 应用管理 (AppxDef/Uninstall/Install)
 ├── Defender.cs              # Defender 禁用/启用 (策略注册表)
+├── DriverStore.cs           # 驱动清理核心（pnputil/DISM 封装、解析、在役识别、删除/导出/添加）
 ├── EdgeCore.cs              # Edge 安装/卸载/优化 (5 频道)
 ├── PrivacyCore.cs           # 隐私设置（12 个 Disable*）
 ├── SoftwareInstall.cs       # 常用软件安装器 (SoftwareDef/AuthenticodeVerifier)
@@ -397,7 +485,7 @@ CpqSystemTool.csproj         # SDK-style 项目
 
 ### 主题系统
 
-- **两套配色，24 个笔刷字段**: `MainWindow.xaml.cs:22-48` 定义 24 个 `internal SolidColorBrush` 字段（强调色、文本、面板、卡片、语义色、表格、按钮、窗口背景等）。强调色 `_accent` = `#16E0BD`(深) / `#089182`(浅)。
+- **两套配色，25 个笔刷字段**: `MainWindow.xaml.cs:22-50` 定义 25 个 `internal SolidColorBrush` 字段（强调色、文本、面板、卡片、语义色、表格、按钮、窗口背景等；含本轮新增的危急操作描边 `_dangerDark`）。强调色 `_accent` = `#16E0BD`(深) / `#089182`(浅)。
 - **切换机制（Brush 实例捕获 + 整页重建）**: `SetDarkColors()` / `SetLightColors()`（`MainWindow.Theme.cs:229/:261`）对字段重新 `new SolidColorBrush(...)` 赋值；各页面在 `Build*` 时直接捕获这些**笔刷实例**，因此切换主题需 `Navigate(_activeNavKey)` 整体重建当前页（`ThemeToggle_Click:371-382`）。
 - **少数资源走 Resources 替换（可实时刷新）**: 外壳级 `ApplyShellColors()` 用 `Resources[key]=new SolidColorBrush(...)` 直接替换 `ScrollThumbBrush` / `AccentBrush` / `ButtonHoverBrush`（`:358/:361/:366`），故滚动条/按钮悬浮色随主题即时更新。
 - **系统主题跟随**: `DetectSystemLightTheme()`（`:410`）读 `HKCU\...\Themes\Personalize\AppsUseLightTheme`；`HookSystemThemeChange()`（`:431`）订阅 `SystemEvents.UserPreferenceChanged`，仅在用户未手动覆盖（`!_userOverrodeTheme`）时自动重跑 `ApplyTheme`+`Navigate`。

@@ -206,9 +206,11 @@ namespace CpqSystemTool
                         case 'b': sb.Append('\b'); break;
                         case 'f': sb.Append('\f'); break;
                         case 'u':
+                            if (p + 4 > json.Length) break; // 截断的 \u 转义，跳过避免越界
                             string hex = json.Substring(p, 4);
                             p += 4;
-                            sb.Append((char)int.Parse(hex, NumberStyles.HexNumber));
+                            if (!int.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int code)) break;
+                            sb.Append((char)code);
                             break;
                     }
                 }

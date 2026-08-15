@@ -32,35 +32,14 @@ namespace CpqSystemTool
         /// <summary>读取三个防火墙配置文件；失败时通过 error 返回 stderr/退出码摘要（不再静默吞错）。</summary>
         public static List<ProfileInfo> GetProfiles(Action<string> log, out string error)
         {
-            error = null;
-            var list = new List<ProfileInfo>();
-            try
-            {
-                var r = Exec.RunPowerShellGetFull(
-                    "Get-NetFirewallProfile | ForEach-Object { \"$($_.Name)|$($_.Enabled)\" }", log);
-                if (r.exitCode != 0)
+            return ParseNetItems(
+                "Get-NetFirewallProfile | ForEach-Object { \"$($_.Name)|$($_.Enabled)\" }",
+                p => new ProfileInfo
                 {
-                    error = string.IsNullOrWhiteSpace(r.stderr) ? ("退出码 " + r.exitCode) : r.stderr.Trim();
-                    return list;
-                }
-                if (!string.IsNullOrWhiteSpace(r.stdout))
-                {
-                    foreach (var line in r.stdout.Split('\n'))
-                    {
-                        var s = line.Trim();
-                        if (string.IsNullOrEmpty(s)) continue;
-                        var parts = s.Split('|');
-                        if (parts.Length >= 2)
-                            list.Add(new ProfileInfo
-                            {
-                                Name = parts[0].Trim(),
-                                Enabled = parts[1].Trim().Equals("True", StringComparison.OrdinalIgnoreCase)
-                            });
-                    }
-                }
-            }
-            catch (Exception ex) { error = ex.Message; System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 防火墙配置文件读取失败: " + ex.Message); }
-            return list;
+                    Name = p[0].Trim(),
+                    Enabled = p[1].Trim().Equals("True", StringComparison.OrdinalIgnoreCase)
+                },
+                2, "防火墙配置文件读取失败", log, out error);
         }
 
         /// <summary>列出全部防火墙规则（名称/方向/动作/启用）。兼容旧调用方（忽略错误）。</summary>
@@ -69,37 +48,16 @@ namespace CpqSystemTool
         /// <summary>列出全部防火墙规则；失败时通过 error 返回 stderr/退出码摘要（不再静默吞错）。</summary>
         public static List<RuleInfo> ListRules(Action<string> log, out string error)
         {
-            error = null;
-            var list = new List<RuleInfo>();
-            try
-            {
-                var r = Exec.RunPowerShellGetFull(
-                    "Get-NetFirewallRule | ForEach-Object { \"$($_.DisplayName)|$($_.Direction)|$($_.Action)|$($_.Enabled)\" }", log);
-                if (r.exitCode != 0)
+            return ParseNetItems(
+                "Get-NetFirewallRule | ForEach-Object { \"$($_.DisplayName)|$($_.Direction)|$($_.Action)|$($_.Enabled)\" }",
+                p => new RuleInfo
                 {
-                    error = string.IsNullOrWhiteSpace(r.stderr) ? ("退出码 " + r.exitCode) : r.stderr.Trim();
-                    return list;
-                }
-                if (!string.IsNullOrWhiteSpace(r.stdout))
-                {
-                    foreach (var line in r.stdout.Split('\n'))
-                    {
-                        var s = line.Trim();
-                        if (string.IsNullOrEmpty(s)) continue;
-                        var parts = s.Split('|');
-                        if (parts.Length >= 4)
-                            list.Add(new RuleInfo
-                            {
-                                DisplayName = parts[0].Trim(),
-                                Direction = parts[1].Trim(),
-                                Action = parts[2].Trim(),
-                                Enabled = parts[3].Trim().Equals("True", StringComparison.OrdinalIgnoreCase)
-                            });
-                    }
-                }
-            }
-            catch (Exception ex) { error = ex.Message; System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 防火墙规则读取失败: " + ex.Message); }
-            return list;
+                    DisplayName = p[0].Trim(),
+                    Direction = p[1].Trim(),
+                    Action = p[2].Trim(),
+                    Enabled = p[3].Trim().Equals("True", StringComparison.OrdinalIgnoreCase)
+                },
+                4, "防火墙规则读取失败", log, out error);
         }
 
         /// <summary>添加"阻止远程地址"出站规则（可批量以逗号分隔的域/IP）。</summary>
@@ -127,7 +85,7 @@ namespace CpqSystemTool
             }
             var addr = string.Join(",", validAddrs);
             Exec.RunPowerShell(
-                $"Remove-NetFirewallRule -DisplayName '{Escape(displayName)}' -ErrorAction SilentlyContinue;" +
+                $"Remove-NetFirewallRule -DisplayName '{EscapeLiteral(displayName)}' -ErrorAction SilentlyContinue;" +
                 $"New-NetFirewallRule -DisplayName '{Escape(displayName)}' -Direction Outbound -RemoteAddress {addr} -Action Block", log);
             log?.Invoke("[OK] 防火墙规则已添加");
         }
@@ -160,6 +118,34 @@ namespace CpqSystemTool
             foreach (var c in new[] { '[', ']', '*', '?' })
                 s = s.Replace(c.ToString(), "`" + c);
             return s;
+        }
+
+        // 通用：执行 PS、检查退出码、按 '|' 解析多行输出为多态项列表（GetProfiles / ListRules 共用）。
+        private static List<T> ParseNetItems<T>(string ps, Func<string[], T> map, int minParts, string debugTag, Action<string> log, out string error)
+        {
+            error = null;
+            var list = new List<T>();
+            try
+            {
+                var r = Exec.RunPowerShellGetFull(ps, log);
+                if (r.exitCode != 0)
+                {
+                    error = string.IsNullOrWhiteSpace(r.stderr) ? ("退出码 " + r.exitCode) : r.stderr.Trim();
+                    return list;
+                }
+                if (!string.IsNullOrWhiteSpace(r.stdout))
+                {
+                    foreach (var line in r.stdout.Split('\n'))
+                    {
+                        var s = line.Trim();
+                        if (string.IsNullOrEmpty(s)) continue;
+                        var parts = s.Split('|');
+                        if (parts.Length >= minParts) list.Add(map(parts));
+                    }
+                }
+            }
+            catch (Exception ex) { error = ex.Message; System.Diagnostics.Debug.WriteLine("[CpqSystemTool] " + debugTag + ": " + ex.Message); }
+            return list;
         }
     }
 }

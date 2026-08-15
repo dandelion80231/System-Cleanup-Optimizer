@@ -608,12 +608,53 @@ namespace CpqSystemTool
 
         private bool RunInstaller(string path, string[] args, Action<string> log, int timeout)
         {
-            var cmdArgs = new List<string> { path };
-            cmdArgs.AddRange(args);
-            int rc = Exec.RunCmd(cmdArgs.ToArray(), log);
-            if (rc == 0) { log("   [OK] 安装完成。"); return true; }
-            log("   [!] 安装程序返回非零退出码: " + rc);
-            return false;
+            if (args == null) args = new string[0];
+            // 强制超时控制：避免挂起的安装程序永久冻结 UI。
+            // 原实现把 timeout 传给 Exec.RunCmd 却未实际生效（Exec.RunCmd 使用固定 15 分钟硬上限，
+            // 且不回显安装器输出）；这里直接用 Process 受 timeout 约束，超时则 Kill 并上报，
+            // 同时把 stdout/stderr 实时 pipe 给 log。
+            string QuoteArg(string s)
+            {
+                if (string.IsNullOrEmpty(s)) return "\"\"";
+                bool needsQuote = s.IndexOf(' ') >= 0 || s.IndexOf('"') >= 0 || s.IndexOf('&') >= 0
+                    || s.IndexOf('^') >= 0 || s.IndexOf('|') >= 0 || s.IndexOf('<') >= 0
+                    || s.IndexOf('>') >= 0 || s.IndexOf('%') >= 0;
+                return needsQuote ? "\"" + s.Replace("\"", "\"\"") + "\"" : s;
+            }
+            var psi = new ProcessStartInfo(path, string.Join(" ", System.Array.ConvertAll(args, QuoteArg)))
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            using (var p = Process.Start(psi))
+            {
+                if (p == null) { log("   [!] 无法启动安装程序: " + path); return false; }
+                p.OutputDataReceived += (s, e) => { if (e.Data != null) log(e.Data); };
+                p.ErrorDataReceived += (s, e) => { if (e.Data != null) log("   [ERR] " + e.Data); };
+                p.BeginOutputReadLine();
+                p.BeginErrorReadLine();
+                // 受控等待 + 心跳日志：每 10 秒输出一次进度，避免静默安装器长时间无反馈；
+                // 总等待上限仍为 timeout，超时则 Kill 并上报（与原逻辑一致，不重试）。
+                int waited = 0;
+                const int pollMs = 1000;
+                while (!p.WaitForExit(pollMs))
+                {
+                    waited += pollMs;
+                    if (waited >= timeout)
+                    {
+                        try { p.Kill(); } catch { }
+                        log("   [!] 安装超时（>" + (timeout / 1000) + " 秒），已强制终止。");
+                        return false;
+                    }
+                    if (waited % 10000 == 0)
+                        log("   [i] 安装进行中…（已 " + (waited / 1000) + " 秒）");
+                }
+                if (p.ExitCode == 0) { log("   [OK] 安装完成。"); return true; }
+                log("   [!] 安装程序返回非零退出码: " + p.ExitCode);
+                return false;
+            }
         }
 
         private static RegistryKey OpenKey(string root)
@@ -822,7 +863,7 @@ namespace CpqSystemTool
             new SoftwareDef.Builder("edge", "Microsoft Edge", "浏览器", "https://c2rsetup.officeapps.live.com/c2r/downloadEdge.aspx?platform=Default&source=EdgeStablePage&Channel=Stable&language=zh-cn&brand=M100", "/silent", "/install")
                 .Risk("low")
                 .AltKeywords("Microsoft Edge")
-                .KnownExePaths(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "(x86)\\Microsoft\\Edge\\Application\\msedge.exe")
+                .KnownExePaths(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) + "\\Microsoft\\Edge\\Application\\msedge.exe")
                 .RegKey(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge")
                 .RegKey2(@"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge")
                 .Category("浏览器").Build(),
@@ -838,7 +879,7 @@ namespace CpqSystemTool
                 .AltKeywords("WeChat", "微信", "Tencent WeChat", "微信电脑版")
                 .KnownExePaths(
                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "\\Tencent\\WeChat\\WeChat.exe",
-                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "(x86)\\Tencent\\WeChat\\WeChat.exe",
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) + "\\Tencent\\WeChat\\WeChat.exe",
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + "\\Programs\\Tencent\\WeChat\\WeChat.exe",
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + "\\Tencent\\WeChat\\WeChat.exe",
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "\\Tencent\\WeChat\\WeChat.exe")
@@ -849,7 +890,7 @@ namespace CpqSystemTool
                 .AltKeywords("QQ", "QQNT", "Tencent QQ", "腾讯QQ")
                 .KnownExePaths(
                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "\\Tencent\\QQ\\QQ.exe",
-                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "(x86)\\Tencent\\QQ\\QQ.exe",
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) + "\\Tencent\\QQ\\QQ.exe",
                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "\\Tencent\\QQNT\\QQ.exe",
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + "\\Programs\\Tencent\\QQ\\QQ.exe",
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + "\\Tencent\\QQNT\\QQ.exe")
@@ -857,7 +898,7 @@ namespace CpqSystemTool
             new SoftwareDef.Builder("steam", "Steam", "游戏平台", "https://cdn.akamai.steamstatic.com/client/installer/SteamSetup.exe", "/S")
                 .Risk("low")
                 .AltKeywords("Steam", "Valve Steam")
-                .KnownExePaths(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "(x86)\\Steam\\steam.exe", Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "\\Steam\\steam.exe")
+                .KnownExePaths(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) + "\\Steam\\steam.exe", Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "\\Steam\\steam.exe")
                 .RegKey(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam")
                 .RegKey2(@"HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam")
                 .Category("游戏").Build(),
@@ -871,7 +912,7 @@ namespace CpqSystemTool
             new SoftwareDef.Builder("bandizip", "Bandizip", "压缩工具", "https://www.bandisoft.com/bandizip/dl.php?product=bandizip&lang=zh-cn&type=normal", "/S")
                 .Risk("low")
                 .AltKeywords("Bandizip")
-                .KnownExePaths(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "\\Bandizip\\Bandizip.exe", Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "(x86)\\Bandizip\\Bandizip.exe")
+                .KnownExePaths(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "\\Bandizip\\Bandizip.exe", Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) + "\\Bandizip\\Bandizip.exe")
                 .Category("压缩").Build(),
             new SoftwareDef.Builder("tortoisegit", "TortoiseGit", "Git 客户端", "https://download.tortoisegit.org/tgit/2.19.1.0/TortoiseGit-2.19.1.0-64bit.msi", "/quiet", "/qn", "/norestart", "REBOOT=ReallySuppress").ChocolateyId("tortoisegit")
                 .Risk("low")

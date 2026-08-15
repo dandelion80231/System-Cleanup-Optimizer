@@ -47,9 +47,15 @@
 
 ## 3. README.md 刷新（需提交并推送）
 
+- ⚠️ **功能增删改必须同步 README 正文**（v1.05 曾因只改 badge/文件名，导致 README 仍是旧 12 功能页、缺新增「驱动清理」模块）。升版/加功能时逐项核对并同步：
+  - **目录**：新增/移除对应功能锚点；
+  - **功能概览**：主功能页计数 + 表格行同步；
+  - **功能详解**：新增整节时，类名/方法名须对照真实源码（如 `Modules/DriverStore.cs`、`DriverStorePanel.cs`、`MainWindow.DriverStore.cs`），不得编造；
+  - **项目结构**：新增的 `MainWindow.*.cs`/模块文件、Build* 方法、`Modules/` 计数同步。
 - 版本 badge：`v1.0X` → 新版本。
 - 下载说明文件名更新为 `系统清理与优化工具_vX.XX.exe`。
 - 分发说明注明：由构建输出 `系统清理与优化工具.exe` 按版本重命名而来。
+- README 内容须与 `CHANGELOG.md` + 程序内实际功能**三处一致**（code-review 时一并核对，见 Step 1）。
 - 提交并推送（**push 需用户确认，不擅自 push**）。
 
 ---

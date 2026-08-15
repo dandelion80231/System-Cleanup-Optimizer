@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>StandaloneSetupApiTester</AssemblyName>
+    <RootNamespace>StandaloneSetupApiTester</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <!-- CA1416=platform compat, NU1701=package TF mismatch, CS1591=missing XML doc -->
+    <NoWarn>CA1416;NU1701;CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Enables compiling against net48 reference assemblies on any build machine -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" />
+  </ItemGroup>
+
+</Project>

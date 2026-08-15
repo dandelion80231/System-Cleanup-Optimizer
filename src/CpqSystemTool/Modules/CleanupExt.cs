@@ -19,12 +19,15 @@ namespace CpqSystemTool
 
         public static readonly List<ExtraItem> Items = new List<ExtraItem>
         {
-            new ExtraItem { Id = "thumb",    Name = "缩略图缓存",   Desc = "清理 thumbcache_*.db", Path = @"%LocalAppData%\Microsoft\Windows\Explorer\thumbcache_*.db" },
-            new ExtraItem { Id = "d3d",      Name = "D3D 着色器缓存", Desc = "DirectX 着色器缓存", Path = @"%LocalAppData%\D3DSCache" },
-            new ExtraItem { Id = "term",     Name = "终端缓存",     Desc = "Windows 终端缓存",   Path = @"%LocalAppData%\Microsoft\Windows Terminal\Cache" },
+            new ExtraItem { Id = "thumb",    Name = "缩略图缓存",   Desc = "清理 thumbcache_*.db", Path = @"%LOCALAPPDATA%\Microsoft\Windows\Explorer\thumbcache_*.db" },
+            new ExtraItem { Id = "d3d",      Name = "D3D 着色器缓存", Desc = "DirectX 着色器缓存", Path = @"%LOCALAPPDATA%\D3DSCache" },
+            new ExtraItem { Id = "term",     Name = "终端缓存",     Desc = "Windows 终端缓存",   Path = @"%LOCALAPPDATA%\Microsoft\Windows Terminal\Cache" },
             new ExtraItem { Id = "prefetch", Name = "预读取文件",   Desc = "Prefetch 预读取",     Path = @"C:\Windows\Prefetch" },
             new ExtraItem { Id = "winsxs",   Name = "WinSxS 冗余",  Desc = "DISM 组件清理 (ResetBase，可能耗时数分钟)", Path = null },
         };
+
+        // 统一记录"已忽略的异常"，避免重复样板。
+        private static void LogIgnored(Exception ex) => System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + ex.Message);
 
         public static void RunSelected(IEnumerable<string> ids, Action<string> log)
         {
@@ -45,15 +48,15 @@ namespace CpqSystemTool
                     {
                         foreach (var f in Directory.EnumerateFiles(expanded, "*", SearchOption.TopDirectoryOnly))
                         {
-                            try { File.Delete(f); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                            try { File.Delete(f); } catch (Exception caughtEx) { LogIgnored(caughtEx);}
                         }
                         foreach (var d in Directory.EnumerateDirectories(expanded, "*", SearchOption.TopDirectoryOnly))
                         {
-                            try { Directory.Delete(d, true); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                            try { Directory.Delete(d, true); } catch (Exception caughtEx) { LogIgnored(caughtEx);}
                         }
                     }
                 }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  /* skip locked */ }
+                catch (Exception caughtEx) { LogIgnored(caughtEx);/* skip locked */ }
             }
             log("[OK] 额外清理完成");
         }

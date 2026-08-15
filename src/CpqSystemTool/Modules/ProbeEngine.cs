@@ -73,9 +73,7 @@ namespace CpqSystemTool
     internal static class ProbeData
     {
         public const string UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
-        public const int PerSiteTimeout = 30000;
         public const int VerifyTimeout = 15000;
-        public const int MaxRedirect = 8;
 
         public static readonly Regex ExeBinCt = new Regex("application/octet-stream|application/x-msdownload|application/x-msdos-program|application/force-download|binary", RegexOptions.IgnoreCase);
         public static readonly Regex MobileMacPkg = new Regex(@"\.apk|\.ipa|\.dmg|\.app|\.pkg|\.deb|\.rpm(\?|$)", RegexOptions.IgnoreCase);

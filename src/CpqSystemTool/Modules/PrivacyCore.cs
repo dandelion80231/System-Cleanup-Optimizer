@@ -199,7 +199,7 @@ namespace CpqSystemTool
             log("添加阻止 Windows 搜索联网的防火墙规则...");
             Exec.RunPowerShell("Remove-NetFirewallRule -DisplayName '阻止Windows搜索联网' -ErrorAction SilentlyContinue;" +
                 "New-NetFirewallRule -DisplayName '阻止Windows搜索联网' -Direction Outbound " +
-                "-Program \"%SystemRoot%\\SystemApps\\Microsoft.Windows.Search_cw5n1h2txyewy\\SearchHost.exe\" -Action Block", log);
+                "-Program \"$env:SystemRoot\\SystemApps\\Microsoft.Windows.Search_cw5n1h2txyewy\\SearchHost.exe\" -Action Block", log);
             log("[OK] 防火墙规则已添加");
         }
         public static void RemoveSearchFirewallRule(Action<string> log)

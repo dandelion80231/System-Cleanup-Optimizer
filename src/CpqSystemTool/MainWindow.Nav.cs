@@ -35,6 +35,7 @@ namespace CpqSystemTool
                 new NavItem { Key = "activation",Title = "激活工具", Icon = "🔑", Build = BuildActivation },
                 new NavItem { Key = "sysinfo",   Title = "系统信息",   Icon = "ℹ", Build = BuildSystemInfo },
                 new NavItem { Key = "maint",     Title = "维护工具",   Icon = "🔧", Build = BuildMaintenanceTools },
+                new NavItem { Key = "driverstore", Title = "驱动清理", Icon = "🗑", Build = BuildDriverStore },
                 new NavItem { Key = "config",    Title = "配置管理",   Icon = "⚙", Build = BuildConfig },
                 // 隐藏页：不占用侧边栏列表，由底部品牌区（图标 + 版本号）点击进入
                 new NavItem { Key = "about",     Title = "关于",       Icon = "©", Build = BuildAbout, Hidden = true },
@@ -158,6 +159,10 @@ namespace CpqSystemTool
             var n = _nav.FirstOrDefault(x => x.Key == key);
             if (n == null) return;
             _activeNavKey = key;
+
+            // 复位最外侧滚动控制：驱动清理页会临时关闭 ContentArea 纵向滚动（改为 DataGrid/日志各自滚动），
+            // 每次导航先恢复为 Auto，确保其它页面不被误关。
+            ContentArea.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
             PageTitle.Text = n.Title;
             // 先清空旧内容再设新的，避免 WPF 视觉树残留导致页面重叠
             ContentArea.Content = null;
@@ -165,6 +170,15 @@ namespace CpqSystemTool
 
             // 统一包装：响应式拉伸（最大化时撑满 + 超宽屏 MaxWidth=1400 居中）
             SetPageContent(n.Build());
+
+            // 驱动清理页采用"各自独立滚动"（DataGrid + 日志框自带滚动），关闭最外层纵向滚动。
+            // 放在 Build() 之后设置，避免预加载 BuildDriverStore() 时影响当前显示的其它页面。
+            if (key == "driverstore")
+            {
+                ContentArea.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                // 每次进入都后台刷新驱动列表（进入即用已加载数据，同时后台拉取最新）
+                _driverStorePanel?.Refresh();
+            }
 
             ContentArea.ScrollToTop();
 
@@ -186,11 +200,6 @@ namespace CpqSystemTool
             // 底部品牌区（关于入口）同步选中态——与主导航按钮点击态保持一致
             if (_aboutEntry != null)
                 _aboutEntry.Background = key == "about" ? _accent : Brushes.Transparent;
-            var footerVer = FindName("FooterVersionLabel") as TextBlock;
-            if (footerVer != null)
-                footerVer.Foreground = key == "about"
-                    ? (_isDarkMode ? Brushes.Black : Brushes.White)
-                    : _textMain;
         }
 
         /// <summary>

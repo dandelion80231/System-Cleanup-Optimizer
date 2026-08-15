@@ -136,7 +136,7 @@ namespace CpqSystemTool
                     {
                         // 绕过 PowerShell：cscript.exe 直接调用 OSPP.VBS（// 双斜杠经 PowerShell -Command 二次解析会丢输出）
                         string outp = Exec.RunCmdGet(new[] { "cscript.exe", "/nologo", ospp, "/dstatusall" }, null);
-                        return outp != null && outp.Contains("LICENSE STATUS:  ---LICENSED---");
+                        return outp != null && outp.Contains("---LICENSED---");
                 }
                 return false;
             }

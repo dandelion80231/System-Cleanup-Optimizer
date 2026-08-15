@@ -26,6 +26,8 @@ namespace CpqSystemTool
         internal SolidColorBrush _bgCard;
         internal SolidColorBrush _successGreen;
         internal SolidColorBrush _dangerRed;
+        // 危急操作描边（强制删除等）：深于 _dangerRed，用于在亮色危险按钮上形成可见描边对比，避免页面内硬编码魔法色
+        internal SolidColorBrush _dangerDark;
         internal SolidColorBrush _warnOrange;
         // 主题感知辅助字段（避免页面中硬编码深色）
         internal SolidColorBrush _bgDeep;          // 深一层（日志框/状态区/侧栏底栏）
@@ -98,6 +100,9 @@ namespace CpqSystemTool
                     // 首次导航：构建内容页
                     Navigate("tweaks");
                     App.Trace("Loaded.afterNavigate");
+                    // 后台预加载驱动清理页（构造即触发 Refresh() 枚举），用户切换时数据已就绪
+                    PreloadDriverStore();
+                    App.Trace("Loaded.afterPreloadDriverStore");
                     // ★★★ 导航完成后立即重刷全部外壳色（同步，确保首帧即正确）。
                     //   构造函数中的 ApplyShellColors 在 Navigate 之前执行，
                     //   WPF 渲染管道可能在 Navigate 重建内容时回退了部分外壳色。★★★
@@ -127,7 +132,14 @@ namespace CpqSystemTool
                         if (innerSv != null && innerSv != ContentArea && innerSv.ScrollableHeight > 0)
                             targetSv = innerSv;
                     }
-                    var offset = targetSv.VerticalOffset - e.Delta / 3.0;
+                    // 按目标 ScrollViewer 的滚动模式选择步进：
+                    //  - 物理滚动（CanContentScroll=false，如 ContentArea/普通 ScrollViewer）：沿用 ~40px/格，平滑。
+                    //  - 逻辑滚动（CanContentScroll=true，如 DataGrid 内部 ScrollViewer）：按"行"步进（默认 3 行/格），
+                    //    避免把 e.Delta/3 当作"逻辑单位"导致一次跳几十行（用户反馈"切换太快 / 滚动行数过大"）。
+                    double step = targetSv.CanContentScroll
+                        ? Math.Sign(e.Delta) * (double)SystemParameters.WheelScrollLines
+                        : e.Delta / 3.0;
+                    var offset = targetSv.VerticalOffset - step;
                     if (offset < 0) offset = 0;
                     if (offset > targetSv.ScrollableHeight) offset = targetSv.ScrollableHeight;
                     targetSv.ScrollToVerticalOffset(offset);
