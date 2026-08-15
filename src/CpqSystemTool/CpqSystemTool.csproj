@@ -46,6 +46,8 @@
     <Resource Include="background-light.png" />
     <EmbeddedResource Include="src.zip" />
     <EmbeddedResource Include="Resources\Skus\**\*.xrm-ms" />
+    <!-- About 页更新日志单一事实来源：嵌入仓库根 CHANGELOG.md，运行时解析渲染，避免与硬编码文本脱节 -->
+    <EmbeddedResource Include="..\..\CHANGELOG.md" LogicalName="CHANGELOG.md" />
   </ItemGroup>
 
 </Project>

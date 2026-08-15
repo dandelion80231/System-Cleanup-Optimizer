@@ -41,7 +41,7 @@
 - **SoftwareInstall**：安装器等待逻辑加入心跳日志（每 10 秒输出一次进度），不加重试、保持原有超时/Kill/退出码行为。
 
 ### 📄 文档 / 合规
-- **驱动清理模块许可证澄清**：上游 Driver Store Explorer（RAPR）实际采用 GPL v2 许可（与本项目 Apache-2.0 不兼容）。经核查本仓库未包含其任何源代码，驱动清理为基于 Windows 原生 `SetupAPI` / `PnPUtil` / `DISM` 的独立实现，仅界面列布局与行为设计受其启发。已将 README / NOTICE 中「移植」措辞修正为「参考 / 独立实现」，并在 NOTICE 补充「第三方来源与致谢」（非隶属、非衍生声明）。本澄清不影响 Apache-2.0 许可合规性。
+- **驱动清理模块许可证澄清**：上游 Driver Store Explorer（RAPR）实际采用 GPL v2 许可（与本项目 Apache-2.0 不兼容）。经核查本仓库未包含其任何源代码，驱动清理为基于 Windows 原生 `SetupAPI` / `PnPUtil` / `DISM` 的独立实现，仅界面列布局与行为设计受其启发。已将 README / NOTICE 措辞修正为「参考 / 独立实现」，并在 NOTICE 补充「第三方来源与致谢」（非隶属、非衍生声明）。本澄清不影响 Apache-2.0 许可合规性。
 
 ---
 
@@ -93,7 +93,7 @@
 - **`.gitignore` 行内注释 bug**：git 不支持行内注释（仅行首 `#` 生效），`runtimes/  # 注释` 整行被当模式导致规则失效；更严重的是 `!src/CpqSystemTool/src.zip  # 注释` 取反失效会让构建必需的 `src.zip` 被 `*.zip` 错误忽略（克隆后报 CS1566）。改为独立 `#` 行后恢复正确忽略。
 
 ### ✨ 新增
-- **WebView2 官方 exe 直链探针模块**：`Modules/ProbeBrowserHost.cs`（独立 STA 线程 + WinForms 承载 WebView2，复用系统 Edge Runtime，主动扫描 `msedgewebview2.exe` 绕过损坏注册表）与 `Modules/ProbeEngine.cs`（移植 official_exe_finder.js 的纯逻辑引擎）。
+- **WebView2 官方 exe 直链探针模块**：`Modules/ProbeBrowserHost.cs`（独立 STA 线程 + WinForms 承载 WebView2，复用系统 Edge Runtime，主动扫描 `msedgewebview2.exe` 绕过损坏注册表）与 `Modules/ProbeEngine.cs`（参考 official_exe_finder.js 的纯逻辑引擎，独立实现）。
 - **依赖管理 UI 增强**（`MainWindow.Maint.cs`，+363 行）：Node + Playwright + Chromium 回退路径的安装 / 卸载与状态刷新；`IsNodeDepsReady` 收口为统一就绪判定。
 
 ### 🔧 变更
