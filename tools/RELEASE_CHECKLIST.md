@@ -104,3 +104,28 @@
   - `gh release view --json assets` 确认资产名 / 大小 / SHA 正确；
   - WebFetch `https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest` 确认页面与 README 版本正常。
 
+---
+
+## 7. 刷新已有 Release（不打新 tag，仅更新内容）
+
+> 场景：GitHub 上已有某版本 Release，本轮只推了 `master` + 上传了二进制，但发现 Release 页的**源代码(zip/tar.gz)、README 资产、更新描述仍是旧 tag 的内容**。根因：这些元素**绑定到 tag 指向的 commit**，仅推 master / 上传二进制**不会**刷新它们。
+
+⚠️ **正确做法（更新现有 tag，非新建）：**
+
+1. 先把 `CHANGELOG.md` 对应版本段补齐（🐛 修复 / ♻️ 打磨 等），提交到 `master`（得到新 HEAD，如 `2cc5e01`）。
+2. 移动现有 tag 到新 HEAD 并强制推送：
+   ```
+   git tag -f vX.XX <newHEAD>
+   git push origin vX.XX --force        # forced update，远程 tag 指向新 commit
+   git push origin master               # 让分支追上新 HEAD，与 tag 对齐
+   ```
+   GitHub 会据此**重新生成** Source code 源码包（来自新 commit）。
+3. 更新 Release 描述正文：`gh release edit vX.XX --notes-file <vX.XX changelog>`。
+4. **重新上传所有「上传型」资产**（不为自动生成）：README.md 在 Release 上是当初上传的资产，旧 tag 时是旧版，必须重传覆盖：
+   ```
+   gh release upload vX.XX "README.md" --clobber
+   ```
+5. 核验：下载 `gh api .../zipball/vX.XX` 的源码包，确认含本轮新代码（如新增文件 / bug 修复标记）；`gh release view --json assets` 确认资产名与大小。
+
+📌 **关键认知**：「不打新 tag」≠「不碰 tag」。要刷新已存在 Release 的内容，必须**移动现有 tag（force-push）并重新上传上传型资产**；否则源码/README/描述始终停在原 tag 的旧 commit。这与「不打新 tag」不冲突（是更新现有 tag，不是新建 `vX.YY`）。
+

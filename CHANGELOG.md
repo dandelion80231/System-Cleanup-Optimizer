@@ -6,10 +6,10 @@
 
 ## [v1.05] - 2026-08-14
 
-> 相对 v1.04 的源码变更：新增「驱动清理」模块（移植 Driver Store Explorer / RAPR 核心能力）+ 多项交互与体验增强 + 版本提升 v1.04 → v1.05。
+> 相对 v1.04 的源码变更：新增「驱动清理」模块（参考 Driver Store Explorer / RAPR 界面与行为设计，基于 Windows 原生 API 独立实现）+ 多项交互与体验增强 + 版本提升 v1.04 → v1.05。
 
 ### ✨ 新增
-- **驱动清理模块（移植 RAPR / Driver Store Explorer 核心能力）**：左侧导航新增独立「驱动清理」页，提供——
+- **驱动清理模块（参考 RAPR / Driver Store Explorer 设计，基于 Windows 原生 API 独立实现）**：左侧导航新增独立「驱动清理」页，提供——
   - **枚举已装驱动包**：调用 `pnputil /enum-drivers` 解析 OEM 驱动列表（供应商、类、版本、日期、发布名、原始 inf 名、占用空间）。
   - **在役保护**：通过 WMI `Win32_PnPSignedDriver` 比对 `InfName` 映射，标记当前在用的驱动，默认不可删。
   - **旧版冗余识别**：同系列驱动仅保留最新版受保护，其余标记为可清理旧版。
@@ -39,6 +39,9 @@
 ### ♻️ 质量打磨（行为保持）
 - **DriverStorePanel**：删除 4 个声明赋值后从未读取的死画刷字段；强制删除按钮去硬编码红边，改用主题画刷 `_dangerDark`。
 - **SoftwareInstall**：安装器等待逻辑加入心跳日志（每 10 秒输出一次进度），不加重试、保持原有超时/Kill/退出码行为。
+
+### 📄 文档 / 合规
+- **驱动清理模块许可证澄清**：上游 Driver Store Explorer（RAPR）实际采用 GPL v2 许可（与本项目 Apache-2.0 不兼容）。经核查本仓库未包含其任何源代码，驱动清理为基于 Windows 原生 `SetupAPI` / `PnPUtil` / `DISM` 的独立实现，仅界面列布局与行为设计受其启发。已将 README / NOTICE 中「移植」措辞修正为「参考 / 独立实现」，并在 NOTICE 补充「第三方来源与致谢」（非隶属、非衍生声明）。本澄清不影响 Apache-2.0 许可合规性。
 
 ---
 

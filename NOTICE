@@ -6,3 +6,12 @@ Copyright 2026 狸奴呦            ╲
 联系邮箱：dandelion8023@365ms.cc
 
 本产品包含 狸奴呦            ╲ 开发的软件。
+
+----------------------------------------------------------------------
+
+第三方来源与致谢
+----------------
+驱动清理模块的界面列布局与部分行为设计参考了 Driver Store Explorer（RAPR）
+(https://github.com/lostindark/DriverStoreExplorer)，上游采用 GNU GPL v2 许可。
+本模块为基于 Windows 原生 API 的独立实现，未包含其任何源代码，与上游项目无
+隶属或衍生关系。

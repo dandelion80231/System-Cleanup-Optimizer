@@ -382,7 +382,9 @@
 
 ### 14. 驱动清理
 
-**核心能力**: 移植 Driver Store Explorer（RAPR）核心能力，对系统驱动存储（Driver Store）进行枚举、识别、备份与清理；支持设备名称补全、列头三态排序、启动后台预加载与每次进入自动刷新。
+**核心能力**: 基于 Windows 原生驱动管理接口（PnP 实用工具 / DISM / SetupAPI）独立实现，界面列布局与行为设计参考 Driver Store Explorer（RAPR）；对系统驱动存储（Driver Store）进行枚举、识别、备份与清理；支持设备名称补全、列头三态排序、启动后台预加载与每次进入自动刷新。
+
+> **第三方来源与致谢**：本模块的列顺序、标题与部分行为设计参考了 [Driver Store Explorer（RAPR）](https://github.com/lostindark/DriverStoreExplorer)（上游采用 GPL v2 许可），但为**独立实现**——仅使用 Windows 原生 API，未包含其任何源代码，与上游项目无隶属或衍生关系。
 
 **实现原理**:
 - **枚举**: 默认 PnP 实用工具后端 `pnputil /enum-drivers`（仅含第三方驱动）解析 OEM 驱动列表；可切换 DISM 后端（`Get-WindowsDriver`）列出含系统内置驱动的全量清单（DISM 后端仅查看，删除/导出/安装按钮自动禁用，避免误操作）。
