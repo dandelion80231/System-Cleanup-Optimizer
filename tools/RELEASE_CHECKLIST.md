@@ -72,6 +72,7 @@
 
 ## 5. 二进制资产上传
 
+- ⚠️ **上传 / push 前最后核对 `.gitignore`**：先 `git status --short` 确认仓库根目录无遗留未跟踪的本地产物（调查类 `.md`、`pnputil_*.txt` 等命令输出、`site-dist/` 部署目录等）；若这些文件未被 `.gitignore` 覆盖，先补进 `.gitignore` 再继续，杜绝 `git add -A` / `git add .` 误提交非项目文件（曾因根目录遗留报告文档导致需事后清理）。
 - 资产名用**英文名** `System-Cleanup-Optimizer_vX.XX.exe`（与 v1.03 线上资产命名一致；工具内置更新也按此名取 `browser_download_url`）。
 - 本地中文交付 `系统清理与优化工具_vX.XX.exe` **复制为英文名再上传**，传完删临时副本。
 - ⚠️ **切勿经 Git Bash 向 Windows 版 gh.exe 传中文参数**，否则资产名会被截断为 `_vX.XX.exe`。

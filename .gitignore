@@ -59,3 +59,9 @@ Desktop.ini
 
 # Non-project memory dump
 MEMORY_full.md
+
+# Local investigation / deployment artifacts (not part of the project, do not commit)
+# 用 ASCII 日期后缀锚定，规避中文文件名 Unicode 归一化导致 .gitignore 不匹配
+*_2026-08-12.md
+pnputil_*.txt
+site-dist/
