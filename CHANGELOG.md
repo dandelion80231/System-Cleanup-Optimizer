@@ -6,13 +6,15 @@
 
 ## [v1.07] - 2026-08-17
 
-> 相对 v1.06 的源码变更：完成「安装到」按钮的深/浅色主题自适应（收口 v1.06 下拉框主题统一），并例行版本提升 v1.06 → v1.07。
+> 相对 v1.06 的源码变更：完成全部下拉框（ComboBox）深/浅色主题统一与自定义下拉 Popup 层级修复，修复「安装到」按钮主题自适应，并例行版本提升 v1.06 → v1.07。
 
 ### 🐛 修复
 - **「安装到」按钮背景/字体色随主题切换**：自定义安装路径态此前硬编码浅薄荷背景 `Color.FromRgb(0xE6,0xF7,0xF4)`，深色模式下始终不变；现改为主题笔刷 `_btnSecondaryBg` + `_accent` 高亮文字/边框，与默认态均随深/浅色自动变换。
+- **修复自定义下拉「浮到最顶层」**：「管理依赖」「全部分类」两个 Popup（AllowsTransparency=true 会以独立顶层 HWND 带 WS_EX_TOPMOST 渲染）在打开时剥离 WS_EX_TOPMOST，并挂 HwndSource Hook 在 WM_WINDOWPOSCHANGED 时持续剥离，使其落到正常层级、 不再压在所有窗口（含其他应用）之上（`UiShapes.DisablePopupTopmost`）。
 
 ### ♻️ 变更 / 策略
 - **版本提升 v1.06 → v1.07**：同步 csproj（1.0.7.0 ×3）/ `APP_VERSION`（`v1.07`）/ 交付文件名 `系统清理与优化工具_v1.07.exe`。
+- **统一全部 ComboBox 深/浅色自适应**：新增 `UiShapes.ApplyComboBoxTheme`，以自定义 ControlTemplate（闭合框 + 下拉弹层均引用主题键）+ ComboBoxItem 样式，让 7 个 ComboBox（版本切换目标 / Office 版本 / Edge 频道 / 驱动引擎 / 分组 / 软件分类 / 风险等级）的背景、字体、边框与下拉弹层（含选中/悬浮态）统一跟随深/浅色主题笔刷，替代默认跟随系统色的 Aero2 模板（深模式下弹层为刺眼白底）；弹层刻意关闭 AllowsTransparency 以复用默认 ComboBox 的非置顶行为，避免重新引入浮层问题。
 
 ---
 
@@ -39,10 +41,6 @@
 ### 🔧 发布后跟进（v1.06 即时修补）
 - **WebView2 探针依赖下载改为 API 自身异步卸载**：`WebView2ProbeDeps.EnsureWebView2ProbeDeps` 重构为 `EnsureWebView2ProbeDepsAsync`（真正异步、下载走线程池、可 await），`ProbeBrowserHost.InitAsync` 与 `CheckWebView2ReadyAsync` 改为直接 `await`，不再依赖「调用方用 Task.Run 包裹」的约定来避免 UI 冻结；保留同步兼容包装供后台线程（RunInBg）调用方使用，全程 `ConfigureAwait(false)` 无死锁风险。
 - **抽取 `UiShapes.MakeTextWithArrowGrid`**：消除「管理依赖」「全部分类」两处下拉按钮重复的「文字 + 右侧箭头」2 列 Grid 构造，统一由共享方法生成（布局与原先完全一致）。
-
-### 🔧 发布后跟进（v1.06 二次修补 · 下拉框层级与主题统一）
-- **修复自定义下拉「浮到最顶层」**：「管理依赖」「全部分类」两个 Popup（AllowsTransparency=true 会以独立顶层 HWND 带 WS_EX_TOPMOST 渲染）在打开时剥离 WS_EX_TOPMOST，并挂 HwndSource Hook 在 WM_WINDOWPOSCHANGED 时持续剥离，使其落到正常层级、不再压在所有窗口（含其他应用）之上（`UiShapes.DisablePopupTopmost`）。
-- **统一全部 ComboBox 深/浅色自适应**：新增 `UiShapes.ApplyComboBoxTheme`，以自定义 ControlTemplate（闭合框 + 下拉弹层均引用主题键）+ ComboBoxItem 样式，让 7 个 ComboBox（版本切换目标 / Office 版本 / Edge 频道 / 驱动引擎 / 分组 / 软件分类 / 风险等级）的背景、字体、边框与下拉弹层（含选中/悬浮态）统一跟随深/浅色主题笔刷，替代默认跟随系统色的 Aero2 模板（深模式下弹层为刺眼白底）；弹层刻意关闭 AllowsTransparency 以复用默认 ComboBox 的非置顶行为，避免重新引入浮层问题。
 
 ---
 
