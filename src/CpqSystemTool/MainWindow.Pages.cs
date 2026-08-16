@@ -4005,17 +4005,7 @@ namespace CpqSystemTool
                         };
                         // 按钮内容：文字 + 右侧下拉箭头，模拟 ComboBox 外观
                         var catBtnText = new TextBlock { Text = "全部分类", FontSize = 13, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
-                        var catBtnArrow = UiShapes.MakeChevron(_textDim);
-                        catBtnArrow.VerticalAlignment = VerticalAlignment.Center;
-                        catBtnArrow.HorizontalAlignment = HorizontalAlignment.Center;
-                        catBtnArrow.Margin = new Thickness(6, 2, 0, 0);
-                        var catBtnContent = new Grid { MinWidth = 100 };
-                        catBtnContent.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                        catBtnContent.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                        Grid.SetColumn(catBtnText, 0);
-                        Grid.SetColumn(catBtnArrow, 1);
-                        catBtnContent.Children.Add(catBtnText);
-                        catBtnContent.Children.Add(catBtnArrow);
+                        var catBtnContent = UiShapes.MakeTextWithArrowGrid(catBtnText, _textDim, minWidth: true);
                         catBtn.Content = catBtnContent;
 
                         var catList = new ListBox

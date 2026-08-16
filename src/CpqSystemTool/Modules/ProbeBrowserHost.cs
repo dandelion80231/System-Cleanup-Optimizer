@@ -59,7 +59,7 @@ namespace CpqSystemTool
 
             // 安全网：探针初始化前确保 exe 目录存在 WebView2 托管依赖（单文件分发场景）。
             // 失败仅记录、不抛异常，随后仍走既有 WebView2 初始化 / Node 回退逻辑。
-            try { WebView2ProbeDeps.EnsureWebView2ProbeDeps(diag, p => (diag ?? (_ => { }))(WebView2ProbeDeps.ProgressLine(p))); }
+            try { await WebView2ProbeDeps.EnsureWebView2ProbeDepsAsync(diag, p => (diag ?? (_ => { }))(WebView2ProbeDeps.ProgressLine(p))); }
             catch (Exception ex) { diag?.Invoke("[WebView2] 探针依赖预拉取异常（已忽略）：" + ex.Message); }
 
             // 若托管依赖在下载/解压后仍缺失（如离线、目录只读），不要启动 STA 线程——
@@ -272,10 +272,11 @@ namespace CpqSystemTool
                 // TypeLoadException/FileNotFoundException，永远走不到 InitAsync 里的下载。
                 // RunProbeInternal 已如此排序，此处对齐，确保刷新状态路径也能自愈。
                 // 本方法由 deps 弹窗刷新（RefreshDepStatus，跑在 UI 线程）await 调用，
-                // 首次 DLL 缺失时下载最长 60s；用 Task.Run 把同步阻塞让到后台线程，避免界面冻结。
+                // 首次 DLL 缺失时下载最长 60s；EnsureWebView2ProbeDepsAsync 自身即为异步且不阻塞调用线程，
+                // 直接 await 即可避免界面冻结（无需再包一层 Task.Run）。
                 // 刷新路径 diag 为 null（仅写诊断日志文件、不刷 UI），但 progress 回调由 RefreshDepStatus
                 // 经 Dispatcher 回到 UI 线程写入日志框，显示下载百分比（\r 前缀原地刷新最后一行）。
-                await Task.Run(() => WebView2ProbeDeps.EnsureWebView2ProbeDeps(diag, progress));
+                await WebView2ProbeDeps.EnsureWebView2ProbeDepsAsync(diag, progress);
 
                 // 复用真实初始化路径：创建宿主窗口（屏幕内渲染）+ EnsureCoreWebView2Async。
                 // 用 using 确保无论成败都 Dispose 掉 STA 线程与临时用户数据目录。

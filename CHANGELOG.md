@@ -24,6 +24,10 @@
 ### ♻️ 质量打磨（行为保持）
 - 抽出 `AppendOrReplaceLog`（原地百分比进度重写）、`repositionDepsPopup`（主窗口拖动时下拉跟随）等局部优化。
 
+### 🔧 发布后跟进（v1.06 即时修补）
+- **WebView2 探针依赖下载改为 API 自身异步卸载**：`WebView2ProbeDeps.EnsureWebView2ProbeDeps` 重构为 `EnsureWebView2ProbeDepsAsync`（真正异步、下载走线程池、可 await），`ProbeBrowserHost.InitAsync` 与 `CheckWebView2ReadyAsync` 改为直接 `await`，不再依赖「调用方用 Task.Run 包裹」的约定来避免 UI 冻结；保留同步兼容包装供后台线程（RunInBg）调用方使用，全程 `ConfigureAwait(false)` 无死锁风险。
+- **抽取 `UiShapes.MakeTextWithArrowGrid`**：消除「管理依赖」「全部分类」两处下拉按钮重复的「文字 + 右侧箭头」2 列 Grid 构造，统一由共享方法生成（布局与原先完全一致）。
+
 ---
 
 ## [v1.05] - 2026-08-14

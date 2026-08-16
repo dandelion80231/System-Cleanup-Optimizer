@@ -1,4 +1,5 @@
 ﻿using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 
 namespace CpqSystemTool
@@ -44,6 +45,25 @@ namespace CpqSystemTool
             factory.SetValue(System.Windows.Shapes.Path.HeightProperty, 4.0);
             factory.SetValue(System.Windows.Shapes.Path.StretchProperty, Stretch.None);
             factory.SetValue(System.Windows.Shapes.Path.SnapsToDevicePixelsProperty, true);
+        }
+
+        /// <summary>构造「文字 + 右侧线条箭头」两列 Grid（第 0 列 Star 放文字、第 1 列 Auto 放箭头），
+        /// 用于「管理依赖」「全部分类」等下拉按钮内容，消除重复 Grid 构造。minWidth=true 时设 MinWidth=100。</summary>
+        public static Grid MakeTextWithArrowGrid(UIElement text, Brush arrowStroke, bool minWidth = false)
+        {
+            var grid = new Grid();
+            if (minWidth) grid.MinWidth = 100;
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var arrow = MakeChevron(arrowStroke);
+            arrow.VerticalAlignment = VerticalAlignment.Center;
+            arrow.HorizontalAlignment = HorizontalAlignment.Center;
+            arrow.Margin = new Thickness(6, 2, 0, 0);
+            Grid.SetColumn(text, 0);
+            Grid.SetColumn(arrow, 1);
+            grid.Children.Add(text);
+            grid.Children.Add(arrow);
+            return grid;
         }
     }
 }

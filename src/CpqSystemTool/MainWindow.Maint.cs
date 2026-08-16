@@ -132,17 +132,7 @@ namespace CpqSystemTool
 
             // 按钮内容：文字 + 右侧下拉箭头，与驱动清理页 ComboBox 及「全部分类」下拉按钮保持视觉一致
             var depsBtnText = new TextBlock { Text = "管理依赖", FontSize = 12, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
-            var depsBtnArrow = UiShapes.MakeChevron(_textDim);
-            depsBtnArrow.VerticalAlignment = VerticalAlignment.Center;
-            depsBtnArrow.HorizontalAlignment = HorizontalAlignment.Center;
-            depsBtnArrow.Margin = new Thickness(6, 2, 0, 0);
-            var depsBtnContent = new Grid();
-            depsBtnContent.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            depsBtnContent.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            Grid.SetColumn(depsBtnText, 0);
-            Grid.SetColumn(depsBtnArrow, 1);
-            depsBtnContent.Children.Add(depsBtnText);
-            depsBtnContent.Children.Add(depsBtnArrow);
+            var depsBtnContent = UiShapes.MakeTextWithArrowGrid(depsBtnText, _textDim);
 
             var manageDepsBtn = new ToggleButton
             {

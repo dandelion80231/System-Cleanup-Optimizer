@@ -45,8 +45,10 @@ namespace CpqSystemTool
         /// <summary>
         /// 确保 exe 目录中存在 WebView2 探针依赖。已存在则立即返回（幂等）；
         /// 下载/解压失败时通过 log 报告并优雅返回（不抛异常）。
+        /// 本方法为真正异步实现：下载在后台线程池执行，调用方（含 UI/STA 线程）await 它即可，
+        /// 无需自行用 Task.Run 包裹，避免依赖“调用方约定”来保障不冻结界面。
         /// </summary>
-        public static void EnsureWebView2ProbeDeps(Action<string> log, Action<int> progress = null)
+        public static async Task EnsureWebView2ProbeDepsAsync(Action<string> log, Action<int> progress = null)
         {
             if (log == null) log = s => { };
             WriteDepsLog("=== EnsureWebView2ProbeDeps 开始 ===");
@@ -89,7 +91,7 @@ namespace CpqSystemTool
             {
                 tempNupkg = Path.Combine(Path.GetTempPath(), "Microsoft.Web.WebView2." + WebView2PkgVersion + ".nupkg");
                 WriteDepsLog("tempNupkg=" + tempNupkg);
-                DownloadFileWithClient(nupkgUrl, tempNupkg, log, progress);
+                await DownloadFileWithClientAsync(nupkgUrl, tempNupkg, log, progress).ConfigureAwait(false);
                 WriteDepsLog("[*] nupkg 下载完成，大小=" + new FileInfo(tempNupkg).Length);
 
                 log("[*] 下载完成，开始解压依赖到 exe 目录…");
@@ -125,13 +127,22 @@ namespace CpqSystemTool
         }
 
         /// <summary>
-        /// 同步下载 nupkg 到临时文件，并在下载过程中通过 progress 回调报告百分比（0–100）。
+        /// 同步兼容包装：供后台线程（RunInBg 调用路径）使用，阻塞等待 EnsureWebView2ProbeDepsAsync 完成。
+        /// 内部全程 ConfigureAwait(false) + Task.Run，不会在调用方 SynchronizationContext 上死锁；
+        /// UI/STA 线程请改用 EnsureWebView2ProbeDepsAsync 并 await，避免阻塞界面。
+        /// </summary>
+        public static void EnsureWebView2ProbeDeps(Action<string> log, Action<int> progress = null)
+            => EnsureWebView2ProbeDepsAsync(log, progress).GetAwaiter().GetResult();
+
+        /// <summary>
+        /// 异步下载 nupkg 到临时文件，并在下载过程中通过 progress 回调报告百分比（0–100）。
         /// 使用 Task.Run 包裹异步 HttpClient 调用，以脱离任何可能存在的 SynchronizationContext
         /// （避免在 UI 线程上 sync-over-async 死锁），同时仍由 HttpClient 自动使用系统代理。
+        /// 方法本身返回 Task，调用方 await 即可，不再同步阻塞其线程。
         /// </summary>
-        private static void DownloadFileWithClient(string url, string destPath, Action<string> log, Action<int> progress)
+        private static async Task DownloadFileWithClientAsync(string url, string destPath, Action<string> log, Action<int> progress)
         {
-            Task.Run(async () =>
+            await Task.Run(async () =>
             {
                 using (var client = new HttpClient())
                 {
@@ -167,7 +178,7 @@ namespace CpqSystemTool
                         }
                     }
                 }
-            }).GetAwaiter().GetResult();
+            }).ConfigureAwait(false);
         }
 
         private static void ExtractEntries(string nupkgPath, string exeDir, Action<string> log)
