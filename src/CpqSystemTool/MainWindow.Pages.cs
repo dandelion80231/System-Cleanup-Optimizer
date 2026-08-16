@@ -1304,6 +1304,8 @@ namespace CpqSystemTool
                 VerticalContentAlignment = VerticalAlignment.Center,
                 IsEnabled = false
             };
+            // 统一深/浅色自适应（闭合框 + 下拉弹层背景与字体跟随主题）
+            UiShapes.ApplyComboBoxTheme(vsTargetCombo, _inputBg, _inputFg, _panelBorder, _windowBg, _panelBorder, _textMain, _rowHover, _rowSelected, _textDim);
             Grid.SetColumn(vsTargetCombo, 2);
             vsGrid.Children.Add(vsTargetCombo);
 
@@ -1607,13 +1609,8 @@ namespace CpqSystemTool
             officeBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });                    // 间距
             officeBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                      // 卸载按钮
             var cb = new ComboBox { MinHeight = 34, FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Left, HorizontalAlignment = HorizontalAlignment.Stretch };
-            // 下拉项加大高度，避免文字被截断
-            var itemStyle = new Style(typeof(ComboBoxItem));
-            itemStyle.Setters.Add(new Setter(Control.FontSizeProperty, 12.5));
-            itemStyle.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(8, 6, 4, 6)));
-            itemStyle.Setters.Add(new Setter(Control.VerticalContentAlignmentProperty, VerticalAlignment.Center));
-            itemStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Left));
-            cb.ItemContainerStyle = itemStyle;
+            // 统一深/浅色自适应（闭合框 + 下拉弹层背景与字体跟随主题；项样式含字号/内边距/悬浮/选中）
+            UiShapes.ApplyComboBoxTheme(cb, _inputBg, _inputFg, _panelBorder, _windowBg, _panelBorder, _textMain, _rowHover, _rowSelected, _textDim);
             foreach (var e in OfficeInstall.Editions) cb.Items.Add(e);
             cb.SelectedIndex = 0;
             Grid.SetColumn(cb, 0);
@@ -3568,6 +3565,8 @@ namespace CpqSystemTool
             var channelCombo = new ComboBox { FontSize = 13, MinHeight = 32, Margin = new Thickness(0, 0, 0, 10), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Center };
             for (int i = 0; i < channels.Length; i++) channelCombo.Items.Add(displayNames[i]);
             channelCombo.SelectedIndex = 0;
+            // 统一深/浅色自适应（闭合框 + 下拉弹层背景与字体跟随主题）
+            UiShapes.ApplyComboBoxTheme(channelCombo, _inputBg, _inputFg, _panelBorder, _windowBg, _panelBorder, _textMain, _rowHover, _rowSelected, _textDim);
             leftInner.Children.Add(channelCombo);
 
             var actionBar = new Grid { Margin = new Thickness(0, 0, 0, 10) };
@@ -4055,6 +4054,9 @@ namespace CpqSystemTool
                             Child = catPopupBorder,
                             MaxHeight = 280
                         };
+                        // 修复：AllowsTransparency=true 会以独立顶层 HWND 承载并带 WS_EX_TOPMOST，
+                        // 导致下拉浮到最顶层。剥离该样式使其落到正常层级（与"管理依赖"下拉一致）。
+                        UiShapes.DisablePopupTopmost(catPopup);
                         catPopup.Opened += (s, e) =>
                         {
                             catBtn.IsChecked = true;

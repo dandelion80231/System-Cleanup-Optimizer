@@ -202,6 +202,9 @@ namespace CpqSystemTool
                 Child = menuPanel
             };
             depsPopup.Child = menuBorder;
+            // 修复：AllowsTransparency=true 会让 Popup 以独立顶层 HWND 承载并带 WS_EX_TOPMOST，
+            // 导致下拉菜单浮到最顶层、压在所有窗口之上。剥离该样式使其落到正常层级。
+            UiShapes.DisablePopupTopmost(depsPopup);
 
             var nodeHeader = MakeMenuHeader("Node + Playwright + Chromium（检测中…）");
             var nodeInstall = MakeMenuItem("安装 / 修复", depsPopup, () =>

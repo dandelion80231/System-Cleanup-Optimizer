@@ -144,6 +144,8 @@ namespace CpqSystemTool
             var panelBorder = owner?._panelBorder ?? new SolidColorBrush(Color.FromRgb(0x2A, 0x32, 0x3C));
             var windowBg = owner?._windowBg ?? new SolidColorBrush(Color.FromRgb(0x12, 0x16, 0x1E));
             var danger = owner?._dangerRed ?? new SolidColorBrush(Color.FromRgb(0xE5, 0x4D, 0x4D));
+            var rowHover = owner?._rowHover ?? new SolidColorBrush(Color.FromRgb(0x1E, 0x26, 0x30));
+            var rowSelected = owner?._rowSelected ?? new SolidColorBrush(Color.FromRgb(0x16, 0x36, 0x44));
             var isEdit = existing != null;
 
             Title = isEdit ? "编辑软件" : "新增增补软件";
@@ -250,6 +252,8 @@ namespace CpqSystemTool
             foreach (var c in SoftwareInstall.SoftwareCategories) _categoryCombo.Items.Add(c);
             _categoryCombo.SelectedItem = isEdit ? (existing.category ?? SoftwareInstall.DefaultCategory) : SoftwareInstall.DefaultCategory;
             body.Children.Add(_categoryCombo);
+            // 统一深/浅色自适应（闭合框 + 下拉弹层背景与字体跟随主题）
+            UiShapes.ApplyComboBoxTheme(_categoryCombo, owner?._inputBg ?? Brushes.Transparent, owner?._inputFg ?? fg, panelBorder, windowBg, panelBorder, fg, rowHover, rowSelected, dim);
             body.Children.Add(new TextBlock { Height = 8 });
 
             // 下载直链
@@ -287,6 +291,8 @@ namespace CpqSystemTool
             _riskCombo.Items.Add("high");
             _riskCombo.SelectedItem = isEdit ? (existing.risk ?? "low") : "low";
             body.Children.Add(_riskCombo);
+            // 统一深/浅色自适应（闭合框 + 下拉弹层背景与字体跟随主题）
+            UiShapes.ApplyComboBoxTheme(_riskCombo, owner?._inputBg ?? Brushes.Transparent, owner?._inputFg ?? fg, panelBorder, windowBg, panelBorder, fg, rowHover, rowSelected, dim);
             body.Children.Add(new TextBlock { Height = 8 });
 
             // 商店 ID

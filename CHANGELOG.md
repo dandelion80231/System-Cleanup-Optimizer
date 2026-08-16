@@ -28,6 +28,10 @@
 - **WebView2 探针依赖下载改为 API 自身异步卸载**：`WebView2ProbeDeps.EnsureWebView2ProbeDeps` 重构为 `EnsureWebView2ProbeDepsAsync`（真正异步、下载走线程池、可 await），`ProbeBrowserHost.InitAsync` 与 `CheckWebView2ReadyAsync` 改为直接 `await`，不再依赖「调用方用 Task.Run 包裹」的约定来避免 UI 冻结；保留同步兼容包装供后台线程（RunInBg）调用方使用，全程 `ConfigureAwait(false)` 无死锁风险。
 - **抽取 `UiShapes.MakeTextWithArrowGrid`**：消除「管理依赖」「全部分类」两处下拉按钮重复的「文字 + 右侧箭头」2 列 Grid 构造，统一由共享方法生成（布局与原先完全一致）。
 
+### 🔧 发布后跟进（v1.06 二次修补 · 下拉框层级与主题统一）
+- **修复自定义下拉「浮到最顶层」**：「管理依赖」「全部分类」两个 Popup（AllowsTransparency=true 会以独立顶层 HWND 带 WS_EX_TOPMOST 渲染）在打开时剥离 WS_EX_TOPMOST，并挂 HwndSource Hook 在 WM_WINDOWPOSCHANGED 时持续剥离，使其落到正常层级、不再压在所有窗口（含其他应用）之上（`UiShapes.DisablePopupTopmost`）。
+- **统一全部 ComboBox 深/浅色自适应**：新增 `UiShapes.ApplyComboBoxTheme`，以自定义 ControlTemplate（闭合框 + 下拉弹层均引用主题键）+ ComboBoxItem 样式，让 7 个 ComboBox（版本切换目标 / Office 版本 / Edge 频道 / 驱动引擎 / 分组 / 软件分类 / 风险等级）的背景、字体、边框与下拉弹层（含选中/悬浮态）统一跟随深/浅色主题笔刷，替代默认跟随系统色的 Aero2 模板（深模式下弹层为刺眼白底）；弹层刻意关闭 AllowsTransparency 以复用默认 ComboBox 的非置顶行为，避免重新引入浮层问题。
+
 ---
 
 ## [v1.05] - 2026-08-14
