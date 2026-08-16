@@ -1305,7 +1305,8 @@ namespace CpqSystemTool
                 IsEnabled = false
             };
             // 统一深/浅色自适应（闭合框 + 下拉弹层背景与字体跟随主题）
-            UiShapes.ApplyComboBoxTheme(vsTargetCombo, _inputBg, _inputFg, _panelBorder, _windowBg, _panelBorder, _textMain, _rowHover, _rowSelected, _textDim);
+            UiShapes.ApplyComboBoxTheme(vsTargetCombo, UiShapes.ComboBoxTheme.Create(
+                _inputBg, _inputFg, _windowBg, _panelBorder, _textMain, _rowHover, _rowSelected, _textDim));
             Grid.SetColumn(vsTargetCombo, 2);
             vsGrid.Children.Add(vsTargetCombo);
 
@@ -1610,7 +1611,8 @@ namespace CpqSystemTool
             officeBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                      // 卸载按钮
             var cb = new ComboBox { MinHeight = 34, FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Left, HorizontalAlignment = HorizontalAlignment.Stretch };
             // 统一深/浅色自适应（闭合框 + 下拉弹层背景与字体跟随主题；项样式含字号/内边距/悬浮/选中）
-            UiShapes.ApplyComboBoxTheme(cb, _inputBg, _inputFg, _panelBorder, _windowBg, _panelBorder, _textMain, _rowHover, _rowSelected, _textDim);
+            UiShapes.ApplyComboBoxTheme(cb, UiShapes.ComboBoxTheme.Create(
+                _inputBg, _inputFg, _windowBg, _panelBorder, _textMain, _rowHover, _rowSelected, _textDim));
             foreach (var e in OfficeInstall.Editions) cb.Items.Add(e);
             cb.SelectedIndex = 0;
             Grid.SetColumn(cb, 0);
@@ -3566,7 +3568,8 @@ namespace CpqSystemTool
             for (int i = 0; i < channels.Length; i++) channelCombo.Items.Add(displayNames[i]);
             channelCombo.SelectedIndex = 0;
             // 统一深/浅色自适应（闭合框 + 下拉弹层背景与字体跟随主题）
-            UiShapes.ApplyComboBoxTheme(channelCombo, _inputBg, _inputFg, _panelBorder, _windowBg, _panelBorder, _textMain, _rowHover, _rowSelected, _textDim);
+            UiShapes.ApplyComboBoxTheme(channelCombo, UiShapes.ComboBoxTheme.Create(
+                _inputBg, _inputFg, _windowBg, _panelBorder, _textMain, _rowHover, _rowSelected, _textDim));
             leftInner.Children.Add(channelCombo);
 
             var actionBar = new Grid { Margin = new Thickness(0, 0, 0, 10) };
@@ -4586,24 +4589,35 @@ namespace CpqSystemTool
                                     saved = k?.GetValue("InstallPath") as string;
                             }
                             catch { }
+                            string label;
+                            Brush bg, border, fg;
+                            FontWeight fw;
+                            string tooltip;
                             if (!string.IsNullOrEmpty(saved))
                             {
-                                btnPath.Content = "📂 安装到: " + saved + "  ✎";
-                                btnPath.Background = new SolidColorBrush(Color.FromRgb(0xE6, 0xF7, 0xF4));
-                                btnPath.BorderBrush = _accent;
-                                btnPath.Foreground = _accent;
-                                btnPath.FontWeight = FontWeights.SemiBold;
-                                btnPath.ToolTip = "当前自定义安装路径：" + saved + "\n点击修改";
+                                label = "📂 安装到: " + saved;
+                                bg = _btnSecondaryBg;          // 随深/浅色主题自适应（替换原硬编码浅薄荷色 0xE6F7F4）
+                                border = _accent;
+                                fg = _accent;
+                                fw = FontWeights.SemiBold;
+                                tooltip = "当前自定义安装路径：" + saved + "\n点击修改";
                             }
                             else
                             {
-                                btnPath.Content = "📂 安装到: 默认路径  ✎";
-                                btnPath.Background = _btnSecondaryBg;
-                                btnPath.BorderBrush = _panelBorder;
-                                btnPath.Foreground = _btnSecondaryFg;
-                                btnPath.FontWeight = FontWeights.Normal;
-                                btnPath.ToolTip = "当前使用各软件默认安装路径\n点击设置自定义路径";
+                                label = "📂 安装到: 默认路径";
+                                bg = _btnSecondaryBg;
+                                border = _panelBorder;
+                                fg = _btnSecondaryFg;
+                                fw = FontWeights.Normal;
+                                tooltip = "当前使用各软件默认安装路径\n点击设置自定义路径";
                             }
+                            var text = new TextBlock { Text = label, FontSize = 13, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
+                            btnPath.Content = UiShapes.MakeTextWithArrowGrid(text, _textDim, minWidth: true);
+                            btnPath.Background = bg;
+                            btnPath.BorderBrush = border;
+                            btnPath.Foreground = fg;
+                            btnPath.FontWeight = fw;
+                            btnPath.ToolTip = tooltip;
                         }
                         RefreshPathBtn();
                         btnPath.Click += (s, e) =>

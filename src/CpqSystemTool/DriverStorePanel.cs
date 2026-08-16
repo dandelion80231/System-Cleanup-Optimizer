@@ -107,10 +107,10 @@ namespace CpqSystemTool
                 VerticalContentAlignment = VerticalAlignment.Center
             };
             // 统一深/浅色自适应（闭合框 + 下拉弹层背景与字体跟随主题）
-            UiShapes.ApplyComboBoxTheme(engineCombo,
-                _owner?._inputBg ?? Brushes.White, _fg, _panelBorder,
-                _owner?._windowBg ?? Brushes.White, _panelBorder,
-                _fg, _rowHover, _owner?._rowSelected ?? new SolidColorBrush(Color.FromRgb(0x16, 0x36, 0x44)), _dim);
+            UiShapes.ApplyComboBoxTheme(engineCombo, UiShapes.ComboBoxTheme.Create(
+            _owner?._inputBg ?? UiShapes.DefaultInputBackground, _fg,
+            _owner?._windowBg ?? Brushes.White, _panelBorder,
+                _fg, _rowHover, _owner?._rowSelected ?? UiShapes.RowSelectedBrush, _dim));
             engineCombo.Items.Add(new ComboBoxItem { Content = "PnP 实用工具 (pnputil) — 仅第三方", Tag = DriverStore.DriverEngine.PnpUtil });
             engineCombo.Items.Add(new ComboBoxItem { Content = "DISM（系统映像）— 含内置驱动", Tag = DriverStore.DriverEngine.Dism });
             engineCombo.SelectionChanged += (s, e) =>
@@ -145,10 +145,10 @@ namespace CpqSystemTool
                 ToolTip = "按驱动类别或供应商分组显示，方便批量查看同类驱动"
             };
             // 统一深/浅色自适应（闭合框 + 下拉弹层背景与字体跟随主题）
-            UiShapes.ApplyComboBoxTheme(_groupCombo,
-                _owner?._inputBg ?? Brushes.White, _fg, _panelBorder,
-                _owner?._windowBg ?? Brushes.White, _panelBorder,
-                _fg, _rowHover, _owner?._rowSelected ?? new SolidColorBrush(Color.FromRgb(0x16, 0x36, 0x44)), _dim);
+            UiShapes.ApplyComboBoxTheme(_groupCombo, UiShapes.ComboBoxTheme.Create(
+            _owner?._inputBg ?? UiShapes.DefaultInputBackground, _fg,
+            _owner?._windowBg ?? Brushes.White, _panelBorder,
+                _fg, _rowHover, _owner?._rowSelected ?? UiShapes.RowSelectedBrush, _dim));
             _groupCombo.Items.Add(new ComboBoxItem { Content = "不分组", Tag = GroupMode.None });
             _groupCombo.Items.Add(new ComboBoxItem { Content = "按类别", Tag = GroupMode.Class });
             _groupCombo.Items.Add(new ComboBoxItem { Content = "按供应商", Tag = GroupMode.Provider });

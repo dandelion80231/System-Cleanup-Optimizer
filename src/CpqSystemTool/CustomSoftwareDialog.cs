@@ -145,7 +145,7 @@ namespace CpqSystemTool
             var windowBg = owner?._windowBg ?? new SolidColorBrush(Color.FromRgb(0x12, 0x16, 0x1E));
             var danger = owner?._dangerRed ?? new SolidColorBrush(Color.FromRgb(0xE5, 0x4D, 0x4D));
             var rowHover = owner?._rowHover ?? new SolidColorBrush(Color.FromRgb(0x1E, 0x26, 0x30));
-            var rowSelected = owner?._rowSelected ?? new SolidColorBrush(Color.FromRgb(0x16, 0x36, 0x44));
+            var rowSelected = owner?._rowSelected ?? UiShapes.RowSelectedBrush;
             var isEdit = existing != null;
 
             Title = isEdit ? "编辑软件" : "新增增补软件";
@@ -188,7 +188,7 @@ namespace CpqSystemTool
                 {
                     FontSize = 12.5,
                     Padding = new Thickness(8, 6, 8, 6),
-                    Background = owner?._inputBg ?? Brushes.Transparent,
+                    Background = owner?._inputBg ?? UiShapes.DefaultInputBackground,
                     Foreground = owner?._inputFg ?? fg,
                     BorderBrush = owner?._accent,
                     BorderThickness = new Thickness(1),
@@ -244,7 +244,7 @@ namespace CpqSystemTool
             {
                 FontSize = 12.5,
                 Padding = new Thickness(6, 5, 6, 5),
-                Background = owner?._inputBg ?? Brushes.Transparent,
+                Background = owner?._inputBg ?? UiShapes.DefaultInputBackground,
                 Foreground = owner?._inputFg ?? fg,
                 BorderBrush = owner?._accent,
                 BorderThickness = new Thickness(1)
@@ -253,7 +253,10 @@ namespace CpqSystemTool
             _categoryCombo.SelectedItem = isEdit ? (existing.category ?? SoftwareInstall.DefaultCategory) : SoftwareInstall.DefaultCategory;
             body.Children.Add(_categoryCombo);
             // 统一深/浅色自适应（闭合框 + 下拉弹层背景与字体跟随主题）
-            UiShapes.ApplyComboBoxTheme(_categoryCombo, owner?._inputBg ?? Brushes.Transparent, owner?._inputFg ?? fg, panelBorder, windowBg, panelBorder, fg, rowHover, rowSelected, dim);
+            UiShapes.ApplyComboBoxTheme(_categoryCombo, UiShapes.ComboBoxTheme.Create(
+                owner?._inputBg ?? UiShapes.DefaultInputBackground, owner?._inputFg ?? fg,
+                windowBg, panelBorder,
+                fg, rowHover, rowSelected, dim));
             body.Children.Add(new TextBlock { Height = 8 });
 
             // 下载直链
@@ -281,7 +284,7 @@ namespace CpqSystemTool
             {
                 FontSize = 12.5,
                 Padding = new Thickness(6, 5, 6, 5),
-                Background = owner?._inputBg ?? Brushes.Transparent,
+                Background = owner?._inputBg ?? UiShapes.DefaultInputBackground,
                 Foreground = owner?._inputFg ?? fg,
                 BorderBrush = owner?._accent,
                 BorderThickness = new Thickness(1)
@@ -292,7 +295,10 @@ namespace CpqSystemTool
             _riskCombo.SelectedItem = isEdit ? (existing.risk ?? "low") : "low";
             body.Children.Add(_riskCombo);
             // 统一深/浅色自适应（闭合框 + 下拉弹层背景与字体跟随主题）
-            UiShapes.ApplyComboBoxTheme(_riskCombo, owner?._inputBg ?? Brushes.Transparent, owner?._inputFg ?? fg, panelBorder, windowBg, panelBorder, fg, rowHover, rowSelected, dim);
+            UiShapes.ApplyComboBoxTheme(_riskCombo, UiShapes.ComboBoxTheme.Create(
+                owner?._inputBg ?? UiShapes.DefaultInputBackground, owner?._inputFg ?? fg,
+                windowBg, panelBorder,
+                fg, rowHover, rowSelected, dim));
             body.Children.Add(new TextBlock { Height = 8 });
 
             // 商店 ID

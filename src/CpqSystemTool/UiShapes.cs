@@ -117,7 +117,7 @@ namespace CpqSystemTool
         // ---- ComboBox 深/浅色自适应（闭合框 + 下拉弹层背景/字体统一跟随主题）----
         // 模板与项样式均引用 DynamicResource 键，键在调用方 combo.Resources 中按当前主题注入具体笔刷，
         // 因此页面随主题重建时会自动套用正确色彩（与自定义 Popup 下拉一致）。
-        private const string ComboBoxTemplateXaml = @"<ControlTemplate xmlns=""http://schemas.microsoft.com/winfx/2006/xaml/presentation"" TargetType=""ComboBox"">
+        private const string ComboBoxTemplateXaml = @"<ControlTemplate xmlns=""http://schemas.microsoft.com/winfx/2006/xaml/presentation"" xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"" TargetType=""ComboBox"">
   <Grid x:Name=""MainGrid"" SnapsToDevicePixels=""True"">
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width=""*""/>
@@ -175,7 +175,7 @@ namespace CpqSystemTool
   </ControlTemplate.Triggers>
 </ControlTemplate>";
 
-        private const string ComboBoxItemStyleXaml = @"<Style xmlns=""http://schemas.microsoft.com/winfx/2006/xaml/presentation"" TargetType=""ComboBoxItem"">
+        private const string ComboBoxItemStyleXaml = @"<Style xmlns=""http://schemas.microsoft.com/winfx/2006/xaml/presentation"" xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"" TargetType=""ComboBoxItem"">
   <Setter Property=""Foreground"" Value=""{DynamicResource ComboBoxItemFg}""/>
   <Setter Property=""Padding"" Value=""8,6,8,6""/>
   <Setter Property=""HorizontalContentAlignment"" Value=""Left""/>
@@ -204,30 +204,85 @@ namespace CpqSystemTool
 </Style>";
 
         /// <summary>
+        /// 选中行 / 项高亮色（深蓝绿），多处对话框与面板共用，集中为只读常量以避免硬编码散落。
+        /// 冻结后可在任意元素间安全共享（含跨线程复用）。
+        /// </summary>
+        public static readonly SolidColorBrush RowSelectedBrush = CreateRowSelectedBrush();
+
+        /// <summary>
+        /// 输入框（ComboBox 闭合框）背景回退色。当宿主窗体未提供 _inputBg 时使用，
+        /// 统一为透明（透出深色窗口底），取代原先散落的 Brushes.White / Brushes.Transparent 不一致回退。
+        /// </summary>
+        public static readonly Brush DefaultInputBackground = Brushes.Transparent;
+
+        private static SolidColorBrush CreateRowSelectedBrush()
+        {
+            var b = new SolidColorBrush(Color.FromRgb(0x16, 0x36, 0x44));
+            b.Freeze();
+            return b;
+        }
+
+        /// <summary>
+        /// ComboBox 主题包：闭合框（Bg/Fg/Border）与下拉弹层（PopupBg/PopupBorder）、项态（ItemFg/ItemHoverBg/ItemSelectedBg）、箭头（Arrow）。
+        /// 取代原先 10 参数的长参数列表（Data Clump），并默认 Border == PopupBorder（绝大多数调用点两者本就相同）。
+        /// </summary>
+        public struct ComboBoxTheme
+        {
+            public Brush Bg;
+            public Brush Fg;
+            public Brush Border;
+            public Brush PopupBg;
+            public Brush PopupBorder;
+            public Brush ItemFg;
+            public Brush ItemHoverBg;
+            public Brush ItemSelectedBg;
+            public Brush Arrow;
+
+            /// <summary>
+            /// 构造主题包。border 省略时默认等于 popupBorder（闭合框与弹层同色边框，覆盖 7 处调用中 6 处的重复传值）。
+            /// </summary>
+            public static ComboBoxTheme Create(
+                Brush bg, Brush fg,
+                Brush popupBg, Brush popupBorder,
+                Brush itemFg, Brush itemHoverBg, Brush itemSelectedBg,
+                Brush arrow,
+                Brush border = null)
+            {
+                return new ComboBoxTheme
+                {
+                    Bg = bg,
+                    Fg = fg,
+                    Border = border ?? popupBorder,
+                    PopupBg = popupBg,
+                    PopupBorder = popupBorder,
+                    ItemFg = itemFg,
+                    ItemHoverBg = itemHoverBg,
+                    ItemSelectedBg = itemSelectedBg,
+                    Arrow = arrow
+                };
+            }
+        }
+
+        /// <summary>
         /// 让 ComboBox 的背景、字体、边框以及下拉弹层（含选中/悬浮态）统一跟随深/浅色主题笔刷。
         /// 通过自定义 ControlTemplate（闭合框 + PART_Popup 弹层均引用主题键）与 ComboBoxItem 样式实现，
         /// 替代默认跟随系统色的 Aero2 模板（深模式下弹层为刺眼的白色）。
-        /// bg/fg/border = 闭合框；popupBg/popupBorder = 弹层；itemFg/hover/selected = 项文字与高亮；arrow = 箭头描边。
         /// </summary>
-        public static void ApplyComboBoxTheme(ComboBox combo,
-            Brush bg, Brush fg, Brush border,
-            Brush popupBg, Brush popupBorder,
-            Brush itemFg, Brush itemHoverBg, Brush itemSelectedBg,
-            Brush arrow)
+        public static void ApplyComboBoxTheme(ComboBox combo, ComboBoxTheme theme)
         {
-            combo.Background = bg;
-            combo.Foreground = fg;
-            combo.BorderBrush = border;
+            combo.Background = theme.Bg;
+            combo.Foreground = theme.Fg;
+            combo.BorderBrush = theme.Border;
             combo.BorderThickness = new Thickness(1);
             combo.MaxDropDownHeight = 280;
 
             var r = combo.Resources;
-            r["ComboBoxPopupBg"] = popupBg;
-            r["ComboBoxPopupBorder"] = popupBorder;
-            r["ComboBoxItemFg"] = itemFg;
-            r["ComboBoxItemHoverBg"] = itemHoverBg;
-            r["ComboBoxItemSelectedBg"] = itemSelectedBg;
-            r["ComboBoxArrow"] = arrow;
+            r["ComboBoxPopupBg"] = theme.PopupBg;
+            r["ComboBoxPopupBorder"] = theme.PopupBorder;
+            r["ComboBoxItemFg"] = theme.ItemFg;
+            r["ComboBoxItemHoverBg"] = theme.ItemHoverBg;
+            r["ComboBoxItemSelectedBg"] = theme.ItemSelectedBg;
+            r["ComboBoxArrow"] = theme.Arrow;
 
             combo.Template = (ControlTemplate)XamlReader.Parse(ComboBoxTemplateXaml);
             combo.ItemContainerStyle = (Style)XamlReader.Parse(ComboBoxItemStyleXaml);

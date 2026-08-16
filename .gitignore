@@ -64,4 +64,5 @@ MEMORY_full.md
 # 用 ASCII 日期后缀锚定，规避中文文件名 Unicode 归一化导致 .gitignore 不匹配
 *_2026-08-12.md
 pnputil_*.txt
+code_review_*.md
 site-dist/
