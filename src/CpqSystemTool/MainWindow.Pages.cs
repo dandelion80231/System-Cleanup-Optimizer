@@ -42,6 +42,128 @@ namespace CpqSystemTool
             return null;
         }
 
+        /// <summary>构造带线条下拉箭头的 Expander（替代系统默认实心三角箭头）。</summary>
+        private Expander MakeLineArrowExpander(UIElement header, UIElement content, bool expanded = true, Thickness? margin = null)
+        {
+            var expander = new Expander
+            {
+                Header = header,
+                Content = content,
+                IsExpanded = expanded,
+                Margin = margin ?? new Thickness(0, 6, 0, 2),
+                Background = Brushes.Transparent,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+
+            var template = new ControlTemplate(typeof(Expander));
+
+            // 外层：标题 ToggleButton 在上，内容在下
+            var dock = new FrameworkElementFactory(typeof(DockPanel));
+            dock.SetValue(DockPanel.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
+
+            // HeaderSite：ToggleButton，IsChecked 与 Expander.IsExpanded 双向绑定
+            var headerSite = new FrameworkElementFactory(typeof(ToggleButton), "HeaderSite");
+            headerSite.SetValue(DockPanel.DockProperty, Dock.Top);
+            headerSite.SetValue(ToggleButton.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
+            headerSite.SetValue(ToggleButton.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch);
+            headerSite.SetValue(ToggleButton.VerticalContentAlignmentProperty, VerticalAlignment.Center);
+            headerSite.SetValue(ToggleButton.BackgroundProperty, Brushes.Transparent);
+            headerSite.SetValue(ToggleButton.BorderThicknessProperty, new Thickness(0));
+            headerSite.SetValue(ToggleButton.PaddingProperty, new Thickness(0));
+            headerSite.SetBinding(ToggleButton.IsCheckedProperty, new Binding
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent),
+                Path = new PropertyPath(Expander.IsExpandedProperty),
+                Mode = BindingMode.TwoWay
+            });
+
+            // 关键：把 Expander.Header 绑定到 HeaderSite 的 Content，否则模板内 ContentPresenter 无内容显示
+            headerSite.SetBinding(ToggleButton.ContentProperty, new Binding
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent),
+                Path = new PropertyPath(Expander.HeaderProperty)
+            });
+            headerSite.SetBinding(ToggleButton.ContentTemplateProperty, new Binding
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent),
+                Path = new PropertyPath(Expander.HeaderTemplateProperty)
+            });
+
+            // ToggleButton 模板：箭头在左，标题文字在右
+            var tbTemplate = new ControlTemplate(typeof(ToggleButton));
+            var tbBorder = new FrameworkElementFactory(typeof(Border));
+            tbBorder.SetValue(Border.BackgroundProperty, Brushes.Transparent);
+
+            var tbGrid = new FrameworkElementFactory(typeof(Grid));
+            tbGrid.SetValue(Grid.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
+            tbGrid.SetValue(Grid.VerticalAlignmentProperty, VerticalAlignment.Center);
+
+            var tbCol0 = new FrameworkElementFactory(typeof(ColumnDefinition));
+            tbCol0.SetValue(ColumnDefinition.WidthProperty, GridLength.Auto);
+            var tbCol1 = new FrameworkElementFactory(typeof(ColumnDefinition));
+            tbCol1.SetValue(ColumnDefinition.WidthProperty, new GridLength(1, GridUnitType.Star));
+            tbGrid.AppendChild(tbCol0);
+            tbGrid.AppendChild(tbCol1);
+
+            var arrow = new FrameworkElementFactory(typeof(System.Windows.Shapes.Path), "Arrow");
+            arrow.SetValue(Grid.ColumnProperty, 0);
+            arrow.SetValue(System.Windows.Shapes.Path.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            arrow.SetValue(System.Windows.Shapes.Path.VerticalAlignmentProperty, VerticalAlignment.Center);
+            arrow.SetValue(System.Windows.Shapes.Path.MarginProperty, new Thickness(0, 0, 6, 0));
+            arrow.SetValue(System.Windows.Shapes.Path.RenderTransformOriginProperty, new Point(0.5, 0.5));
+            UiShapes.ConfigureChevronFactory(arrow, _accent);
+            tbGrid.AppendChild(arrow);
+
+            var cp = new FrameworkElementFactory(typeof(ContentPresenter));
+            cp.SetValue(Grid.ColumnProperty, 1);
+            cp.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Left);
+            cp.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            cp.SetBinding(ContentPresenter.ContentProperty, new Binding
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent),
+                Path = new PropertyPath(ToggleButton.ContentProperty)
+            });
+            cp.SetBinding(ContentPresenter.ContentTemplateProperty, new Binding
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent),
+                Path = new PropertyPath(ToggleButton.ContentTemplateProperty)
+            });
+            tbGrid.AppendChild(cp);
+
+            tbBorder.AppendChild(tbGrid);
+            tbTemplate.VisualTree = tbBorder;
+
+            // 折叠时箭头朝右：旋转 90°
+            var collapsedTrigger = new Trigger { Property = ToggleButton.IsCheckedProperty, Value = false };
+            collapsedTrigger.Setters.Add(new Setter(System.Windows.Shapes.Path.RenderTransformProperty, new RotateTransform(90), "Arrow"));
+            tbTemplate.Triggers.Add(collapsedTrigger);
+
+            headerSite.SetValue(ToggleButton.TemplateProperty, tbTemplate);
+
+            // ExpandSite：内容区域
+            var expandSite = new FrameworkElementFactory(typeof(ContentPresenter), "ExpandSite");
+            expandSite.SetValue(DockPanel.DockProperty, Dock.Bottom);
+            expandSite.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
+            expandSite.SetBinding(ContentPresenter.ContentProperty, new Binding
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent),
+                Path = new PropertyPath(Expander.ContentProperty)
+            });
+            expandSite.SetBinding(ContentPresenter.VisibilityProperty, new Binding
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent),
+                Path = new PropertyPath(Expander.IsExpandedProperty),
+                Converter = new BooleanToVisibilityConverter()
+            });
+
+            dock.AppendChild(headerSite);
+            dock.AppendChild(expandSite);
+            template.VisualTree = dock;
+
+            expander.Template = template;
+            return expander;
+        }
+
         // =====================================================================
         //  Module: 系统优化（含预设按钮）
         // =====================================================================
@@ -167,14 +289,9 @@ namespace CpqSystemTool
             // 先创建分组折叠标题（同步，用户能立刻看到分组结构，不会白板）
             foreach (var g in groups)
             {
-                var expander = new Expander { IsExpanded = true, Margin = new Thickness(0, 4, 0, 4) };
-                var exHeader = new StackPanel { Orientation = Orientation.Horizontal };
-                exHeader.Children.Add(new TextBlock { Text = "▼ ", Foreground = _accent });
-                exHeader.Children.Add(new TextBlock { Text = g.Key, FontWeight = FontWeights.SemiBold, Foreground = _accent, FontSize = 13.5 });
-                expander.Header = exHeader;
-
+                var exHeader = new TextBlock { Text = g.Key, FontWeight = FontWeights.SemiBold, Foreground = _accent, FontSize = 13.5 };
                 var content = new StackPanel { Margin = new Thickness(20, 4, 0, 4) };
-                expander.Content = content;
+                var expander = MakeLineArrowExpander(exHeader, content, true, new Thickness(0, 4, 0, 4));
                 treePanel.Children.Add(expander);
                 groupContents[g.Key] = content;
             }
@@ -802,13 +919,9 @@ namespace CpqSystemTool
 
             foreach (var cat in categories)
             {
-                var groupExpander = new Expander
-                {
-                    Header = new TextBlock { Text = "▼ " + cat.Key + " (" + cat.Count() + " 项)", Foreground = _accent, FontWeight = FontWeights.SemiBold, FontSize = 14, TextWrapping = TextWrapping.Wrap },
-                    IsExpanded = true,
-                    Margin = new Thickness(0, 6, 0, 2)
-                };
+                var exHeader = new TextBlock { Text = cat.Key + " (" + cat.Count() + " 项)", Foreground = _accent, FontWeight = FontWeights.SemiBold, FontSize = 14, TextWrapping = TextWrapping.Wrap };
                 var grpSp = new StackPanel { Margin = new Thickness(16, 4, 0, 8) };
+                var groupExpander = MakeLineArrowExpander(exHeader, grpSp, true, new Thickness(0, 6, 0, 2));
                 foreach (var item in cat)
                 {
                     var chk = new CheckBox
@@ -3892,7 +4005,10 @@ namespace CpqSystemTool
                         };
                         // 按钮内容：文字 + 右侧下拉箭头，模拟 ComboBox 外观
                         var catBtnText = new TextBlock { Text = "全部分类", FontSize = 13, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
-                        var catBtnArrow = new TextBlock { Text = "▼", FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), Foreground = _textDim };
+                        var catBtnArrow = UiShapes.MakeChevron(_textDim);
+                        catBtnArrow.VerticalAlignment = VerticalAlignment.Center;
+                        catBtnArrow.HorizontalAlignment = HorizontalAlignment.Center;
+                        catBtnArrow.Margin = new Thickness(6, 2, 0, 0);
                         var catBtnContent = new Grid { MinWidth = 100 };
                         catBtnContent.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                         catBtnContent.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });

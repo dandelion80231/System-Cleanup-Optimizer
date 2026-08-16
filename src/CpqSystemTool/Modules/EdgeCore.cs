@@ -72,6 +72,9 @@ namespace CpqSystemTool
             log("正在安装 WebView2 Runtime...");
             Exec.RunCmd(new[] { "cmd", "/c", $"\"{Environment.GetEnvironmentVariable("TEMP")}\\MicrosoftEdgeWebview2Setup.exe\"", "/silent", "/install" }, log);
             log("WebView2 Runtime 安装/升级完成");
+
+            // 同步就地补上单文件分发所需的 WebView2 探针托管依赖（NuGet 运行时拉取）。
+            WebView2ProbeDeps.EnsureWebView2ProbeDeps(log, p => log(WebView2ProbeDeps.ProgressLine(p)));
         }
 
         public static void UninstallWebView2(Action<string> log)
@@ -106,7 +109,7 @@ namespace CpqSystemTool
         {
             log("=== 修复 / 重装 WebView2 Runtime ===");
             string bootstrapper = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                AppDomain.CurrentDomain.BaseDirectory,
                 "MicrosoftEdgeWebViewModelInstaller.exe");
 
             try
@@ -159,6 +162,9 @@ namespace CpqSystemTool
                 log("[✓] WebView2 Runtime 文件已恢复完整，建议重启本程序后重试 WebView2 探针。");
             else
                 log("[!] WebView2 运行时文件仍不完整（msedgewebview2.exe 或 msedge.dll 缺失）。本机 WebView2 由 Microsoft Edge 提供，且微软载荷 CDN 不可达 / 同版本不修复，自动修复无效。请手动从微软官网下载并重新安装 Microsoft Edge（或运行 Windows 修复），再重试。");
+
+            // 同步就地补上单文件分发所需的 WebView2 探针托管依赖（NuGet 运行时拉取）。
+            WebView2ProbeDeps.EnsureWebView2ProbeDeps(log, p => log(WebView2ProbeDeps.ProgressLine(p)));
         }
 
         /// <summary>检测 WebView2 运行时注册表根键是否健康（EdgeWebView\Applications 存在且有子键）。</summary>

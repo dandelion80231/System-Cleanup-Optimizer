@@ -290,10 +290,7 @@ namespace CpqSystemTool
         {
             log?.Dispatcher.Invoke(() => { log.Visibility = Visibility.Visible; log.Clear(); });
             var disp = Dispatcher;
-            Action<string> logf = s => disp.BeginInvoke(() =>
-            {
-                if (log != null) { log.Visibility = Visibility.Visible; log.AppendText(s + "\r\n"); log.ScrollToEnd(); }
-            });
+            Action<string> logf = s => disp.BeginInvoke(new Action(() => AppendOrReplaceLog(log, s)));
             new Thread(() =>
             {
                 try
@@ -311,6 +308,44 @@ namespace CpqSystemTool
                     });
                 }
             }).Start();
+        }
+
+        /// <summary>
+        /// 向日志框追加一行；若消息以 \r 开头，则原地替换最后一行（用于下载百分比等进度，避免刷屏）。
+        /// 调用方需自行确保在 UI 线程（RunInBg 的 logf 已通过 Dispatcher 保证）。
+        /// </summary>
+        private static void AppendOrReplaceLog(TextBox tb, string s)
+        {
+            if (tb == null) return;
+            tb.Visibility = Visibility.Visible;
+            if (s != null && s.Length > 0 && s[0] == '\r')
+            {
+                // 进度行（\r 前缀）。用 tb.Tag 记录“最后一行是否为进度行”：
+                //   - 上一行是进度行 → 原地替换最后一行（避免刷屏）；
+                //   - 上一行是普通日志（如“检测到缺少…”）→ 进度行作为新行追加，不覆盖提示信息。
+                // 不把 \r 存进文本（WPF 会把孤立 \r 当换行，破坏显示），仅用 Tag 标记状态。
+                string content = s.Substring(1);
+                bool prevIsProgress = tb.Tag is string;
+                if (prevIsProgress)
+                {
+                    string text = tb.Text;
+                    if (text.EndsWith("\r\n")) text = text.Substring(0, text.Length - 2);
+                    int lastNl = text.LastIndexOf('\n');
+                    string head = lastNl >= 0 ? text.Substring(0, lastNl + 1) : "";
+                    tb.Text = head + content + "\r\n";
+                }
+                else
+                {
+                    tb.AppendText(content + "\r\n");
+                }
+                tb.Tag = content;
+            }
+            else
+            {
+                tb.AppendText(s + "\r\n");
+                tb.Tag = null; // 普通行后，进度需重新起一行
+            }
+            tb.ScrollToEnd();
         }
 
         /// <summary>

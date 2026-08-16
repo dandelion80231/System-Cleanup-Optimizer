@@ -119,7 +119,7 @@ namespace CpqSystemTool
             depsBtnBd.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
             depsBtnBd.SetBinding(Border.PaddingProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(PaddingProperty) });
             var depsBtnCp = new FrameworkElementFactory(typeof(ContentPresenter));
-            depsBtnCp.SetBinding(ContentPresenter.HorizontalAlignmentProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(ToggleButton.HorizontalContentAlignmentProperty) });
+            depsBtnCp.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
             depsBtnCp.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
             depsBtnBd.AppendChild(depsBtnCp);
             depsBtnTemplate.VisualTree = depsBtnBd;
@@ -130,9 +130,23 @@ namespace CpqSystemTool
             depsBtnTemplate.Triggers.Add(depsBtnHover);
             depsBtnTemplate.Triggers.Add(depsBtnChecked);
 
+            // 按钮内容：文字 + 右侧下拉箭头，与驱动清理页 ComboBox 及「全部分类」下拉按钮保持视觉一致
+            var depsBtnText = new TextBlock { Text = "管理依赖", FontSize = 12, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
+            var depsBtnArrow = UiShapes.MakeChevron(_textDim);
+            depsBtnArrow.VerticalAlignment = VerticalAlignment.Center;
+            depsBtnArrow.HorizontalAlignment = HorizontalAlignment.Center;
+            depsBtnArrow.Margin = new Thickness(6, 2, 0, 0);
+            var depsBtnContent = new Grid();
+            depsBtnContent.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            depsBtnContent.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(depsBtnText, 0);
+            Grid.SetColumn(depsBtnArrow, 1);
+            depsBtnContent.Children.Add(depsBtnText);
+            depsBtnContent.Children.Add(depsBtnArrow);
+
             var manageDepsBtn = new ToggleButton
             {
-                Content = "管理依赖 ▼",
+                Content = depsBtnContent,
                 MinWidth = 100,
                 MinHeight = 34,
                 Padding = new Thickness(8, 7, 8, 7),
@@ -143,8 +157,8 @@ namespace CpqSystemTool
                 Foreground = _btnSecondaryFg,
                 BorderThickness = new Thickness(1),
                 BorderBrush = _panelBorder,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                HorizontalContentAlignment = HorizontalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Template = depsBtnTemplate
             };
             Grid.SetColumn(manageDepsBtn, 2);
@@ -305,6 +319,18 @@ namespace CpqSystemTool
             menuPanel.Children.Add(wvUninstall);
             menuPanel.Children.Add(wvClean);
 
+            // 拖动主窗口时强制 popup 重新定位到按钮下方：
+            // popup 以独立 HWND（AllowsTransparency=true）承载，默认不跟随窗口移动（标题栏是非客户区，
+            // 也不触发下方 PreviewMouseDown 的关闭逻辑），故需在窗口位置变化时手动重定位。
+            // 通过微调 HorizontalOffset 触发 WPF 重新按 PlacementTarget 计算屏幕位置，归零后无可见抖动。
+            EventHandler repositionDepsPopup = (s, e) =>
+            {
+                if (!depsPopup.IsOpen) return;
+                var dx = depsPopup.HorizontalOffset;
+                depsPopup.HorizontalOffset = dx + 0.01;
+                depsPopup.HorizontalOffset = dx;
+            };
+
             // 与 MainWindow.Pages.cs 里分类下拉 catBtn 完全一致的稳定写法：
             // 在 Click 事件里【同步】切换 IsOpen（不延迟），并用 Opened/Closed 同步 ToggleButton 的 IsChecked。
             // 打开的同时刷新依赖状态（Node 就绪 / WebView2 就绪）。
@@ -312,16 +338,18 @@ namespace CpqSystemTool
             manageDepsBtn.Click += (s, e) =>
             {
                 depsPopup.IsOpen = !depsPopup.IsOpen;
-                if (depsPopup.IsOpen) RefreshDepStatus(nodeHeader, wvHeader);
+                if (depsPopup.IsOpen) RefreshDepStatus(nodeHeader, wvHeader, logBox);
             };
             depsPopup.Opened += (s, e) =>
             {
                 manageDepsBtn.IsChecked = true;
                 depsPopup.Width = Math.Max(manageDepsBtn.ActualWidth, 205);
+                this.LocationChanged += repositionDepsPopup;
             };
             depsPopup.Closed += (s, e) =>
             {
                 manageDepsBtn.IsChecked = false;
+                this.LocationChanged -= repositionDepsPopup;
             };
 
             // 手动管理"点击弹窗外部关闭"：StaysOpen=true 后不再自动关闭，需自行处理。
@@ -692,7 +720,7 @@ namespace CpqSystemTool
         /// WebView2 就绪 = 真正创建离屏窗口并 EnsureCoreWebView2Async 初始化成功
         ///   （复用探针实际初始化路径，能识别「Runtime 已装但初始化挂起」这种此前误报就绪的故障）。
         /// </summary>
-        private async void RefreshDepStatus(TextBlock nodeHeader, TextBlock wvHeader)
+        private async void RefreshDepStatus(TextBlock nodeHeader, TextBlock wvHeader, TextBox logBox = null)
         {
             if (nodeHeader != null) nodeHeader.Text = "Node + Playwright + Chromium\n（检测中…）";
             if (wvHeader != null) wvHeader.Text = "WebView2 Runtime（系统 Edge）\n（检测中…）";
@@ -707,7 +735,12 @@ namespace CpqSystemTool
 
             // 真实初始化校验：复用 InitAsync（离屏窗口渲染 + EnsureCoreWebView2Async），
             // 给足超时（15s）容纳版本预检与浏览器进程初始化，避免把“可用”误判为“超时未就绪”。
-            var (wvReady, wvError) = await ProbeBrowserHost.CheckWebView2ReadyAsync(TimeSpan.FromSeconds(15));
+            // 下载百分比进度：经 Dispatcher 回到 UI 线程写入日志框（\r 前缀原地刷新最后一行）。
+            Action<int> dlProgress = p => Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (logBox != null) AppendOrReplaceLog(logBox, WebView2ProbeDeps.ProgressLine(p));
+            }));
+            var (wvReady, wvError) = await ProbeBrowserHost.CheckWebView2ReadyAsync(TimeSpan.FromSeconds(15), null, dlProgress);
 
             if (nodeHeader != null)
                 nodeHeader.Text = "Node + Playwright + Chromium\n" + (nodeReady ? "（已就绪）" : "（未安装）");

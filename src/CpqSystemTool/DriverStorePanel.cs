@@ -529,11 +529,23 @@ namespace CpqSystemTool
             {
                 if (!_originalHeaders.TryGetValue(col, out var original)) continue;
                 col.Header = col.SortMemberPath == activePath && dir.HasValue
-                    ? original + (dir.Value == ListSortDirection.Ascending ? " ▲" : " ▼")
-                    : original;
+                    ? MakeSortHeader(original, dir.Value == ListSortDirection.Ascending)
+                    : (object)original;
             }
             _currentSortPath = activePath;
             _currentSortDir = dir;
+        }
+
+        /// <summary>构造带线条排序箭头的列头。</summary>
+        private UIElement MakeSortHeader(string text, bool ascending)
+        {
+            var sp = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            sp.Children.Add(new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center });
+            var arrow = UiShapes.MakeChevron(_dim, ascending ? "M 0,4 L 4,0 L 8,4" : "M 0,0 L 4,4 L 8,0");
+            arrow.Margin = new Thickness(6, 0, 0, 0);
+            arrow.VerticalAlignment = VerticalAlignment.Center;
+            sp.Children.Add(arrow);
+            return sp;
         }
 
         /// <summary>根据 _groupMode 配置 CollectionView 的分组描述。</summary>

@@ -329,6 +329,9 @@ namespace CpqSystemTool
             try
             {
                 logf("[*] 尝试 WebView2 进程内探针（直接调用本机 Edge，无需下载依赖）…");
+                // 安全网：探针初始化前确保 exe 目录存在 WebView2 托管依赖（单文件分发场景，
+                // 用户从未点过“修复/安装”时也要能拉到）。失败仅记录，探针随后回退 Node 方案。
+                WebView2ProbeDeps.EnsureWebView2ProbeDeps(logf, p => logf(WebView2ProbeDeps.ProgressLine(p)));
                 using (var host = new ProbeBrowserHost())
                 {
                     if (host.InitAsync(TimeSpan.FromSeconds(20), logf).GetAwaiter().GetResult())

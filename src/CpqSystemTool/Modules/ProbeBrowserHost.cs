@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -56,6 +57,28 @@ namespace CpqSystemTool
             _initTcs = new TaskCompletionSource<bool>();
             _lastStep = "启动 STA 线程";
 
+            // 安全网：探针初始化前确保 exe 目录存在 WebView2 托管依赖（单文件分发场景）。
+            // 失败仅记录、不抛异常，随后仍走既有 WebView2 初始化 / Node 回退逻辑。
+            try { WebView2ProbeDeps.EnsureWebView2ProbeDeps(diag, p => (diag ?? (_ => { }))(WebView2ProbeDeps.ProgressLine(p))); }
+            catch (Exception ex) { diag?.Invoke("[WebView2] 探针依赖预拉取异常（已忽略）：" + ex.Message); }
+
+            // 若托管依赖在下载/解压后仍缺失（如离线、目录只读），不要启动 STA 线程——
+            // 否则 STA 线程构造 WebView2 控件会触发 FileNotFoundException，且 assembly 缺失常在
+            // STA 线程 JIT 阶段即炸，早于 lambda 内 try/catch 的执行，从而逃逸为
+            // AppDomain.UnhandledException 导致进程崩溃。改为优雅返回 false，由上层回退 Node 方案。
+            try
+            {
+                string exeDirNow = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                if (string.IsNullOrEmpty(exeDirNow)
+                    || !File.Exists(Path.Combine(exeDirNow, "Microsoft.Web.WebView2.WinForms.dll")))
+                {
+                    diag?.Invoke("[WebView2] 托管依赖缺失且无法获取，跳过 WebView2 探针（将回退 Node）");
+                    _initTcs.TrySetResult(false);
+                    return false;
+                }
+            }
+            catch { /* 目录探测异常时继续尝试，交由 STA 线程兜底 */ }
+
             // 轻量预检：先尝试读取系统 WebView2 Runtime 版本（不创建窗口/控件）。
             // 这能区分「未安装」和「已安装但 EnsureCoreWebView2Async 卡住」两类场景。
             try
@@ -75,38 +98,48 @@ namespace CpqSystemTool
             diag?.Invoke("[WebView2] " + _lastStep);
             _thread = new Thread(() =>
             {
-                // 在 STA 线程上建立 WinForms 消息循环。WinForms 的 Application 是每线程独立的，
-                // 不受主程序 WPF Application.Current 单例限制（一个 AppDomain 只能有一个 WPF Application，
-                // 主程序已占用），因此后台线程必须用 WinForms 承载 WebView2，否则 EnsureCoreWebView2Async 握手机卡死。
-                var form = new Form
+                try
                 {
-                    // 8×8 像素置于工作区左上角：在屏幕内（HWND 有效、会被 DWM 合成），几乎不可见。
-                    Width = 8,
-                    Height = 8,
-                    FormBorderStyle = FormBorderStyle.None,
-                    ShowInTaskbar = false,
-                    StartPosition = FormStartPosition.Manual,
-                    Location = new System.Drawing.Point(SystemInformation.WorkingArea.Left, SystemInformation.WorkingArea.Top),
-                    Opacity = 0,   // WinForms 的 Opacity 不会像 WPF 那样把子 HWND 变成分层黑框，可安全隐藏
-                    BackColor = System.Drawing.Color.Black,
-                    Text = "ProbeHost",
-                };
-                var wv = new WebView2 { Dock = DockStyle.Fill };
-                form.Controls.Add(wv);
-                _form = form;
-                _wv = wv;
-
-                // form.Load 在 STA 线程的 async 上下文中触发，异常可正确传播（而非被吞掉）。
-                form.Load += async (s, e) =>
-                {
-                    try { await InitBrowserAsync(diag); }
-                    catch (Exception ex)
+                    // 在 STA 线程上建立 WinForms 消息循环。WinForms 的 Application 是每线程独立的，
+                    // 不受主程序 WPF Application.Current 单例限制（一个 AppDomain 只能有一个 WPF Application，
+                    // 主程序已占用），因此后台线程必须用 WinForms 承载 WebView2，否则 EnsureCoreWebView2Async 握手机卡死。
+                    var form = new Form
                     {
-                        _initError = "宿主初始化异常: " + ex.GetType().Name + " - " + ex.Message;
-                        _initTcs.TrySetResult(false);
-                    }
-                };
-                Application.Run(form);   // 阻塞直到 form.Close()；之后 STA 线程结束
+                        // 8×8 像素置于工作区左上角：在屏幕内（HWND 有效、会被 DWM 合成），几乎不可见。
+                        Width = 8,
+                        Height = 8,
+                        FormBorderStyle = FormBorderStyle.None,
+                        ShowInTaskbar = false,
+                        StartPosition = FormStartPosition.Manual,
+                        Location = new System.Drawing.Point(SystemInformation.WorkingArea.Left, SystemInformation.WorkingArea.Top),
+                        Opacity = 0,   // WinForms 的 Opacity 不会像 WPF 那样把子 HWND 变成分层黑框，可安全隐藏
+                        BackColor = System.Drawing.Color.Black,
+                        Text = "ProbeHost",
+                    };
+                    var wv = new WebView2 { Dock = DockStyle.Fill };
+                    form.Controls.Add(wv);
+                    _form = form;
+                    _wv = wv;
+
+                    // form.Load 在 STA 线程的 async 上下文中触发，异常可正确传播（而非被吞掉）。
+                    form.Load += async (s, e) =>
+                    {
+                        try { await InitBrowserAsync(diag); }
+                        catch (Exception ex)
+                        {
+                            _initError = "宿主初始化异常: " + ex.GetType().Name + " - " + ex.Message;
+                            _initTcs.TrySetResult(false);
+                        }
+                    };
+                    Application.Run(form);   // 阻塞直到 form.Close()；之后 STA 线程结束
+                }
+                catch (Exception ex)
+                {
+                    // 捕获 STA 线程启动初期的异常（如 WebView2 程序集缺失），避免未处理异常终止进程。
+                    _initError = "STA 线程启动失败: " + ex.GetType().Name + " - " + ex.Message;
+                    diag?.Invoke("[WebView2] " + _initError);
+                    _initTcs.TrySetResult(false);
+                }
             });
             _thread.SetApartmentState(ApartmentState.STA);
             _thread.IsBackground = true;
@@ -229,11 +262,21 @@ namespace CpqSystemTool
         /// （此前误报“就绪”的根因：CreateAsync 成功 ≠ 浏览器能初始化）。
         /// 在 timeout 内成功返回 (true, null)；失败或超时返回 (false, 错误信息)。
         /// </summary>
-        public static async Task<(bool Ready, string Error)> CheckWebView2ReadyAsync(TimeSpan timeout, Action<string> diag = null)
+        public static async Task<(bool Ready, string Error)> CheckWebView2ReadyAsync(TimeSpan timeout, Action<string> diag = null, Action<int> progress = null)
         {
             if (timeout <= TimeSpan.Zero) timeout = DefaultInitTimeout;
             try
             {
+                // 安全网前置：必须先于 new ProbeBrowserHost() 拉取托管依赖——
+                // 否则构造时 CLR 需解析 WebView2 字段类型（_wv/_core），DLL 缺失会直接抛
+                // TypeLoadException/FileNotFoundException，永远走不到 InitAsync 里的下载。
+                // RunProbeInternal 已如此排序，此处对齐，确保刷新状态路径也能自愈。
+                // 本方法由 deps 弹窗刷新（RefreshDepStatus，跑在 UI 线程）await 调用，
+                // 首次 DLL 缺失时下载最长 60s；用 Task.Run 把同步阻塞让到后台线程，避免界面冻结。
+                // 刷新路径 diag 为 null（仅写诊断日志文件、不刷 UI），但 progress 回调由 RefreshDepStatus
+                // 经 Dispatcher 回到 UI 线程写入日志框，显示下载百分比（\r 前缀原地刷新最后一行）。
+                await Task.Run(() => WebView2ProbeDeps.EnsureWebView2ProbeDeps(diag, progress));
+
                 // 复用真实初始化路径：创建宿主窗口（屏幕内渲染）+ EnsureCoreWebView2Async。
                 // 用 using 确保无论成败都 Dispose 掉 STA 线程与临时用户数据目录。
                 using (var host = new ProbeBrowserHost())
