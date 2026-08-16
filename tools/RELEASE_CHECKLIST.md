@@ -28,6 +28,7 @@
   - 仓库 `CHANGELOG.md` 新增对应版本段（Release 附言来源）；
   - **程序内 About 页「更新日志」TextBlock 也要加新版本条目**（区别于 CHANGELOG.md，之前漏过导致 GitHub 显示旧版本）。
   - About 页已改为运行时读取嵌入的 CHANGELOG.md（单一事实来源），发布前无需手动同步 About 措辞；CHANGELOG.md 即权威内容。
+  - ⚠️ **CHANGELOG.md 是内嵌资源（csproj:50 `<EmbeddedResource Include="..\..\CHANGELOG.md" LogicalName="CHANGELOG.md" />`）**：任何对它的编辑都必须重新 `dotnet build` + 重部署 exe + 重传资产 + force-move tag，**不能只改文档或 Release 附言**——否则程序内「更新日志」仍显示旧内容（v1.07 曾因只改 CHANGELOG 未重建，被用户纠正）。这与刷新 Release 的「源码有变更须 rebuild」一致。
 - 收尾卫生：辅助 `.ps1` 脚本整理归 `tools/`、**单独提交、不进版本 tag**；排查报告类 `.md` **不纳入发布**（保持 untracked 或移 `docs/`）。
 
 ---
@@ -77,7 +78,7 @@
 - 本地中文交付 `系统清理与优化工具_vX.XX.exe` **复制为英文名再上传**，传完删临时副本。
 - ⚠️ **切勿经 Git Bash 向 Windows 版 gh.exe 传中文参数**，否则资产名会被截断为 `_vX.XX.exe`。
 - ⚠️ **`gh release create "path#assetname"` 的重命名语法在本机不生效**（会静默回退为文件 basename）。因此**不要依赖 `#` 改名**，直接把临时副本命名为目标英文名 `System-Cleanup-Optimizer_vX.XX.exe` 再上传即可；上传后用 `gh release view vX.XX --json assets` 核验资产名。
-- ⚠️ **同时上传仓库根 `README.md` 作为 Release 资产**（v1.04 起新增）：用户下载 exe 时可一并下载功能介绍，弥补「exe / 导出源码包不含 README」的缺口。与 exe 资产一起上传、一起核验：
+- ⚠️ **必须同时上传对应版本的 `README.md` 作为 Release 资产**（v1.04 起要求；v1.06/v1.07 曾一度漏传，已补）：用户下载 exe 时可一并下载功能介绍，弥补「exe / 导出源码包不含 README」的缺口。从当前 tag 取 `README.md`（与版本 badge/下载文件名/功能说明一致），与 exe 一起上传、一起核验：
   ```
   gh release upload vX.XX "System-Cleanup-Optimizer_vX.XX.exe" "README.md" --clobber
   ```
@@ -129,7 +130,7 @@
    ```
    gh release upload vX.XX "README.md" --clobber
    ```
-5. 核验：下载 `gh api .../zipball/vX.XX` 的源码包，确认含本轮新代码（如新增文件 / bug 修复标记）；`gh release view --json assets` 确认资产名与大小。
+5. 核验 tag 内某文件内容，最稳用 **contents API（base64 解码）**，避开 zipball 坑：`gh api repos/<owner>/<repo>/contents/CHANGELOG.md?ref=vX.XX` 取 `content` 字段 base64 解码后 grep 目标串（如 `二次修补`/`统一全部 ComboBox`）。⚠️ `gh api .../zipball/vX.XX --silent > f` 会得 **0 字节**（`--silent` 吞掉重定向/报错），勿用。另 `gh release view --json assets` 确认资产名与大小。
 
 📌 **关键认知**：「不打新 tag」≠「不碰 tag」。要刷新已存在 Release 的内容，必须**移动现有 tag（force-push）并重新上传上传型资产**；否则源码/README/描述始终停在原 tag 的旧 commit。这与「不打新 tag」不冲突（是更新现有 tag，不是新建 `vX.YY`）。
 
