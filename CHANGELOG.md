@@ -4,6 +4,28 @@
 
 ---
 
+## [v1.06] - 2026-08-16
+
+> 相对 v1.05 的源码变更：WebView2 浏览器探针依赖改为「运行时从 NuGet 拉取」兜底（摆脱 Costura 嵌入）；全部实心箭头改为开放折线 chevron（抽出 UiShapes 共享）；修复清理优化页分组 Expander 标题丢失与箭头错位；若干健壮性修复 + 版本提升至 v1.06。
+
+### ✨ 新增
+- **WebView2 探针依赖运行时下载（兜底）**：新增 `Modules/WebView2ProbeDeps.cs`。单文件/裸 exe 分发到其他机器缺失 3 个托管 WebView2 DLL 时，运行时从 NuGet 拉取 `Microsoft.Web.WebView2 1.0.2045.28`（3 托管 + 原生 Loader）到 exe 目录；幂等（sentinel=`Core.dll`）、不抛异常（失败仅记录日志、探针随后回退 Node+Playwright）、后台下载不阻塞 UI。挂钩 `EdgeCore` 安装/修复、`ProbeBrowserHost` 初始化、`RunProbeInternal` 共 4 处。
+
+### ♻️ 变更 / 策略
+- **版本提升 v1.05 → v1.06**：同步 csproj（1.0.6.0 ×3）/ `APP_VERSION`（`v1.06`）/ 交付文件名 `系统清理与优化工具_v1.06.exe`。
+- **全量箭头线条化**：实心三角 ▲▼◄► / Path 填充改为开放折线 chevron（`Fill=Transparent` + `Stroke` + 圆角线帽、无 `Z`）；抽出 `UiShapes.MakeChevron`（真实 Path）与 `ConfigureChevronFactory`（ControlTemplate 工厂）消除 4 处重复；排序箭头方向语义纠正为「升=上、降=下」。
+- **下载路径收敛**：`EdgeCore.RepairWebView2` 安装器下载路径由桌面改为 `AppDomain.CurrentDomain.BaseDirectory`（exe 目录）。
+
+### 🐛 修复
+- **清理优化页分组 Expander 标题丢失 + 箭头错位**：`MakeLineArrowExpander` 未把 `Expander.Header` 绑到 `HeaderSite.Content`，导致模板内 `ContentPresenter` 无内容、标题整体空白；并修正 Grid 列序——箭头置于第 0 列（左侧、居中）、标题置于第 1 列（居左）。折叠时箭头仍朝右。
+- **ProbeBrowserHost STA 线程崩溃守卫**：STA lambda 体整体 try/catch，异常写入 `_initError` 并以 `TrySetResult(false)` 完成，避免缺失 WebView2 程序集时进程崩溃（探针正常回退 Node 提示）；新增 `webview2_deps.log` 诊断下载成败。
+- **BOM 合规**：新增 `UiShapes.cs` / `WebView2ProbeDeps.cs` 补全 UTF-8 BOM（项目硬性约定）。
+
+### ♻️ 质量打磨（行为保持）
+- 抽出 `AppendOrReplaceLog`（原地百分比进度重写）、`repositionDepsPopup`（主窗口拖动时下拉跟随）等局部优化。
+
+---
+
 ## [v1.05] - 2026-08-14
 
 > 相对 v1.04 的源码变更：新增「驱动清理」模块（参考 Driver Store Explorer / RAPR 界面与行为设计，基于 Windows 原生 API 独立实现）+ 多项交互与体验增强 + 版本提升 v1.04 → v1.05。
