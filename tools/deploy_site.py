@@ -51,7 +51,7 @@ def http_json(method, url, token, body=None, is_jwt=False):
     ctx = ssl.create_default_context()
     ctx.check_revocation = False
     opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
-    resp = opener.open(req, timeout=300)
+    resp = opener.open(req, timeout=600)
     return resp.status, json.loads(resp.read().decode("utf-8"))
 
 
@@ -113,11 +113,17 @@ def main():
     jwt = j["result"]["jwt"]
     print("Step1 upload-token OK")
 
-    # Step 2: upload blobs
-    s, j = http_json("POST", "%s/pages/assets/upload" % API, jwt, upload_items, is_jwt=True)
-    print("Step2 assets/upload:", s, "success=", j.get("success"))
-    if not j.get("success"):
-        print(j); sys.exit(1)
+    # Step 2: upload blobs in small batches to avoid proxy timeout on slow links
+    BATCH = 2
+    total_uploaded = 0
+    for i in range(0, len(upload_items), BATCH):
+        batch = upload_items[i:i + BATCH]
+        s, j = http_json("POST", "%s/pages/assets/upload" % API, jwt, batch, is_jwt=True)
+        print("Step2 assets/upload batch %d/%d:" % (i // BATCH + 1, (len(upload_items) + BATCH - 1) // BATCH), s, "success=", j.get("success"))
+        if not j.get("success"):
+            print(j); sys.exit(1)
+        total_uploaded += len(batch)
+    print("Step2 total uploaded:", total_uploaded)
 
     # Step 3: upsert hashes
     s, j = http_json("POST", "%s/pages/assets/upsert-hashes" % API, jwt,
