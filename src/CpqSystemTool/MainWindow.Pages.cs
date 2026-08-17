@@ -21,10 +21,13 @@ namespace CpqSystemTool
 {
     public partial class MainWindow
     {
-        // 关于页「下载更新」按钮与待下载版本标签（由 CheckForUpdate 设置）。
+        // 关于页「下载更新」按钮与待下载版本文件名（由 CheckForUpdate 设置，如 系统清理与优化工具_v1.08.exe）。
         private Button _aboutDownloadUpdateBtn;
-        private string _pendingUpdateTag;
+        private string _pendingUpdateFileName;
         private string _pendingUpdateUrl;   // 从官网 version.json 取得的下载直链（含正确的资产文件名）
+
+        /// <summary>官网根域名（含末尾斜杠），更新检查与下载直链均基于此拼接。</summary>
+        private const string OfficialSiteRoot = "https://cpq-system-tool.pages.dev/";
 
         /// <summary>MakeCheck 复选框勾选态的语义：勾选 = 禁用，还是勾选 = 启用。</summary>
         private enum CheckSemantics { CheckedMeansDisable, CheckedMeansEnable }
@@ -2129,56 +2132,56 @@ namespace CpqSystemTool
         private void CheckForUpdate()
         {
             SetStatus("正在检查更新…");
-            var disp = Dispatcher;
             System.Threading.Tasks.Task.Run(() =>
             {
                 try
                 {
-                    var json = DownloadStringWithProxyFallback("https://cpq-system-tool.pages.dev/version.json");
+                    var json = DownloadStringWithProxyFallback(OfficialSiteRoot + "version.json");
                     var verMatch = System.Text.RegularExpressions.Regex.Match(json, "\"version\"\\s*:\\s*\"([^\"]+)\"");
-                    if (!verMatch.Success) { disp.Invoke(() => SetStatus("检查更新：未获取到版本信息")); return; }
+                    if (!verMatch.Success) { SetStatusUi("检查更新：未获取到版本信息"); return; }
                     var latest = verMatch.Groups[1].Value.Trim();
                     var urlMatch = System.Text.RegularExpressions.Regex.Match(json, "\"url\"\\s*:\\s*\"([^\"]+)\"");
                     _pendingUpdateUrl = urlMatch.Success ? urlMatch.Groups[1].Value : "";
                     var nameMatch = System.Text.RegularExpressions.Regex.Match(json, "\"name\"\\s*:\\s*\"([^\"]+)\"");
                     // 保存完整 exe 文件名（如 系统清理与优化工具_v1.08.exe），DownloadUpdate 直接复用，无需自行拼装
-                    _pendingUpdateTag = nameMatch.Success ? nameMatch.Groups[1].Value : latest;
+                    _pendingUpdateFileName = nameMatch.Success ? nameMatch.Groups[1].Value : latest;
                     var cmp = CompareVersion(APP_VERSION, latest);
                     if (cmp < 0)
                     {
-                        disp.Invoke(() =>
-                        {
-                            SetStatus("发现新版本 " + latest + "，可前往官网下载");
-                            if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Visible;
-                        });
+                        SetStatusUi("发现新版本 " + latest + "，可前往官网下载", Visibility.Visible);
                     }
                     else if (cmp == 0)
                     {
-                        _pendingUpdateTag = null;
-                        disp.Invoke(() =>
-                        {
-                            SetStatus("已是最新版本 (" + APP_VERSION + ")");
-                            if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Collapsed;
-                        });
+                        _pendingUpdateFileName = null;
+                        SetStatusUi("已是最新版本 (" + APP_VERSION + ")", Visibility.Collapsed);
                     }
                     else
                     {
-                        _pendingUpdateTag = null;
-                        disp.Invoke(() =>
-                        {
-                            SetStatus("当前版本 (" + APP_VERSION + ") 已高于线上 " + latest);
-                            if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Collapsed;
-                        });
+                        _pendingUpdateFileName = null;
+                        SetStatusUi("当前版本 (" + APP_VERSION + ") 已高于线上 " + latest, Visibility.Collapsed);
                     }
                 }
                 catch (System.Net.WebException ex)
                 {
-                    disp.Invoke(() => SetStatus("检查更新失败：无法连接官网（" + ex.Status + "）"));
+                    SetStatusUi("检查更新失败：无法连接官网（" + ex.Status + "）");
                 }
                 catch (System.Exception ex)
                 {
-                    disp.Invoke(() => SetStatus("检查更新失败：" + ex.Message));
+                    SetStatusUi("检查更新失败：" + ex.Message);
                 }
+            });
+        }
+
+        /// <summary>回到 UI 线程写入状态栏文本。</summary>
+        private void SetStatusUi(string message) => Dispatcher.Invoke(() => SetStatus(message));
+
+        /// <summary>回到 UI 线程写入状态栏文本，并同步「下载更新」按钮可见性。</summary>
+        private void SetStatusUi(string message, Visibility downloadBtnVisibility)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                SetStatus(message);
+                if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = downloadBtnVisibility;
             });
         }
 
@@ -2219,12 +2222,12 @@ namespace CpqSystemTool
         /// <summary>用户点击「下载更新」后：弹出 SaveFileDialog 自选保存路径，然后从官网下载对应版本 exe。</summary>
         private async void DownloadUpdate()
         {
-            if (string.IsNullOrEmpty(_pendingUpdateTag))
+            if (string.IsNullOrEmpty(_pendingUpdateFileName))
             {
                 SetStatus("没有检测到可用的新版本，请先点击「检查更新」");
                 return;
             }
-            var tag = _pendingUpdateTag; // e.g. "系统清理与优化工具_v1.08.exe"
+            var tag = _pendingUpdateFileName; // e.g. "系统清理与优化工具_v1.08.exe"
             var fileName = tag;
             var dlg = new SaveFileDialog
             {
@@ -2240,7 +2243,7 @@ namespace CpqSystemTool
 
             // 优先使用官网 version.json 提供的直链（_pendingUpdateUrl）；仅在缺失时回退到官网根目录下的 exe 文件名。
             var url = _pendingUpdateUrl;
-            if (string.IsNullOrEmpty(url)) url = "https://cpq-system-tool.pages.dev/" + fileName;
+            if (string.IsNullOrEmpty(url)) url = OfficialSiteRoot + fileName;
             SetStatus($"正在下载 {tag} …");
             var disp = Dispatcher;
             try
