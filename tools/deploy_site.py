@@ -94,6 +94,18 @@ def main():
                 ctype = "text/css; charset=utf-8"
             elif name.endswith(".js"):
                 ctype = "application/javascript"
+            elif name.endswith(".png"):
+                ctype = "image/png"
+            elif name.endswith(".ico"):
+                ctype = "image/x-icon"
+            elif name.endswith(".svg"):
+                ctype = "image/svg+xml"
+            elif name.lower().endswith((".jpg", ".jpeg")):
+                ctype = "image/jpeg"
+            elif name.endswith(".gif"):
+                ctype = "image/gif"
+            elif name.endswith(".webp"):
+                ctype = "image/webp"
             entries.append((name, p, ctype))
 
     # compute blake3 keys + base64 content
