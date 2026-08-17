@@ -24,7 +24,7 @@ namespace CpqSystemTool
         // 关于页「下载更新」按钮与待下载版本标签（由 CheckForUpdate 设置）。
         private Button _aboutDownloadUpdateBtn;
         private string _pendingUpdateTag;
-        private string _pendingUpdateUrl;   // 从 GitHub API 取得的真实浏览器下载直链（含正确的资产文件名）
+        private string _pendingUpdateUrl;   // 从官网 version.json 取得的下载直链（含正确的资产文件名）
 
         /// <summary>MakeCheck 复选框勾选态的语义：勾选 = 禁用，还是勾选 = 启用。</summary>
         private enum CheckSemantics { CheckedMeansDisable, CheckedMeansEnable }
@@ -1859,6 +1859,16 @@ namespace CpqSystemTool
             Grid.SetRow(licenseValue, 1); Grid.SetColumn(licenseValue, 3);
             devGrid.Children.Add(licenseValue);
 
+            // Row 2（右侧）：官网地址（紧跟开源协议行下方，与左侧邮箱同行）
+            var siteLabel = DevLabel("官网：", rightSide: true);
+            siteLabel.Margin = new Thickness(24, 4, 12, 0);
+            Grid.SetRow(siteLabel, 2); Grid.SetColumn(siteLabel, 2);
+            devGrid.Children.Add(siteLabel);
+
+            var siteValue = LinkText("cpq-system-tool.pages.dev", "https://cpq-system-tool.pages.dev/", 12.5);
+            Grid.SetRow(siteValue, 2); Grid.SetColumn(siteValue, 3);
+            devGrid.Children.Add(siteValue);
+
             // Row 2: 邮箱 + 可复制文本框
             var emailLabel = DevLabel("邮箱：");
             emailLabel.Margin = new Thickness(0, 4, 12, 0);
@@ -2115,7 +2125,7 @@ namespace CpqSystemTool
             throw new System.Exception("所有网络方式均失败：" + (last?.Message ?? "未知错误"), last);
         }
 
-        /// <summary>检查 GitHub Release 是否有新版本，结果经 Dispatcher 回到 UI 线程写入状态栏。</summary>
+        /// <summary>检查官网 version.json 是否有新版本，结果经 Dispatcher 回到 UI 线程写入状态栏。</summary>
         private void CheckForUpdate()
         {
             SetStatus("正在检查更新…");
@@ -2124,20 +2134,21 @@ namespace CpqSystemTool
             {
                 try
                 {
-                    var json = DownloadStringWithProxyFallback("https://api.github.com/repos/dandelion80231/System-Cleanup-Optimizer/releases/latest");
-                    var m = System.Text.RegularExpressions.Regex.Match(json, "\"tag_name\"\\s*:\\s*\"([^\"]+)\"");
-                    if (!m.Success) { disp.Invoke(() => SetStatus("检查更新：未获取到版本信息")); return; }
-                    var latest = m.Groups[1].Value.Trim();
-                    // 从同一份 JSON 提取真实浏览器下载直链（含正确的资产文件名，可能是中文也可能是英文），避免自己拼文件名导致 404。
-                    var urlMatch = System.Text.RegularExpressions.Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.exe)\"");
+                    var json = DownloadStringWithProxyFallback("https://cpq-system-tool.pages.dev/version.json");
+                    var verMatch = System.Text.RegularExpressions.Regex.Match(json, "\"version\"\\s*:\\s*\"([^\"]+)\"");
+                    if (!verMatch.Success) { disp.Invoke(() => SetStatus("检查更新：未获取到版本信息")); return; }
+                    var latest = verMatch.Groups[1].Value.Trim();
+                    var urlMatch = System.Text.RegularExpressions.Regex.Match(json, "\"url\"\\s*:\\s*\"([^\"]+)\"");
                     _pendingUpdateUrl = urlMatch.Success ? urlMatch.Groups[1].Value : "";
+                    var nameMatch = System.Text.RegularExpressions.Regex.Match(json, "\"name\"\\s*:\\s*\"([^\"]+)\"");
+                    // 保存完整 exe 文件名（如 系统清理与优化工具_v1.08.exe），DownloadUpdate 直接复用，无需自行拼装
+                    _pendingUpdateTag = nameMatch.Success ? nameMatch.Groups[1].Value : latest;
                     var cmp = CompareVersion(APP_VERSION, latest);
                     if (cmp < 0)
                     {
-                        _pendingUpdateTag = latest;
                         disp.Invoke(() =>
                         {
-                            SetStatus("发现新版本 " + latest + "，可点击右侧「下载更新」保存到本地");
+                            SetStatus("发现新版本 " + latest + "，可前往官网下载");
                             if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Visible;
                         });
                     }
@@ -2146,7 +2157,7 @@ namespace CpqSystemTool
                         _pendingUpdateTag = null;
                         disp.Invoke(() =>
                         {
-                            SetStatus("当前已是最新版本 " + APP_VERSION);
+                            SetStatus("已是最新版本 (" + APP_VERSION + ")");
                             if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Collapsed;
                         });
                     }
@@ -2155,14 +2166,14 @@ namespace CpqSystemTool
                         _pendingUpdateTag = null;
                         disp.Invoke(() =>
                         {
-                            SetStatus("当前版本 " + APP_VERSION + " 已高于线上 " + latest);
+                            SetStatus("当前版本 (" + APP_VERSION + ") 已高于线上 " + latest);
                             if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = Visibility.Collapsed;
                         });
                     }
                 }
                 catch (System.Net.WebException ex)
                 {
-                    disp.Invoke(() => SetStatus("检查更新失败：无法连接 GitHub（" + ex.Status + "）"));
+                    disp.Invoke(() => SetStatus("检查更新失败：无法连接官网（" + ex.Status + "）"));
                 }
                 catch (System.Exception ex)
                 {
@@ -2205,7 +2216,7 @@ namespace CpqSystemTool
             return parts;
         }
 
-        /// <summary>用户点击「下载更新」后：弹出 SaveFileDialog 自选保存路径，然后从 GitHub Release 下载对应版本 exe。</summary>
+        /// <summary>用户点击「下载更新」后：弹出 SaveFileDialog 自选保存路径，然后从官网下载对应版本 exe。</summary>
         private async void DownloadUpdate()
         {
             if (string.IsNullOrEmpty(_pendingUpdateTag))
@@ -2213,8 +2224,8 @@ namespace CpqSystemTool
                 SetStatus("没有检测到可用的新版本，请先点击「检查更新」");
                 return;
             }
-            var tag = _pendingUpdateTag;
-            var fileName = $"系统清理与优化工具_{tag}.exe";
+            var tag = _pendingUpdateTag; // e.g. "系统清理与优化工具_v1.08.exe"
+            var fileName = tag;
             var dlg = new SaveFileDialog
             {
                 FileName = fileName,
@@ -2227,9 +2238,9 @@ namespace CpqSystemTool
 
             if (dlg.ShowDialog() != true) return;
 
-            // 优先使用从 GitHub API 取得的真实浏览器下载直链（文件名正确，避免 404）；仅在缺失时回退到本地拼装。
+            // 优先使用官网 version.json 提供的直链（_pendingUpdateUrl）；仅在缺失时回退到官网根目录下的 exe 文件名。
             var url = _pendingUpdateUrl;
-            if (string.IsNullOrEmpty(url)) url = $"https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/download/{tag}/{fileName}";
+            if (string.IsNullOrEmpty(url)) url = "https://cpq-system-tool.pages.dev/" + fileName;
             SetStatus($"正在下载 {tag} …");
             var disp = Dispatcher;
             try

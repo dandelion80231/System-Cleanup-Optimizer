@@ -28,6 +28,14 @@ import base64
 import blake3
 import urllib.request
 import urllib.error
+import socket as _socket
+
+# Force IPv4 name resolution: Python's default IPv6-first getaddrinfo fails the
+# TLS handshake to Cloudflare in this environment (curl/Schannel works fine).
+_gai = _socket.getaddrinfo
+def _force_ipv4(host, port, family=_socket.AF_UNSPEC, type=0, proto=0, flags=0):
+    return _gai(host, port, _socket.AF_INET, type, proto, flags)
+_socket.getaddrinfo = _force_ipv4
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SITE_DIR = os.path.join(os.path.dirname(HERE), "site-dist")

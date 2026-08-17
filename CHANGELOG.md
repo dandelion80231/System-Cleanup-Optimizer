@@ -4,6 +4,20 @@
 
 ---
 
+## [v1.08] - 2026-08-17
+
+> 相对 v1.07 的源码变更：关于页新增官网地址链接，检查更新改为从官网 version.json 获取新版本，官网安装包统一改为中文名。
+
+### ✨ 新增
+- **关于页新增官网地址**：在「开发者与协议」卡片新增 `官网：cpq-system-tool.pages.dev` 链接，指向 https://cpq-system-tool.pages.dev/。
+
+### ♻️ 变更 / 策略
+- **检查更新改为从官网 version.json 获取新版本**：原检查更新从 GitHub Releases API 拉取 `tag_name`，现改为读取官网根 `version.json` 的 `version`/`name`/`url` 字段，普通用户无需访问 GitHub、下载更快；版本比较与「下载更新」弹窗逻辑保持不变。
+- **官网安装包统一改为中文名**：官网托管与下载页全部 exe 由 `System-Cleanup-Optimizer_vX.XX.exe` 改为 `系统清理与优化工具_vX.XX.exe`（v1.01–v1.08），`version.json` 的 `name`/`url` 同步使用中文名；GitHub Release 资产保留英文名 `System-Cleanup-Optimizer_v1.08.exe`（规避 gh 中文文件名截断）。
+- **版本提升 v1.07 → v1.08**：同步 csproj（1.0.8.0 ×3）/ `APP_VERSION`（`v1.08`）/ 交付文件名 `系统清理与优化工具_v1.08.exe`。
+
+---
+
 ## [v1.07] - 2026-08-17
 
 > 相对 v1.06 的源码变更：完成全部下拉框（ComboBox）深/浅色主题统一与自定义下拉 Popup 层级修复，修复「安装到」按钮主题自适应，并例行版本提升 v1.06 → v1.07。
