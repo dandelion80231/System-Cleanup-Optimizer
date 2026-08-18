@@ -86,9 +86,7 @@ namespace CpqSystemTool
         [DllImport("pdh.dll")]
         private static extern uint PdhCloseQuery(IntPtr hQuery);
 
-        private const uint PDH_FMT_LONG = 0x00000100;
         private const uint PDH_FMT_LARGE = 0x00000200;
-        private const uint PDH_FMT_DOUBLE = 0x00000400;
         private const uint PDH_FMT_NOCAP100 = 0x00008000;
 
         [StructLayout(LayoutKind.Explicit, Size = 16)]
@@ -340,8 +338,7 @@ namespace CpqSystemTool
                 {
                     Debug.WriteLine("GetUseCounts: 所有计数器源均失败，使用基于总览数据的降级视图。");
                     u.Available = overview.AvailPhys;
-                    u.FreeZero = overview.AvailPhys;      // 把全部可用内存归入 Free+Zero 用于占比条
-                    u.InUse = totalPhys > overview.AvailPhys ? totalPhys - overview.AvailPhys : 0;
+                    u.FreeZero = overview.AvailPhys;      // 把全部可用内存归入 Free+Zero 用于占比条（InUse 由下方统一推导）
                     u.Standby = 0;
                     u.Modified = 0;
                     u.Committed = overview.CommitTotal;
