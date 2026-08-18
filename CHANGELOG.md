@@ -19,6 +19,10 @@
 - **设计为「文档化 API 优先、避免未文档化结构体偏移」**：内存拆解刻意改用 WMI 文档化性能计数器还原 RAMMap 视图，规避 `NtQuerySystemInformation(0x32)` 未文档化结构体偏移猜错导致静默假数据的风险；仅优化层（Standby 清理）使用经验证权威常量 `MemoryPurgeStandbyList=2`（网上部分资料误写为 3/4）。
 - **版本提升 v1.09 → v1.10**：同步 csproj（1.0.10.0 ×3）/ `APP_VERSION`（`v1.10`）/ 交付文件名 `系统清理与优化工具_v1.10.exe`。
 
+### 🐞 修复
+- **内存工具卡片 A 布局**：总览 6 个统计块由 `WrapPanel` 改为 2 行 × 3 列网格，占满页面宽度（不再随窗口宽度换行错落）。
+- **内存工具卡片 B 数据可靠性**：`WMI Win32_PerfFormattedData_PerfOS_Memory` 首次查询常返回全 0（计数器尚未「cook」），`GetUseCounts` 增加一次重试（+80ms），修复占比条闪一下即消失、拆解全显示 0 B 的问题；取数仍不可用时不再把占比条收缩为 0 宽度（改为整条灰色占位 + 文字提示），避免「消失」观感；提交上限在 WMI `CommitLimitBytes` 返回空时回退到 `GetPerformanceInfo` 的可靠值。
+
 ---
 
 ## [v1.09] - 2026-08-18

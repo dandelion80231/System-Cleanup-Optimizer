@@ -20,6 +20,7 @@ namespace CpqSystemTool
         private static readonly SolidColorBrush MemBrushStandby = new SolidColorBrush(Color.FromRgb(0xF3, 0x9C, 0x12));  // 橙（备用）
         private static readonly SolidColorBrush MemBrushModified = new SolidColorBrush(Color.FromRgb(0x9B, 0x59, 0xB6)); // 紫（已修改）
         private static readonly SolidColorBrush MemBrushFree = new SolidColorBrush(Color.FromRgb(0x27, 0xAE, 0x60));     // 绿（空闲+零页）
+        private static readonly SolidColorBrush MemBrushUnknown = new SolidColorBrush(Color.FromRgb(0x9E, 0xA3, 0xA8));   // 灰（数据不可用占位）
 
         private UIElement BuildMemory()
         {
@@ -34,20 +35,31 @@ namespace CpqSystemTool
             aInner.Children.Add(SectionTitle("📊 内存总览（A）"));
             aInner.Children.Add(new TextBlock { Text = "数据来源：GlobalMemoryStatusEx + GetPerformanceInfo（均为 Windows 文档化 API）。", FontSize = 10.5, Foreground = _textDim, Margin = new Thickness(0, 0, 0, 8), TextWrapping = TextWrapping.Wrap });
 
-            var tiles = new WrapPanel { Orientation = Orientation.Horizontal };
+            // 2 行 × 3 列网格，占满页面宽度
+            var tilesGrid = new Grid();
+            for (int c = 0; c < 3; c++)
+                tilesGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            tilesGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Auto) });
+            tilesGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Auto) });
             var tTotal = MakeStatTile("总物理内存");
             var tLoad = MakeStatTile("内存占用");
             var tAvail = MakeStatTile("可用物理");
             var tCommit = MakeStatTile("已提交 / 上限");
             var tPaged = MakeStatTile("内核分页池");
             var tNonpaged = MakeStatTile("内核非分页池");
-            tiles.Children.Add(tTotal.tile);
-            tiles.Children.Add(tLoad.tile);
-            tiles.Children.Add(tAvail.tile);
-            tiles.Children.Add(tCommit.tile);
-            tiles.Children.Add(tPaged.tile);
-            tiles.Children.Add(tNonpaged.tile);
-            aInner.Children.Add(tiles);
+            Action<(Border tile, TextBlock value), int, int> placeTile = (t, row, col) =>
+            {
+                Grid.SetRow(t.tile, row);
+                Grid.SetColumn(t.tile, col);
+                tilesGrid.Children.Add(t.tile);
+            };
+            placeTile(tTotal, 0, 0);
+            placeTile(tLoad, 0, 1);
+            placeTile(tAvail, 0, 2);
+            placeTile(tCommit, 1, 0);
+            placeTile(tPaged, 1, 1);
+            placeTile(tNonpaged, 1, 2);
+            aInner.Children.Add(tilesGrid);
 
             var analyzeBtn = Btn("🔄 重新分析", true, null, 140);
             var aBtnRow = MakeBtnRow(analyzeBtn);
@@ -66,11 +78,13 @@ namespace CpqSystemTool
             for (int i = 0; i < 4; i++)
                 bBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var segBrushes = new[] { MemBrushInUse, MemBrushStandby, MemBrushModified, MemBrushFree };
+            var segments = new Border[4];
             for (int i = 0; i < 4; i++)
             {
                 var seg = new Border { Background = segBrushes[i] };
                 Grid.SetColumn(seg, i);
                 bBar.Children.Add(seg);
+                segments[i] = seg;
             }
             bInner.Children.Add(bBar);
 
@@ -183,11 +197,15 @@ namespace CpqSystemTool
 
                     double total = (double)use.Total;
                     if (total <= 0) total = 1;
-                    if (use.Available == 0 && use.Standby == 0 && use.Modified == 0 && use.FreeZero == 0)
+                    if (MemoryAnalyzer.IsBreakdownEmpty(use))
                     {
-                        noteTb.Text = "（内存拆解数据不可用：可能 WMI 服务未运行或查询失败。总览数据仍可用。）";
+                        // 数据不可用：占比条保持整条可见（灰色占位），绝不收缩为 0 宽度而"消失"。
+                        noteTb.Text = "（内存拆解数据不可用：WMI 性能计数器未就绪或查询失败。总览数据仍可用，可点击「重新分析」重试。）";
                         for (int i = 0; i < 4; i++)
-                            bBar.ColumnDefinitions[i].Width = new GridLength(0, GridUnitType.Star);
+                        {
+                            bBar.ColumnDefinitions[i].Width = new GridLength(1, GridUnitType.Star);
+                            segments[i].Background = MemBrushUnknown;
+                        }
                         legendPanel.Children.Clear();
                     }
                     else
@@ -195,16 +213,26 @@ namespace CpqSystemTool
                         noteTb.Text = "";
                         var fracs = new[] { use.InUse, use.Standby, use.Modified, use.FreeZero };
                         for (int i = 0; i < 4; i++)
+                        {
                             bBar.ColumnDefinitions[i].Width = new GridLength(Math.Max(fracs[i], 0) / total, GridUnitType.Star);
+                            segments[i].Background = segBrushes[i];
+                        }
                         FillMemoryLegend(legendPanel, use);
                     }
 
-                    mAvailable.value.Text = MemoryAnalyzer.FormatBytes(use.Available);
-                    mCache.value.Text = MemoryAnalyzer.FormatBytes(use.Cache);
-                    mCommit.value.Text = MemoryAnalyzer.FormatBytes(use.Committed);
-                    mCommitLimit.value.Text = MemoryAnalyzer.FormatBytes(use.CommitLimit);
-                    mPoolPaged.value.Text = MemoryAnalyzer.FormatBytes(use.PoolPaged);
-                    mPoolNonpaged.value.Text = MemoryAnalyzer.FormatBytes(use.PoolNonpaged);
+                    // 明细行：WMI 拆解值为 0（不可用）时回落到 GetOverview 的可靠值，避免把"0 B"当作真实数据显示；
+                    // 系统缓存(Cache)在 WMI 不可用时无可靠替代源，显式标记为 N/A。
+                    ulong availBytes = use.Available > 0 ? use.Available : overview.AvailPhys;
+                    ulong committed = use.Committed > 0 ? use.Committed : overview.CommitTotal;
+                    ulong commitLimit = use.CommitLimit > 0 ? use.CommitLimit : overview.CommitLimit;
+                    ulong pagedPool = use.PoolPaged > 0 ? use.PoolPaged : overview.KernelPaged;
+                    ulong nonpagedPool = use.PoolNonpaged > 0 ? use.PoolNonpaged : overview.KernelNonpaged;
+                    mAvailable.value.Text = MemoryAnalyzer.FormatBytes(availBytes);
+                    mCache.value.Text = use.Cache > 0 ? MemoryAnalyzer.FormatBytes(use.Cache) : "N/A（WMI 不可用）";
+                    mCommit.value.Text = MemoryAnalyzer.FormatBytes(committed);
+                    mCommitLimit.value.Text = MemoryAnalyzer.FormatBytes(commitLimit);
+                    mPoolPaged.value.Text = MemoryAnalyzer.FormatBytes(pagedPool);
+                    mPoolNonpaged.value.Text = MemoryAnalyzer.FormatBytes(nonpagedPool);
 
                     FillProcessGrid(procGrid, procs);
                 };
@@ -334,7 +362,7 @@ namespace CpqSystemTool
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(12, 10, 12, 10),
                 MinWidth = 150,
-                Margin = new Thickness(0, 0, 10, 10)
+                Margin = new Thickness(5)
             };
             return (b, value);
         }

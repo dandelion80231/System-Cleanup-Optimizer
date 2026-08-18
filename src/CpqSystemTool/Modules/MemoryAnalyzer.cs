@@ -265,6 +265,34 @@ namespace CpqSystemTool
                     + "StandbyCacheCoreBytes,ModifiedPageListBytes,FreeAndZeroPageListBytes,CacheBytes,"
                     + "CommittedBytes,CommitLimitBytes,PoolPagedBytes,PoolNonpagedBytes "
                     + "FROM Win32_PerfFormattedData_PerfOS_Memory";
+                u = QueryUseCounts(q, totalPhys, u);
+                // WMI 格式化性能计数器首次查询常返回全 0（计数器尚未"cook"），重试一次以取到真实值。
+                // 正常运行的 Windows 必然存在 Standby/Free/Zero，四项全 0 是可靠的"无真实数据"信号。
+                if (IsBreakdownEmpty(u))
+                {
+                    System.Threading.Thread.Sleep(80);
+                    u = QueryUseCounts(q, totalPhys, u);
+                }
+                // 使用中(Active) = 总 − 可用 − 已修改（可用 = 备用 + 空闲 + 零页）。
+                u.InUse = totalPhys > (u.Available + u.Modified) ? totalPhys - u.Available - u.Modified : 0;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("GetUseCounts WMI: " + ex.Message);
+            }
+            return u;
+        }
+
+        // 判断拆解数据是否"无真实数据"：正常运行的 Windows 必然存在 Standby/Free/Zero，四项全 0 是可靠的不可用信号。
+        public static bool IsBreakdownEmpty(MemoryUseCounts u)
+        {
+            return u != null && u.Available == 0 && u.Standby == 0 && u.Modified == 0 && u.FreeZero == 0;
+        }
+
+        private static MemoryUseCounts QueryUseCounts(string q, ulong totalPhys, MemoryUseCounts u)
+        {
+            try
+            {
                 using (var searcher = new ManagementObjectSearcher(q))
                 {
                     foreach (ManagementObject mo in searcher.Get())
@@ -283,12 +311,10 @@ namespace CpqSystemTool
                         break;
                     }
                 }
-                // 使用中(Active) = 总 − 可用 − 已修改（可用 = 备用 + 空闲 + 零页）。
-                u.InUse = totalPhys > (u.Available + u.Modified) ? totalPhys - u.Available - u.Modified : 0;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("GetUseCounts WMI: " + ex.Message);
+                Debug.WriteLine("QueryUseCounts WMI: " + ex.Message);
             }
             return u;
         }
