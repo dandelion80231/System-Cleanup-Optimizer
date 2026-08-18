@@ -67,6 +67,38 @@ namespace CpqSystemTool
         [DllImport("psapi.dll", SetLastError = true)]
         private static extern bool GetPerformanceInfo(ref PERFORMANCE_INFORMATION pPerformanceInformation, uint cb);
 
+        // ===================== 只读：PDH 性能计数器回退（WMI 不可用时）=====================
+        [DllImport("pdh.dll", CharSet = CharSet.Unicode)]
+        private static extern uint PdhOpenQuery(string szDataSource, IntPtr dwUserData, out IntPtr phQuery);
+
+        [DllImport("pdh.dll", CharSet = CharSet.Unicode)]
+        private static extern uint PdhAddEnglishCounter(IntPtr hQuery, string szFullCounterPath, IntPtr dwUserData, out IntPtr phCounter);
+
+        [DllImport("pdh.dll")]
+        private static extern uint PdhCollectQueryData(IntPtr hQuery);
+
+        [DllImport("pdh.dll")]
+        private static extern uint PdhGetFormattedCounterValue(IntPtr hCounter, uint dwFormat, out uint lpdwType, out PDH_FMT_COUNTERVALUE pValue);
+
+        [DllImport("pdh.dll")]
+        private static extern uint PdhRemoveCounter(IntPtr hCounter);
+
+        [DllImport("pdh.dll")]
+        private static extern uint PdhCloseQuery(IntPtr hQuery);
+
+        private const uint PDH_FMT_LONG = 0x00000100;
+        private const uint PDH_FMT_LARGE = 0x00000200;
+        private const uint PDH_FMT_DOUBLE = 0x00000400;
+        private const uint PDH_FMT_NOCAP100 = 0x00008000;
+
+        [StructLayout(LayoutKind.Explicit, Size = 16)]
+        private struct PDH_FMT_COUNTERVALUE
+        {
+            [FieldOffset(0)] public uint CStatus;
+            [FieldOffset(8)] public long longValue;
+            [FieldOffset(8)] public double doubleValue;
+        }
+
         // ===================== 优化：NtSetSystemInformation(80, cmd) =====================
         [DllImport("ntdll.dll")]
         private static extern int NtSetSystemInformation(int SystemInformationClass, ref int SystemInformation, int SystemInformationLength);
@@ -172,6 +204,7 @@ namespace CpqSystemTool
             public ulong CommitLimit;  // 提交上限
             public ulong PoolPaged;    // 分页池
             public ulong PoolNonpaged; // 非分页池
+            public bool IsDegraded;    // true = 使用总览数据降级构造，备用/已修改/缓存无法细分
         }
 
         public class ProcessMemInfo
@@ -181,6 +214,22 @@ namespace CpqSystemTool
             public ulong WorkingSet;  // bytes
             public ulong PrivateBytes; // bytes
         }
+
+        // WMI 属性名 ↔ PDH 计数器名的统一映射，避免两份列表漂移。
+        private static readonly (string Wmi, string Pdh)[] MemoryCounterMap = new[]
+        {
+            ("AvailableBytes", "Available Bytes"),
+            ("StandbyCacheNormalPriorityBytes", "Standby Cache Normal Priority Bytes"),
+            ("StandbyCacheReserveBytes", "Standby Cache Reserve Bytes"),
+            ("StandbyCacheCoreBytes", "Standby Cache Core Bytes"),
+            ("ModifiedPageListBytes", "Modified Page List Bytes"),
+            ("FreeAndZeroPageListBytes", "Free & Zero Page List Bytes"),
+            ("CacheBytes", "Cache Bytes"),
+            ("CommittedBytes", "Committed Bytes"),
+            ("CommitLimitBytes", "Commit Limit"),
+            ("PoolPagedBytes", "Pool Paged Bytes"),
+            ("PoolNonpagedBytes", "Pool Nonpaged Bytes")
+        };
 
         // ===================== 公开方法 =====================
         public static bool IsAdministrator()
@@ -255,30 +304,70 @@ namespace CpqSystemTool
             return o;
         }
 
-        public static MemoryUseCounts GetUseCounts(ulong totalPhys)
+        public static MemoryUseCounts GetUseCounts(ulong totalPhys, MemoryOverview overview)
         {
             var u = new MemoryUseCounts { Total = totalPhys };
+            bool ok = false;
             try
             {
-                // 文档化 WMI 计数器（单位字节），稳定且不会踩未文档化偏移。
-                const string q = "SELECT AvailableBytes,StandbyCacheNormalPriorityBytes,StandbyCacheReserveBytes,"
-                    + "StandbyCacheCoreBytes,ModifiedPageListBytes,FreeAndZeroPageListBytes,CacheBytes,"
-                    + "CommittedBytes,CommitLimitBytes,PoolPagedBytes,PoolNonpagedBytes "
-                    + "FROM Win32_PerfFormattedData_PerfOS_Memory";
-                u = QueryUseCounts(q, totalPhys, u);
+                // 1) WMI 格式化计数器（首选）。
+                u = QueryUseCounts("Win32_PerfFormattedData_PerfOS_Memory", totalPhys, u);
                 // WMI 格式化性能计数器首次查询常返回全 0（计数器尚未"cook"），重试一次以取到真实值。
-                // 正常运行的 Windows 必然存在 Standby/Free/Zero，四项全 0 是可靠的"无真实数据"信号。
                 if (IsBreakdownEmpty(u))
                 {
                     System.Threading.Thread.Sleep(80);
-                    u = QueryUseCounts(q, totalPhys, u);
+                    u = QueryUseCounts("Win32_PerfFormattedData_PerfOS_Memory", totalPhys, u);
                 }
+                ok = !IsBreakdownEmpty(u);
+
+                // 2) WMI 原始计数器回退。
+                if (!ok)
+                {
+                    Debug.WriteLine("GetUseCounts: WMI formatted class returned empty, trying raw class.");
+                    u = QueryUseCounts("Win32_PerfRawData_PerfOS_Memory", totalPhys, u);
+                    ok = !IsBreakdownEmpty(u);
+                }
+
+                // 3) PDH 直接读取性能计数器回退（绕过 WMI）。
+                if (!ok)
+                {
+                    Debug.WriteLine("GetUseCounts: WMI raw class also empty, falling back to PDH.");
+                    ok = TryQueryUseCountsPdh(totalPhys, u);
+                }
+
+                // 4) 最终降级：从 GetOverview 可靠数据构造一个简化的拆解视图。
+                if (!ok && overview != null)
+                {
+                    Debug.WriteLine("GetUseCounts: 所有计数器源均失败，使用基于总览数据的降级视图。");
+                    u.Available = overview.AvailPhys;
+                    u.FreeZero = overview.AvailPhys;      // 把全部可用内存归入 Free+Zero 用于占比条
+                    u.InUse = totalPhys > overview.AvailPhys ? totalPhys - overview.AvailPhys : 0;
+                    u.Standby = 0;
+                    u.Modified = 0;
+                    u.Committed = overview.CommitTotal;
+                    u.CommitLimit = overview.CommitLimit;
+                    u.PoolPaged = overview.KernelPaged;
+                    u.PoolNonpaged = overview.KernelNonpaged;
+                    // Cache 无可靠替代源，保持 0（UI 会显示 N/A）。
+                    u.IsDegraded = true;
+                    ok = true;
+                }
+
                 // 使用中(Active) = 总 − 可用 − 已修改（可用 = 备用 + 空闲 + 零页）。
                 u.InUse = totalPhys > (u.Available + u.Modified) ? totalPhys - u.Available - u.Modified : 0;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("GetUseCounts WMI: " + ex.Message);
+                // 任何未预期异常都落到降级路径，绝不让全 0 被当成真实数据渲染（占比条消失 / 明细显示 0 B）。
+                Debug.WriteLine("GetUseCounts 异常(已降级): " + ex.Message);
+                ok = false;
+            }
+
+            // 全部回退失败时标记降级：UI 据此走灰色占位 + 清晰提示，避免静默假数据。
+            // 即便 overview == null 连降级视图都构造不出，至少让 UI 显示「数据不可用」而非 0 B 真值。
+            if (!ok)
+            {
+                u.IsDegraded = true;
             }
             return u;
         }
@@ -289,32 +378,122 @@ namespace CpqSystemTool
             return u != null && u.Available == 0 && u.Standby == 0 && u.Modified == 0 && u.FreeZero == 0;
         }
 
-        private static MemoryUseCounts QueryUseCounts(string q, ulong totalPhys, MemoryUseCounts u)
+        // 将计数器数组按 MemoryCounterMap 顺序填充到 MemoryUseCounts。
+        // 顺序：[0]Available [1]StandbyNormal [2]StandbyReserve [3]StandbyCore [4]Modified [5]FreeZero
+        //       [6]Cache [7]Committed [8]CommitLimit [9]PoolPaged [10]PoolNonpaged
+        private static void ApplyCounterValues(ulong[] v, MemoryUseCounts u)
+        {
+            u.Available = v[0];
+            u.Standby = v[1] + v[2] + v[3];
+            u.Modified = v[4];
+            u.FreeZero = v[5];
+            u.Cache = v[6];
+            u.Committed = v[7];
+            u.CommitLimit = v[8];
+            u.PoolPaged = v[9];
+            u.PoolNonpaged = v[10];
+        }
+
+        // 通过 PDH.dll 直接读取性能计数器，绕过 WMI。
+        // 逐计数器容错：某个计数器在本 Windows 版本不存在时仅跳过该计数器（零值填充），
+        // 只要关键计数器（可用内存）成功即采用真实数据，避免"全有或全无"地丢弃其余有效值。
+        private static bool TryQueryUseCountsPdh(ulong totalPhys, MemoryUseCounts u)
+        {
+            const uint fmt = PDH_FMT_LARGE | PDH_FMT_NOCAP100;
+            const uint PDH_CSTATUS_NEW_DATA = 1; // 新数据，视为有效
+            IntPtr query = IntPtr.Zero;
+            int n = MemoryCounterMap.Length;
+            var handles = new IntPtr[n];
+            var values = new ulong[n];
+            try
+            {
+                uint r = PdhOpenQuery(null, IntPtr.Zero, out query);
+                if (r != 0) { Debug.WriteLine("TryQueryUseCountsPdh PdhOpenQuery failed: 0x" + r.ToString("X8")); return false; }
+
+                // 逐计数器添加；某计数器名在本系统不存在时仅跳过，不影响其余。
+                int added = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    string path = "\\Memory\\" + MemoryCounterMap[i].Pdh;
+                    r = PdhAddEnglishCounter(query, path, IntPtr.Zero, out handles[i]);
+                    if (r != 0)
+                    {
+                        Debug.WriteLine("TryQueryUseCountsPdh PdhAddEnglishCounter failed for " + MemoryCounterMap[i].Pdh + ": 0x" + r.ToString("X8") + "（跳过该计数器）");
+                        handles[i] = IntPtr.Zero; // 标记不可用
+                        continue;
+                    }
+                    added++;
+                }
+                if (added == 0) { Debug.WriteLine("TryQueryUseCountsPdh: 所有计数器添加失败，放弃 PDH。"); return false; }
+
+                // 收集两次：第一次初始化（返回值可能为 PDH_RETRY，忽略），第二次取当前值。
+                PdhCollectQueryData(query);
+                System.Threading.Thread.Sleep(80);
+                r = PdhCollectQueryData(query);
+                if (r != 0) return false;
+
+                int got = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    if (handles[i] == IntPtr.Zero) continue; // 该计数器本就不可用，零值填充
+                    uint hr = PdhGetFormattedCounterValue(handles[i], fmt, out _, out PDH_FMT_COUNTERVALUE cv);
+                    bool ok = hr == 0 && (cv.CStatus == 0 || cv.CStatus == PDH_CSTATUS_NEW_DATA);
+                    if (!ok)
+                    {
+                        Debug.WriteLine("TryQueryUseCountsPdh PdhGetFormattedCounterValue failed for " + MemoryCounterMap[i].Pdh + ": hr=0x" + hr.ToString("X8") + " CStatus=" + cv.CStatus);
+                        continue;
+                    }
+                    values[i] = cv.longValue > 0 ? (ulong)cv.longValue : 0;
+                    got++;
+                }
+
+                // 关键计数器（可用内存 [0]）必须成功，否则整体放弃并回退到降级视图；
+                // 其余计数器缺失则零值填充（如旧版 Windows 无 Standby 细分），仍是有价值的真实数据。
+                if (values[0] == 0) { Debug.WriteLine("TryQueryUseCountsPdh: 关键计数器 Available 不可用，放弃 PDH 数据。"); return false; }
+                if (got == 0) return false; // 防御性：所有计数器读取均失败
+
+                ApplyCounterValues(values, u);
+
+                return !IsBreakdownEmpty(u);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("TryQueryUseCountsPdh exception: " + ex.Message);
+                return false;
+            }
+            finally
+            {
+                for (int i = 0; i < n; i++) { if (handles[i] != IntPtr.Zero) PdhRemoveCounter(handles[i]); }
+                if (query != IntPtr.Zero) PdhCloseQuery(query);
+            }
+        }
+
+        private static MemoryUseCounts QueryUseCounts(string tableName, ulong totalPhys, MemoryUseCounts u)
         {
             try
             {
-                using (var searcher = new ManagementObjectSearcher(q))
+                var sb = new StringBuilder("SELECT ");
+                for (int i = 0; i < MemoryCounterMap.Length; i++)
+                {
+                    if (i > 0) sb.Append(",");
+                    sb.Append(MemoryCounterMap[i].Wmi);
+                }
+                sb.Append(" FROM ").Append(tableName);
+                using (var searcher = new ManagementObjectSearcher(sb.ToString()))
                 {
                     foreach (ManagementObject mo in searcher.Get())
                     {
-                        u.Available = ToUlong(mo["AvailableBytes"]);
-                        u.Standby = ToUlong(mo["StandbyCacheNormalPriorityBytes"])
-                            + ToUlong(mo["StandbyCacheReserveBytes"])
-                            + ToUlong(mo["StandbyCacheCoreBytes"]);
-                        u.Modified = ToUlong(mo["ModifiedPageListBytes"]);
-                        u.FreeZero = ToUlong(mo["FreeAndZeroPageListBytes"]);
-                        u.Cache = ToUlong(mo["CacheBytes"]);
-                        u.Committed = ToUlong(mo["CommittedBytes"]);
-                        u.CommitLimit = ToUlong(mo["CommitLimitBytes"]);
-                        u.PoolPaged = ToUlong(mo["PoolPagedBytes"]);
-                        u.PoolNonpaged = ToUlong(mo["PoolNonpagedBytes"]);
+                        var v = new ulong[MemoryCounterMap.Length];
+                        for (int i = 0; i < MemoryCounterMap.Length; i++)
+                            v[i] = ToUlong(mo[MemoryCounterMap[i].Wmi]);
+                        ApplyCounterValues(v, u);
                         break;
                     }
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("QueryUseCounts WMI: " + ex.Message);
+                Debug.WriteLine("QueryUseCounts WMI (" + tableName + "): " + ex.Message);
             }
             return u;
         }

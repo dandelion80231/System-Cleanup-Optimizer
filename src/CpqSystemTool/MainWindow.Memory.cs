@@ -200,7 +200,7 @@ namespace CpqSystemTool
                     if (MemoryAnalyzer.IsBreakdownEmpty(use))
                     {
                         // 数据不可用：占比条保持整条可见（灰色占位），绝不收缩为 0 宽度而"消失"。
-                        noteTb.Text = "（内存拆解数据不可用：WMI 性能计数器未就绪或查询失败。总览数据仍可用，可点击「重新分析」重试。）";
+                        noteTb.Text = "（内存拆解数据不可用：已尝试 WMI 与 PDH 性能计数器均失败（或服务不可用）。总览数据仍可用，可点击「重新分析」重试。）";
                         for (int i = 0; i < 4; i++)
                         {
                             bBar.ColumnDefinitions[i].Width = new GridLength(1, GridUnitType.Star);
@@ -210,7 +210,9 @@ namespace CpqSystemTool
                     }
                     else
                     {
-                        noteTb.Text = "";
+                        noteTb.Text = use.IsDegraded
+                            ? "（WMI/PDH 均不可用，当前拆解视图为基于总览数据的降级显示：仅区分使用中/可用，备用/已修改/缓存无法细分。）"
+                            : "";
                         var fracs = new[] { use.InUse, use.Standby, use.Modified, use.FreeZero };
                         for (int i = 0; i < 4; i++)
                         {
@@ -253,7 +255,7 @@ namespace CpqSystemTool
             RunInBg(null, l =>
             {
                 var overview = MemoryAnalyzer.GetOverview();
-                var use = MemoryAnalyzer.GetUseCounts(overview.TotalPhys);
+                var use = MemoryAnalyzer.GetUseCounts(overview.TotalPhys, overview);
                 var procs = MemoryAnalyzer.GetProcessWorkingSets(10);
                 Dispatcher.Invoke(() => applyUi(overview, use, procs));
             }, "内存分析完成", () => pb.Visibility = Visibility.Collapsed);

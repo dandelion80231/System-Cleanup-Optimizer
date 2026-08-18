@@ -21,7 +21,9 @@
 
 ### 🐞 修复
 - **内存工具卡片 A 布局**：总览 6 个统计块由 `WrapPanel` 改为 2 行 × 3 列网格，占满页面宽度（不再随窗口宽度换行错落）。
-- **内存工具卡片 B 数据可靠性**：`WMI Win32_PerfFormattedData_PerfOS_Memory` 首次查询常返回全 0（计数器尚未「cook」），`GetUseCounts` 增加一次重试（+80ms），修复占比条闪一下即消失、拆解全显示 0 B 的问题；取数仍不可用时不再把占比条收缩为 0 宽度（改为整条灰色占位 + 文字提示），避免「消失」观感；提交上限在 WMI `CommitLimitBytes` 返回空时回退到 `GetPerformanceInfo` 的可靠值。
+- **内存工具卡片 B 数据可靠性**：`WMI Win32_PerfFormattedData_PerfOS_Memory` 首次查询常返回全 0（计数器尚未「cook」），`GetUseCounts` 增加一次重试（+80ms）；新增 **四级回退链**：WMI 格式化类 → 重试 → WMI 原始类（`Win32_PerfRawData_PerfOS_Memory`）→ **PDH 性能计数器**（`pdh.dll` `PdhAddEnglishCounter` 直接读 `\Memory\*` 计数器，绕过 WMI）→ 基于 `GetOverview` 的降级视图，确保 WMI 不可用时仍能拿到真实拆解数据、功能不整体失效；修复占比条闪一下即消失、拆解全显示 0 B 的问题；取数仍不可用时不再把占比条收缩为 0 宽度（改为整条灰色占位 + 文字提示），避免「消失」观感。
+- **PDH 回退进一步加固（避免「全有或全无」）**：`TryQueryUseCountsPdh` 改为**逐计数器容错**——某计数器名在本 Windows 版本不存在（如旧版无 Standby 细分）时仅跳过该计数器、零值填充其余有效值，只要关键计数器「可用内存(Available)」成功即采用真实数据，不再因单个计数器缺失而丢弃其余 10 个有效值；全部读取失败时仍正确回退到降级视图。
+- **异常处理不静默造假数据**：`GetUseCounts` 的 `catch` 与「全部回退失败」路径统一置 `IsDegraded = true`，即使 `overview == null` 连降级视图都构造不出，也确保 UI 走「数据不可用」灰色占位 + 清晰提示，绝不把全 0 当成真实内存拆解渲染（占比条消失 / 明细显示 0 B）。
 
 ---
 
