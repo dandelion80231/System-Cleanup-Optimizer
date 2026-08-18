@@ -4,6 +4,23 @@
 
 ---
 
+## [v1.10] - 2026-08-18
+
+> 相对 v1.09 的源码变更：新增「内存工具」导航页（镜像 RAMMap 只读视图 + 可选内存优化），置于「系统工具」之下；例行版本提升 v1.09 → v1.10。
+
+### ✨ 新增
+- **内存工具页（镜像 RAMMap 只读视图）**：左侧导航新增「内存工具」（🧠，挂在「系统工具」之下），纯代码构建独立页面，分三层——
+  - **A 内存总览（只读）**：`GlobalMemoryStatusEx` + `GetPerformanceInfo`（均为 Windows 文档化 API）展示总/可用物理内存、内存占用百分比、已提交/提交上限、内核分页/非分页池。
+  - **B 内存使用拆解（只读）**：`WMI Win32_PerfFormattedData_PerfOS_Memory`（文档化计数器）把物理内存拆为「使用中 / 备用 / 已修改 / 空闲+零页」四类占比条 + 图例（含字节数与百分数）；并展示可用/系统缓存/已提交/提交上限/分页池/非分页池明细，下方列出进程工作集 Top 10（`GetProcessMemoryInfo` + `EnumProcesses`）。
+  - **C 内存优化（默认收起 · 中风险 · 仅管理员）**：`Expander` 默认折叠，仅供管理员启用；提供「清空备用列表(Standby)」「清空所有进程工作集」两项——前者调 `NtSetSystemInformation(MemoryPurgeStandbyList=2)` 清 Standby，后者逐进程 `EmptyWorkingSet`；均带 `SeProfileSingleProcessPrivilege` 提权与风险说明（优化为临时效果，用缓存/工作集换即时空闲内存）。
+- **内存采集模块 `Modules/MemoryAnalyzer.cs`**：封装全部 P/Invoke（kernel32/psapi/ntdll）与 WMI 查询逻辑，全程 `try/catch` 优雅降级（WMI 不可用时拆解数据单独提示不可用，总览数据仍可用）。
+
+### ♻️ 变更 / 策略
+- **设计为「文档化 API 优先、避免未文档化结构体偏移」**：内存拆解刻意改用 WMI 文档化性能计数器还原 RAMMap 视图，规避 `NtQuerySystemInformation(0x32)` 未文档化结构体偏移猜错导致静默假数据的风险；仅优化层（Standby 清理）使用经验证权威常量 `MemoryPurgeStandbyList=2`（网上部分资料误写为 3/4）。
+- **版本提升 v1.09 → v1.10**：同步 csproj（1.0.10.0 ×3）/ `APP_VERSION`（`v1.10`）/ 交付文件名 `系统清理与优化工具_v1.10.exe`。
+
+---
+
 ## [v1.09] - 2026-08-18
 
 > 相对 v1.08 的源码变更：新增 Whesvc 诊断日志清理项与服务禁用项；例行版本提升 v1.08 → v1.09。

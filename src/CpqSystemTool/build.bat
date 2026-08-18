@@ -41,8 +41,8 @@ if not exist "%OUT%" (
     exit /b 1
 )
 
-echo [3/3] Deploying to %~dp0..\系统清理与优化工具_v1.05.exe ...
-copy /Y "%OUT%" "%~dp0..\系统清理与优化工具_v1.05.exe" >nul
+echo [3/3] Deploying to %~dp0..\系统清理与优化工具_v1.10.exe ...
+copy /Y "%OUT%" "%~dp0..\系统清理与优化工具_v1.10.exe" >nul
 if %errorlevel%==0 (
     echo Done. New exe deployed.
 ) else (

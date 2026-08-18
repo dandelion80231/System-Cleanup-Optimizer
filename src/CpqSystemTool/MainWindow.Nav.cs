@@ -15,8 +15,8 @@ namespace CpqSystemTool
     public partial class MainWindow
     {
         // 软件版本号：左下角显示（同 BuildAbout 关于页更新日志）。
-        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.9.0 ↔ v1.09），两处保持一致。
-        private const string APP_VERSION = "v1.09";
+        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.10.0 ↔ v1.10），两处保持一致。
+        private const string APP_VERSION = "v1.10";
 
         private void BuildSidebar()
         {
@@ -32,6 +32,7 @@ namespace CpqSystemTool
                 new NavItem { Key = "edge",      Title = "Edge 管理",  Icon = "🌐", Build = BuildEdge },
                 new NavItem { Key = "privacy",   Title = "隐私设置",   Icon = "🔒", Build = BuildPrivacy },
                 new NavItem { Key = "systools",  Title = "系统工具",   Icon = "🧰", Build = BuildSystemTools },
+                new NavItem { Key = "memory",    Title = "内存工具",   Icon = "🧠", Build = BuildMemory },
                 new NavItem { Key = "activation",Title = "激活工具", Icon = "🔑", Build = BuildActivation },
                 new NavItem { Key = "sysinfo",   Title = "系统信息",   Icon = "ℹ", Build = BuildSystemInfo },
                 new NavItem { Key = "maint",     Title = "维护工具",   Icon = "🔧", Build = BuildMaintenanceTools },

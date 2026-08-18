@@ -1,10 +1,10 @@
-# System-Cleanup-Optimizer — 系统清理与优化工具
+﻿# System-Cleanup-Optimizer — 系统清理与优化工具
 
 > 面向 Windows 10/11 的一体化系统清理、优化与维护工具。
 >
 > **技术栈**: WPF (C# / .NET Framework 4.8) · 单文件 exe · 零安装 · 双击即跑 · 管理员权限自动提权
 >
-> **版本**: v1.09
+> **版本**: v1.10
 >
 > **项目主页**: [https://github.com/dandelion80231/System-Cleanup-Optimizer](https://github.com/dandelion80231/System-Cleanup-Optimizer)
 >
@@ -27,11 +27,12 @@
     - [8. Edge 管理](#8-edge-管理)
     - [9. 隐私设置](#9-隐私设置)
     - [10. 系统工具](#10-系统工具)
-    - [11. 激活工具](#11-激活工具)
-    - [12. 系统信息](#12-系统信息)
-    - [13. 维护工具](#13-维护工具)
-    - [14. 驱动清理](#14-驱动清理)
-    - [15. 配置管理](#15-配置管理)
+    - [11. 内存工具](#11-内存工具)
+    - [12. 激活工具](#12-激活工具)
+    - [13. 系统信息](#13-系统信息)
+    - [14. 维护工具](#14-维护工具)
+    - [15. 驱动清理](#15-驱动清理)
+    - [16. 配置管理](#16-配置管理)
 - [技术架构](#技术架构)
 - [界面与交互实现](#界面与交互实现)
 - [构建与部署](#构建与部署)
@@ -44,7 +45,7 @@
 
 ## 功能概览
 
-系统清理与优化工具提供 **15 个主要功能页**（另含「关于」页，共 16 页），覆盖日常清理、系统优化、隐私安全、软件管理、系统维护、驱动管理和官方安装包直链探针。
+系统清理与优化工具提供 **16 个主要功能页**（另含「关于」页，共 17 页），覆盖日常清理、系统优化、隐私安全、软件管理、系统维护、驱动管理、内存分析与官方安装包直链探针。
 
 | 模块 | 核心能力 | 实现规模 |
 |------|----------|----------|
@@ -58,6 +59,7 @@
 | Edge 管理 | 多频道安装/卸载/禁更新/关启动增强 | 5 个频道支持 |
 | 隐私设置 | 隐私注册表开关 | 12 项独立开关 |
 | 系统工具 | 上帝模式/还原点/版本切换 | 3 个独立子模块 |
+| 内存工具 | 只读内存仪表盘/使用拆解 + 内存优化（清 Standby/空工作集） | MemoryAnalyzer + MainWindow.Memory |
 | 激活工具 | 集成 MAS 五种激活方式 | 6 张卡片 (5 激活 + 1 诊断) |
 | 系统信息 | 硬件/软件信息汇总与导出 | WMI + 注册表 + P/Invoke |
 | 维护工具 | 官网 exe 直链探针 + 探针环境管理 | WebView2 Runtime / Node+Playwright 双驱动 |
@@ -83,7 +85,7 @@
 
 ### 下载与运行
 
-1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cpq-system-tool.pages.dev/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.08.exe`）。
+1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cpq-system-tool.pages.dev/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.10.exe`）。
 2. 双击运行即可，**无需安装**。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入单文件 exe。
 3. 首次使用建议：先创建系统还原点，再进行优化配置。
 
@@ -320,7 +322,37 @@
 
 ---
 
-### 11. 激活工具
+### 11. 内存工具
+
+**核心能力**: 只读实时内存仪表盘（总/可用物理、占用 %、已提交/上限、内核分页/非分页池）+ 内存使用拆解（Active/Standby/Modified/Free+Zero 占比条、提交/缓存/池明细、进程工作集 Top 10）；附「内存优化」区（清 Standby 列表 / 空工作集，默认收起、中风险、仅管理员启用）。
+
+**实现原理**:
+- 只读层（A/B）全部走**文档化 API**，规避未文档化结构体偏移猜错导致的「静默假数据」：
+  - `GlobalMemoryStatusEx`（kernel32）：总/可用物理、内存占用 %。
+  - `GetPerformanceInfo`（psapi）：已提交、提交上限、内核分页/非分页池、页大小、进程数。
+  - WMI `Win32_PerfFormattedData_PerfOS_Memory`：拆解 Active/Standby/Modified/(Free+Zero) 及系统缓存、提交、池使用。
+  - 逐进程 `GetProcessMemoryInfo`（psapi）+ `EnumProcesses`：进程工作集 Top 10。
+- 优化层（C，未文档化 + 需管理员 + 提权，UI 默认 `Expander.IsExpanded=false`，非管理员禁用按钮）：
+  - `NtSetSystemInformation(SystemMemoryListInformation=0x50, cmd=2 purge standby)` 清空备用列表。
+  - 逐进程 `EmptyWorkingSet`（psapi）清空工作集。
+  - 提权 `AdjustTokenPrivileges` 启用 `SeProfileSingleProcessPrivilege` + `SeIncreaseQuotaPrivilege`。
+  - 常量 purge standby=2 取 Process Hacker / Windows Internals（网上有写 3/4 的错值）；未文档化 API 跨版本稳定但微软不保证，全程 try/catch 优雅降级。
+
+**代码实现方法**:
+- `Modules/MemoryAnalyzer.cs` — `internal static class MemoryAnalyzer`；`MEMORYSTATUSEX`+`GlobalMemoryStatusEx`、P/Invoke `GetPerformanceInfo`（psapi，`PERFORMANCE_INFORMATION`）、`NtSetSystemInformation(int,int,int)`（ntdll，`SystemMemoryListInformation=0x50`，`MemoryPurgeStandbyList=2`）、`EmptyWorkingSet`/`EnumProcesses`/`OpenProcess`/`GetProcessMemoryInfo`+`PROCESS_MEMORY_COUNTERS_EX`；提权 `OpenProcessToken`/`LookupPrivilegeValue`/`AdjustTokenPrivileges`/`TOKEN_PRIVILEGES`/`LUID`；数据模型 `MemoryOverview`/`MemoryUseCounts`/`ProcessMemInfo`；公开 `IsAdministrator()`/`FormatBytes(ulong)`/`GetOverview()`/`GetUseCounts(ulong)`/`GetProcessWorkingSets(int)`/`OptimizePurgeStandby()`/`OptimizeEmptyWorkingSets()`。
+- `MainWindow.Memory.cs` — `BuildMemory()` 构建页面（卡片 A 总览 + 卡片 B 使用拆解 + 占比条 + 进程 Top10；卡片 C 优化区默认收起）；`DoMemoryAnalyze` 后台取数经 `Dispatcher.Invoke(applyUi)` 回写 UI；固定语义色（青=在用/橙=Standby/紫=Modified/绿=Free+Zero）；`Btn(...,null,...)` + `Click +=` 规避 CS0841 前向引用。
+- `MainWindow.Nav.cs` — 导航项 `Key="memory", Title="内存工具", Icon="🧠", Build=BuildMemory`（位于「系统工具」之后）。
+
+**使用方法**:
+1. 进入「内存工具」页，自动加载只读仪表盘与拆解视图。
+2. 点击「重新分析」刷新实时数据。
+3. 展开「内存优化」区（需管理员）：点「清空备用列表」或「清空工作集」释放内存；非管理员时按钮禁用并提示需提权。
+
+**权限/风险**: 只读层标准用户即可；优化层需管理员权限，属中风险操作（可能短暂影响系统响应），仅建议确有需要时执行。
+
+---
+
+### 12. 激活工具
 
 **核心能力**: 6 张卡片（HWID/KMS38/Ohook/Online KMS/TSforge + 诊断），集成 Microsoft Activation Scripts (MAS)。
 
@@ -343,7 +375,7 @@
 
 ---
 
-### 12. 系统信息
+### 13. 系统信息
 
 **核心能力**: 汇总 CPU、内存、显卡、磁盘、网卡、主板等硬件信息，以及系统版本、EditionID、DisplayVersion、UBR、安装日期等软件信息，支持导出 TXT。
 
@@ -358,7 +390,7 @@
 
 ---
 
-### 13. 维护工具
+### 14. 维护工具
 
 **核心能力**: 抓取官网软件安装包（exe）直链，管理本地探针依赖（WebView2 Runtime / Node + Playwright + Chromium）。
 
@@ -382,7 +414,7 @@
 
 ---
 
-### 14. 驱动清理
+### 15. 驱动清理
 
 **核心能力**: 基于 Windows 原生驱动管理接口（PnP 实用工具 / DISM / SetupAPI）独立实现，界面列布局与行为设计参考 Driver Store Explorer（RAPR）；对系统驱动存储（Driver Store）进行枚举、识别、备份与清理；支持设备名称补全、列头三态排序、启动后台预加载与每次进入自动刷新。
 
@@ -414,7 +446,7 @@
 
 ---
 
-### 15. 配置管理
+### 16. 配置管理
 
 **核心能力**: 全局配置导出/导入、自动保存、源码包导出、背景图设置。
 
@@ -449,16 +481,18 @@ MainWindow.Pages.cs          # 功能页 UI 构造函数（约 5200 行）
 MainWindow.Probe.cs          # 系统探针
 MainWindow.Maint.cs          # 维护工具页（官方 exe 直链探针）
 MainWindow.DriverStore.cs     # 驱动清理页构建 + 预加载缓存
+MainWindow.Memory.cs         # 内存工具页（A/B/C 三层）
 DriverStorePanel.cs          # 驱动清理页 UI（DataGrid 三态排序 / 分组 / 预加载）
 MainWindow.Pages.cs 页面构造器（Build*，按导航顺序）:
   BuildTweaks / BuildCleanup / BuildServices /
   BuildAppx / BuildAppxRaw / BuildCommonSoftware /
   BuildSecurity / BuildEdge / BuildPrivacy / BuildSystemTools /
+  BuildMemory /
   BuildActivation / BuildSystemInfo / BuildMaintenanceTools /
   BuildDriverStore / BuildConfig /
   BuildAbout（隐藏页）
 OtherTweaksDialog.cs         # 其他优化项对话框
-Modules/                     # 核心功能模块（24 个 .cs）
+Modules/                     # 核心功能模块（25 个 .cs）
 ├── Tweaks.cs                # 116 项注册表优化 (TweakEntry)
 ├── Cleanup.cs               # 磁盘清理核心 (Cleanup)
 ├── CleanupExt.cs            # 扩展清理 (CleanupExt, DISM WinSxS)
@@ -480,6 +514,7 @@ Modules/                     # 核心功能模块（24 个 .cs）
 ├── RestorePoint.cs          # 系统还原点 (Checkpoint-Computer)
 ├── SystemInfo.cs            # 系统信息采集 (WMI/P/Invoke)
 ├── ConfigBackup.cs          # 配置导入/导出 (MiniJson)
+├── MemoryAnalyzer.cs         # 内存分析/优化 (GlobalMemoryStatusEx/GetPerformanceInfo/WMI/EmptyWorkingSet/NtSetSystemInformation)
 └── VersionSwitch.cs         # Windows 版本切换 (dism/slmgr/changepk)
 Helpers/
 ├── Exec.cs                  # 进程执行封装 (RunPS 内置 Base64 UTF-16LE 编码)
@@ -592,7 +627,7 @@ dotnet build -c Release
 
 ### 分发
 
-只需分发单个 `系统清理与优化工具_v1.09.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
+只需分发单个 `系统清理与优化工具_v1.10.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
 
 ---
 
