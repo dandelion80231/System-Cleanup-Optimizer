@@ -853,6 +853,7 @@ namespace CpqSystemTool
             new CleanupItemDef { Id="winsxs_temp", Name="WinSxS 临时文件", Desc="WinSxS\\Temp", Category="系统文件", DefaultChecked=false, Action=log=>Cleanup.CleanDir("WinSxS Temp",@"%SystemRoot%\WinSxS\Temp",log) },
             new CleanupItemDef { Id="wer_reports", Name="WER 错误报告", Desc="Windows 错误报告", Category="系统文件", DefaultChecked=true, Action=log=>Cleanup.CleanDir("WER 错误报告",@"%ProgramData%\Microsoft\Windows\WER",log) },
             new CleanupItemDef { Id="diagnosis", Name="诊断数据", Desc="系统诊断数据", Category="系统文件", DefaultChecked=true, Action=log=>Cleanup.CleanDir("诊断数据",@"%ProgramData%\Microsoft\Diagnosis",log) },
+            new CleanupItemDef { Id="whesvc_diag", Name="Whesvc 诊断日志", Desc="Win健康状况服务本地性能追踪(可安全删，会再生)", Category="系统文件", DefaultChecked=false, Action=log=>Cleanup.WhesvcDiag(log) },
             new CleanupItemDef { Id="winsxs_dism", Name="WinSxS 冗余(DISM)", Desc="DISM /ResetBase（耗时数分钟）", Category="系统文件", DefaultChecked=false, Action=log=>CleanupExt.RunSelected(new[]{"winsxs"},log) },
 
             // ---- 更新残留（第二档：基本安全，旧安装包/更新缓存） ----

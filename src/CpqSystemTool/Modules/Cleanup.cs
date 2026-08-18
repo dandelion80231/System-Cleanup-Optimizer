@@ -313,6 +313,10 @@ namespace CpqSystemTool
         internal static void WuLogs(Action<string> log) { CleanDir("Windows Update 日志", @"%SystemRoot%\Logs\WindowsUpdate", log); }
         internal static void CbsPersist(Action<string> log) { CleanDir("CBS 持久日志", @"%SystemRoot%\Logs\CBS\Persist", log); }
 
+        // Whesvc（Windows 健康状况和优化体验）本地性能诊断追踪目录。
+        // 仅本机卡顿时生成 ETL 日志，可安全删除、服务重新启用时会再生；服务运行时文件被占用，CleanDir 会自动跳过被锁文件。
+        internal static void WhesvcDiag(Action<string> log) { CleanDir("Whesvc 诊断日志", @"%SystemRoot%\Temp\DiagOutputDir\Whesvc", log); }
+
         internal static void Notifications(Action<string> log)
         {
             log("通知数据库");

@@ -151,7 +151,7 @@
      Get-FileHash -Algorithm SHA256 "D:\电脑桌面\cpq\site-dist\系统清理与优化工具_vX.XX.exe"
      (Get-Item "D:\电脑桌面\cpq\site-dist\系统清理与优化工具_vX.XX.exe").Length   # 字节数
      ```
-2. **更新 `download.html`**：仿照已有 `v1.07` 结构，新增一个版本 tab + 对应 panel：`.dl-tab[data-ver="vX.XX"]` 加入 tablist，面板填 SHA256 / 大小(MB) / 日期 / 下载按钮（按钮指向 `系统清理与优化工具_vX.XX.exe`）。**新版本放最左侧**（最新在左）。历史版本的英文包名也要逐步改成中文名（重命名 site-dist 内旧 exe 并同步旧面板链接）。
+2. **更新 `download.html`**：仿照已有 `v1.08` 结构，新增一个版本 tab + 对应 panel：`.dl-tab[data-ver="vX.XX"]` 加入 tablist，面板填 SHA256 / 大小(MB) / 日期 / 下载按钮（按钮指向 `系统清理与优化工具_vX.XX.exe`）。**新版本放最左侧**（最新在左）。历史版本的英文包名也要逐步改成中文名（重命名 site-dist 内旧 exe 并同步旧面板链接）。
 3. **更新 `changelog.html`**：在 `.timeline` 顶部新增 `.tl-item`（版本号 + 日期 + 要点 `<ul>`），措辞与 `CHANGELOG.md` 该版本段一致。
 4. **（可选）同步功能页**：本版动了功能 / 模块时，同步 `features.html` 对应模块与 `index.html` 卡片（保持与 README 三处一致，见 Step 3）。
 5. **保持约定**：内部链接一律**无后缀**（`features` / `download` / `changelog` / `/`），不要写回 `xxx.html`——Cloudflare Pretty URLs 会对 `.html` 做 308 重定向拖慢切页；每页 `<head>` 保留对其他兄弟页的 `<link rel="prefetch">`。
@@ -161,9 +161,10 @@
    CF_ACCOUNT_ID=fb0b2ada3007992934b696ba57e89f54 CF_API_TOKEN=<用户本次提供的 token> \
      C:\Users\000\.workbuddy\binaries\python\envs\default\Scripts\python.exe D:\电脑桌面\cpq\tools\deploy_site.py
    ```
-   - ⚠️ `CF_API_TOKEN` **不落盘**，每次发版需用户重新提供；`CF_ACCOUNT_ID` 固定 `fb0b2ada3007992934b696ba57e89f54`。
-   - 脚本重传 site-dist 全部顶层文件（含 7 个 exe，约 50MB），部署约 4–6 分钟属正常，后台跑即可。
+   - ⚠️ `CF_API_TOKEN` **不落盘**，每次发版需用户重新提供（与下方 SKILL.md 一致）；`CF_ACCOUNT_ID` 固定 `fb0b2ada3007992934b696ba57e89f54`。
+   - 脚本重传 site-dist 全部顶层文件（含 **8 个 exe（v1.01–v1.08），约 56MB**），完整上传约 4–6 分钟属正常。⚠️ **本 agent 运行时后台任务约 2 分钟会被掐断**，务必**前台运行并给足超时**（Bash 工具设 `timeout=540000`）再部署；若中途报 `failed` 且停在 `Step2 batch 7/10` 左右，就是被掐了，前台重跑一次即可。
    - 脚本内含 IPv4 强制解析 monkeypatch（Python 默认 IPv6 优先对 Cloudflare 握手失败），部署 API 无需额外代理。
+   - 📌 **缓存策略与安全响应头现由 `tools/_worker.js`（Pages Functions）在每个响应上统一注入**：`Cache-Control`（指纹资源 `*.css|js|ico|exe|…` → `immutable` 长缓存；HTML → `max-age=300`）+ `Strict-Transport-Security` / `X-Frame-Options: DENY` / `X-Content-Type-Options: nosniff` / `Referrer-Policy` / `X-Robots-Tag`（4xx 页 `noindex`）。**Direct Upload 下 `_headers` 被 Functions 忽略**，要改缓存 TTL 或安全头请直接改 `_worker.js` 后重部署；`deploy_site.py` 会自动把 `tools/_worker.js` 复制进 site-dist 并作为独立 part 上传，无需手动处理。
 8. **验证**：部署完用 `?ts=<时间戳>` 绕边缘缓存核验：
    - `download.html` 含新版本 tab 与 exe 链接；
    - `/系统清理与优化工具_vX.XX.exe` 返回 200 且 `Content-Length` 等于本地字节数；

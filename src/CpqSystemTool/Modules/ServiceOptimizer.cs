@@ -38,6 +38,7 @@ namespace CpqSystemTool
             new ServiceEntry { Name = "RemoteRegistry",     Display = "远程注册表",          Desc = "允许远程修改注册表，安全建议关闭", Risk = "low" },
             new ServiceEntry { Name = "BcastDVRUserService",Display = "游戏录制后台",        Desc = "Xbox 游戏 DVR 录制，不录制可关", Risk = "low" },
             new ServiceEntry { Name = "PhoneSvc",           Display = "电话服务",            Desc = "手机链接，无则关", Risk = "low" },
+            new ServiceEntry { Name = "whesvc",             Display = "Windows 健康状况和优化体验", Desc = "本地性能诊断日志(占C盘)，关掉无性能提升、笔记本可能影响节能", Risk = "mid" },
         };
 
         private static readonly Action<string> Silent = s => { };

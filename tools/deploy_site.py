@@ -29,6 +29,7 @@ import blake3
 import urllib.request
 import urllib.error
 import socket as _socket
+import shutil
 
 # Force IPv4 name resolution: Python's default IPv6-first getaddrinfo fails the
 # TLS handshake to Cloudflare in this environment (curl/Schannel works fine).
@@ -52,7 +53,7 @@ def cf_hash(data: bytes, rel_path: str) -> str:
 def http_json(method, url, token, body=None, is_jwt=False):
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
-    auth = ("Bearer " + token) if is_jwt else ("Bearer " + token)
+    auth = "Bearer " + token
     req.add_header("Authorization", auth)
     if data is not None:
         req.add_header("Content-Type", "application/json")
@@ -76,6 +77,13 @@ def main():
         print("ERROR: site dir not found:", site_dir, file=sys.stderr)
         sys.exit(2)
 
+    # Ensure the Pages Function (_worker.js) is present in the deploy bundle.
+    _worker_src = os.path.join(os.path.dirname(HERE), "tools", "_worker.js")
+    _worker_dst = os.path.join(site_dir, "_worker.js")
+    if os.path.isfile(_worker_src):
+        shutil.copyfile(_worker_src, _worker_dst)
+        print("copied _worker.js ->", _worker_dst)
+
     proxy = (os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
              or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy"))
     if proxy:
@@ -85,6 +93,10 @@ def main():
     # collect files
     entries = []
     for name in sorted(os.listdir(site_dir)):
+        # Skip Pages special config files: they are sent as dedicated
+        # multipart parts in Step 4, not uploaded as served assets.
+        if name in ("_headers", "_redirects", "_routes.json", "_worker.js"):
+            continue
         p = os.path.join(site_dir, name)
         if os.path.isfile(p):
             ctype = "application/octet-stream"
@@ -106,6 +118,12 @@ def main():
                 ctype = "image/gif"
             elif name.endswith(".webp"):
                 ctype = "image/webp"
+            elif name.endswith(".txt"):
+                ctype = "text/plain; charset=utf-8"
+            elif name.endswith(".xml"):
+                ctype = "application/xml; charset=utf-8"
+            elif name.endswith(".json"):
+                ctype = "application/json; charset=utf-8"
             entries.append((name, p, ctype))
 
     # compute blake3 keys + base64 content
@@ -158,8 +176,26 @@ def main():
     parts = [b"--" + boundary,
              b'Content-Disposition: form-data; name="manifest"',
              b"Content-Type: application/json", b"",
-             json.dumps(manifest).encode("utf-8"),
-             b"--" + boundary + b"--", b""]
+             json.dumps(manifest).encode("utf-8")]
+    # Cloudflare Pages Function (_worker.js). MUST be a dedicated multipart
+    # part (NOT a static asset) so Cloudflare runs it as a Function and
+    # applies its per-response Cache-Control / security headers. It is
+    # excluded from the static-asset manifest above on purpose.
+    worker_path = os.path.join(site_dir, "_worker.js")
+    if os.path.isfile(worker_path):
+        with open(worker_path, "rb") as f:
+            worker_body = f.read()
+        parts += [b"--" + boundary,
+                  b'Content-Disposition: form-data; name="_worker.js"; filename="_worker.js"',
+                  b"Content-Type: application/javascript", b"",
+                  worker_body]
+        print("Step4 including _worker.js (%d bytes)" % len(worker_body))
+    # NOTE: Cache-Control / security headers are applied by the Pages
+    # Function (_worker.js) on every response. We deliberately do NOT send
+    # a _headers part: on Direct Upload a _headers file is ignored by
+    # Functions, so it would silently reintroduce the max-age=0 problem
+    # the Worker migration solved.
+    parts += [b"--" + boundary + b"--", b""]
     body = crlf.join(parts)
     url = "%s/accounts/%s/pages/projects/%s/deployments" % (API, account_id, project)
     req = urllib.request.Request(url, data=body, method="POST")
