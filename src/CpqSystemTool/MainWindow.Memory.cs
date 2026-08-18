@@ -150,16 +150,6 @@ namespace CpqSystemTool
             bool isAdmin = MemoryAnalyzer.IsAdministrator();
             var btnPurge = Btn("🧹 清空备用列表(Standby)", true, null, 210);
             var btnEmpty = Btn("🗑 清空所有进程工作集", false, null, 210);
-            btnPurge.Click += (s, e) => RunInBg(optLog, l =>
-            {
-                string r = MemoryAnalyzer.OptimizePurgeStandby();
-                foreach (var line in r.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) l(line);
-            }, "已清空备用列表");
-            btnEmpty.Click += (s, e) => RunInBg(optLog, l =>
-            {
-                string r = MemoryAnalyzer.OptimizeEmptyWorkingSets();
-                foreach (var line in r.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) l(line);
-            }, "已尝试清空工作集");
 
             if (!isAdmin)
             {
@@ -241,6 +231,20 @@ namespace CpqSystemTool
 
             // 重新分析按钮：闭包声明后方可绑定（避免前向引用 CS0841）。
             analyzeBtn.Click += (s, e) => DoMemoryAnalyze(pb, applyUi);
+
+            // 优化按钮：优化完成后在 UI 线程自动重新分析内存，让「内存使用拆解」视图实时刷新
+            // （RAMMap 清理后即可瞬间看到变化；此前缺少 onDoneUi 回调，视图一直冻结，误以为优化无效）。
+            Action reanalyze = () => DoMemoryAnalyze(pb, applyUi);
+            btnPurge.Click += (s, e) => RunInBg(optLog, l =>
+            {
+                string r = MemoryAnalyzer.OptimizePurgeStandby();
+                foreach (var line in r.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) l(line);
+            }, "已清空备用列表", reanalyze);
+            btnEmpty.Click += (s, e) => RunInBg(optLog, l =>
+            {
+                string r = MemoryAnalyzer.OptimizeEmptyWorkingSets();
+                foreach (var line in r.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) l(line);
+            }, "已尝试清空工作集", reanalyze);
 
             // 初次分析（后台拉取，不阻塞 UI）
             DoMemoryAnalyze(pb, applyUi);

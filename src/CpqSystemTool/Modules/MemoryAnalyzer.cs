@@ -86,7 +86,15 @@ namespace CpqSystemTool
         [DllImport("pdh.dll")]
         private static extern uint PdhCloseQuery(IntPtr hQuery);
 
-        private const uint PDH_FMT_LARGE = 0x00000200;
+        // PDH 格式常量（权威值，来自 winperf.h / pdh.h）：
+        //   PDH_FMT_DOUBLE  = 0x00000200  // 返回 double
+        //   PDH_FMT_LARGE   = 0x00000400  // 返回 64 位整数（LONGLONG）—— 内存字节计数器应用此格式
+        //   PDH_FMT_NOCAP100= 0x00008000  // 百分比计数器不封顶 100%
+        // 历史 bug：PDH_FMT_LARGE 曾被误写成 0x200（实为 DOUBLE），导致 fmt 实际请求 DOUBLE 格式，
+        // 而读取走 cv.longValue —— 把 IEEE-754 double 的二进制位当成 64 位整数读，出现天文数字 GB，
+        // 进而 (Available+Modified) >> Total 使 InUse 被钳为 0。
+        private const uint PDH_FMT_DOUBLE = 0x00000200;
+        private const uint PDH_FMT_LARGE = 0x00000400;
         private const uint PDH_FMT_NOCAP100 = 0x00008000;
 
         [StructLayout(LayoutKind.Explicit, Size = 16)]
