@@ -52,6 +52,15 @@ export default {
     out.headers.set("Strict-Transport-Security", "max-age=31556952; includeSubDomains");
     out.headers.set("X-Robots-Tag", res.status >= 400 ? "noindex, follow" : "index, follow");
 
+    // Content Security Policy (applied per-response by the Pages Function).
+    // Locks scripts/styles to same-origin, blocks plugins, framing and untrusted
+    // base/form targets. Inline <style> (noscript reveal fallback) is allowed;
+    // the JSON-LD block is a non-executable type and is exempt from script-src.
+    out.headers.set(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+    );
+
     return out;
   },
 };
