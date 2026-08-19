@@ -5,7 +5,7 @@ render_site.py — 部署前占位符渲染器（site-src 模板 → site-dist �
 
 新流程（模板与产物分离，单一来源 = version.json）：
     1. 改 site-src/version.json 一处（version/date/name/url/size/sha256）—— 它是唯一真源，已纳入 git
-    2. 跑本脚本：读 site-src/version.json + site-src/ 下四个带占位符模板
+    2. 跑本脚本：读 site-src/version.json + site-src/ 下五个带占位符模板
                   → 用 version.json 替换占位符写出 HTML 到 site-dist/
                   → 同时把 version.json 原样复制到 site-dist/（部署用）
     3. 部署 site-dist/（如 deploy_site.py）
@@ -35,7 +35,7 @@ PROJECT_ROOT = os.path.dirname(HERE)
 SITE_SRC = os.environ.get("SITE_SRC", os.path.join(PROJECT_ROOT, "site-src"))
 SITE_DIST = os.environ.get("SITE_DIST", os.path.join(PROJECT_ROOT, "site-dist"))
 
-TEMPLATE_FILES = ["index.html", "download.html", "changelog.html", "features.html"]
+TEMPLATE_FILES = ["index.html", "download.html", "changelog.html", "features.html", "about.html"]
 
 REQUIRED_FIELDS = ["version", "date", "name", "url", "size", "sha256"]
 
@@ -106,7 +106,7 @@ def main():
     print(f"[INFO] 产物目录: {SITE_DIST}")
     print(f"[INFO] version={data['version']}  date={data['date']}  name={data['name']}  size={data['size']} ({data['size_mb']} MB)")
     render(data)
-    print("[DONE] 模板渲染完成，site-dist 四个 HTML 已无占位符。")
+    print("[DONE] 模板渲染完成，site-dist 五个 HTML 已无占位符。")
 
 
 if __name__ == "__main__":
