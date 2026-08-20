@@ -56,6 +56,15 @@
     <div class="container">
       <div class="timeline reveal">
         <div class="tl-item">
+          <span class="ver">v1.12</span><span class="date">2026-08-21</span>
+          <ul>
+            <li>♻️ 重构：4 套重复 HTTP 下载实现合并为统一 Downloader（Helpers/Downloader.cs）——支持重试、进度回调、请求级超时、代理回退、断点续传，下载类 bug 只改一处、行为一致</li>
+            <li>🛡️ 健壮性：35 处 Dispatcher.Invoke/BeginInvoke 甄别后，32 处后台线程调用统一补 try/catch 兜底——后台任务运行中关闭窗口不再因 Dispatcher 关停抛未处理异常导致进程终止（延续 v1.11 RunInBg 修复，封死剩余面）</li>
+            <li>🚀 优化：全项目 .Result 清零（消除 9 处 sync-over-async 死锁隐患）——Chocolatey 解析链、软件下载/安装/页面解析链真 async 化，ProbeBrowserHost 改 GetAwaiter().GetResult()</li>
+            <li>例行版本提升 v1.11 → v1.12</li>
+          </ul>
+        </div>
+        <div class="tl-item">
           <span class="ver">v1.11</span><span class="date">2026-08-20</span>
           <ul>
             <li>🐞 修复：子进程双流读取死锁（Exec 异步并行排水，消除 64KB 管道缓冲互相阻塞）、后台任务运行中关闭窗口崩溃（safeUi 兜底）等 6 类缺陷</li>
