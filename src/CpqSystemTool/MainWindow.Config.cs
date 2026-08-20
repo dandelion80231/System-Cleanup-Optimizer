@@ -164,6 +164,7 @@ namespace CpqSystemTool
                 }),
                 Btn("💾 自动保存当前配置", false, () =>
                 {
+                    if (!AppPaths.EnsureConfigDir()) ShowConfigDirWarningOnce();
                     var cfg = CollectConfig();
                     ConfigBackup.AutoSave(cfg, s => log.AppendText(s + "\r\n"));
                     log.AppendText("[OK] 已保存到: " + Path.Combine(ConfigBackup.ConfigDir, "autosave.json") + "\r\n");

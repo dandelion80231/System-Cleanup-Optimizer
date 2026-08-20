@@ -39,10 +39,48 @@ namespace CpqSystemTool
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
                 var json = MiniJson.Serialize(cfg);
-                File.WriteAllText(path, json, Encoding.UTF8);
+                WriteFileAtomic(path, json);   // tmp + 原子替换，避免崩溃留下半截 JSON
                 log("[OK] 已导出配置: " + path);
             }
             catch (Exception ex) { log("[!] 导出失败: " + ex.Message); }
+        }
+
+        // ===== 原子写入：同目录 tmp + MoveFileEx 原子替换（不跨文件耦合，本类私有） =====
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+        private static extern bool MoveFileEx(string lpExistingFileName, string lpNewFileName, uint dwFlags);
+
+        private const uint MOVEFILE_REPLACE_EXISTING = 0x1;
+        private const uint MOVEFILE_WRITE_THROUGH = 0x8;
+
+        /// <summary>原子写文件：先写同目录 .tmp（同卷保证 rename 原子），再 MoveFileEx(REPLACE_EXISTING|WRITE_THROUGH) 覆盖替换；
+        /// 目标被占用时回退「删除目标 + File.Move」；删除失败则放弃并保留 tmp（下次覆盖）不抛异常；finally 清理 tmp。</summary>
+        private static void WriteFileAtomic(string path, string content)
+        {
+            string dir = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(dir)) dir = ".";
+            string tmp = Path.Combine(dir, Path.GetFileName(path) + "." + Guid.NewGuid().ToString("N").Substring(0, 8) + ".tmp");
+            bool keepTmp = false;
+            try
+            {
+                File.WriteAllText(tmp, content, Encoding.UTF8);
+                if (!MoveFileEx(tmp, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                {
+                    try
+                    {
+                        if (File.Exists(path)) File.Delete(path);
+                    }
+                    catch { keepTmp = true; return; } // 删除失败：放弃并保留 tmp（下次覆盖），不抛异常打断调用方
+                    try { File.Move(tmp, path); }
+                    catch { /* 改名失败：由 finally 清理 tmp */ }
+                }
+            }
+            finally
+            {
+                if (!keepTmp)
+                {
+                    try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+                }
+            }
         }
 
         public static ToolConfig Load(string path, Action<string> log)

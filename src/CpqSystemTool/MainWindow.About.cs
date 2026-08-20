@@ -15,10 +15,15 @@ namespace CpqSystemTool
 {
     public partial class MainWindow
     {
-        // 关于页「下载更新」按钮与待下载版本文件名（由 CheckForUpdate 设置，如 系统清理与优化工具_v1.08.exe）。
+        // 关于页「检查更新」「下载更新」按钮与待下载版本文件名（由 CheckForUpdate 设置，如 系统清理与优化工具_v1.08.exe）。
+        private Button _aboutCheckUpdateBtn;
         private Button _aboutDownloadUpdateBtn;
         private string _pendingUpdateFileName;
         private string _pendingUpdateUrl;   // 从官网 version.json 取得的下载直链（含正确的资产文件名）
+
+        // 更新流程状态锁：防止「检查更新」「下载更新」被并发/重复触发。均在 UI 线程读写（后台复位经 Dispatcher 回 UI 线程）。
+        private bool _checkingUpdate;
+        private bool _downloadingUpdate;
 
         /// <summary>官网根域名（含末尾斜杠），更新检查与下载直链均基于此拼接。</summary>
         private const string OfficialSiteRoot = "https://cpq-system-tool.pages.dev/";
@@ -288,6 +293,7 @@ namespace CpqSystemTool
             {
                 CheckForUpdate();
             }, 90);
+            _aboutCheckUpdateBtn = checkUpdateBtn;
             checkUpdateBtn.FontSize = 11;
             checkUpdateBtn.Padding = new Thickness(10, 4, 10, 4);
             checkUpdateBtn.Margin = new Thickness(0, 0, 6, 0);
@@ -469,6 +475,9 @@ namespace CpqSystemTool
         /// <summary>检查官网 version.json 是否有新版本，结果经 Dispatcher 回到 UI 线程写入状态栏。</summary>
         private void CheckForUpdate()
         {
+            if (_checkingUpdate) { SetStatus("正在检查更新，请稍候…"); return; }
+            _checkingUpdate = true;
+            if (_aboutCheckUpdateBtn != null) _aboutCheckUpdateBtn.IsEnabled = false;
             SetStatus("正在检查更新…");
             System.Threading.Tasks.Task.Run(() =>
             {
@@ -507,6 +516,12 @@ namespace CpqSystemTool
                 {
                     SetStatusUi("检查更新失败：" + ex.Message);
                 }
+                finally
+                {
+                    // 复位锁并恢复按钮：成功/失败/内部提前 return 等任何完成路径都必须回到 UI 线程复位。
+                    try { Dispatcher.Invoke(() => { _checkingUpdate = false; if (_aboutCheckUpdateBtn != null) _aboutCheckUpdateBtn.IsEnabled = true; }); }
+                    catch { _checkingUpdate = false; }   // 窗口已关闭（Dispatcher 不可用），直接复位
+                }
             });
         }
 
@@ -534,6 +549,9 @@ namespace CpqSystemTool
         /// <summary>用户点击「下载更新」后：弹出 SaveFileDialog 自选保存路径，然后从官网下载对应版本 exe。</summary>
         private async Task DownloadUpdate()
         {
+            if (_downloadingUpdate) { SetStatus("正在下载更新，请稍候…"); return; }
+            _downloadingUpdate = true;
+            if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.IsEnabled = false;
             try
             {
                 if (string.IsNullOrEmpty(_pendingUpdateFileName))
@@ -591,6 +609,13 @@ namespace CpqSystemTool
             catch (System.Exception ex)
             {
                 DebugLog.Ignore(ex);
+            }
+            finally
+            {
+                // 任何完成路径（下载成功/失败/用户取消 SaveFileDialog/无版本可下）都必须复位锁并恢复按钮。
+                // async 方法在 await 后回到 UI 线程（WPF SynchronizationContext），此处与入口同线程，直接复位。
+                _downloadingUpdate = false;
+                if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.IsEnabled = true;
             }
         }
 

@@ -168,11 +168,8 @@ namespace CpqSystemTool
                         ser.WriteObject(ms, snapshot);
                         json = Encoding.UTF8.GetString(ms.ToArray());
                     }
-                    // 先写临时文件再替换，避免崩溃残留半截 JSON 导致 Load 静默吞异常、数据丢失
-                    var tmp = FilePath + ".tmp";
-                    File.WriteAllText(tmp, json, Encoding.UTF8);
-                    if (File.Exists(FilePath)) File.Delete(FilePath);
-                    File.Move(tmp, FilePath);
+                    // 先写临时文件再原子替换，避免崩溃残留半截 JSON 导致 Load 静默吞异常、数据丢失
+                    WriteFileAtomic(FilePath, json);
                 }
                 catch (Exception ex)
                 {
@@ -292,22 +289,43 @@ namespace CpqSystemTool
             {
                 string dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? AppDomain.CurrentDomain.BaseDirectory;
                 string pending = Path.Combine(dir, "bake_pending.bin");
-                File.WriteAllText(pending, SerializeList(entries), Encoding.UTF8);
+                WriteFileAtomic(pending, SerializeList(entries));
             }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] StageBake 失败(已忽略): " + ex.Message); }
         }
 
-        /// <summary>启动时调用：若存在待固化标记，则把增补列表写进 exe 自身（改名旧 exe + 写新 exe），使 exe 自包含。失败则保持 json 为真相源。</summary>
+        /// <summary>原子写文件：先写同目录 .tmp（同卷保证 rename 原子），再用 MoveFileEx 覆盖替换；
+        /// MoveFileEx 不可用（目标被占用等）时回退「删除目标 + 改名」，写入失败清理 tmp。</summary>
+        private static void WriteFileAtomic(string path, string content)
+        {
+            string tmp = path + ".tmp";
+            try
+            {
+                File.WriteAllText(tmp, content, Encoding.UTF8);
+                if (!MoveFileEx(tmp, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                {
+                    if (File.Exists(path)) File.Delete(path);
+                    File.Move(tmp, path);
+                }
+            }
+            finally
+            {
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            }
+        }
+
+        /// <summary>启动时调用：若存在待固化标记，则把增补列表写进 exe 自身（原子替换 exe），使 exe 自包含。
+        /// 替换前确认新 exe 就位；失败一律回滚恢复原 exe（绝不留下「主程序停在 .old」的中间态），json 保持真相源。</summary>
         public static void ApplyPendingBakeIfAny()
         {
             string exePath = Assembly.GetExecutingAssembly().Location;
             if (string.IsNullOrEmpty(exePath)) return;
+            string dir = Path.GetDirectoryName(exePath) ?? AppDomain.CurrentDomain.BaseDirectory;
+            string pending = Path.Combine(dir, "bake_pending.bin");
+            if (!File.Exists(pending)) return;
+
             try
             {
-                string dir = Path.GetDirectoryName(exePath) ?? AppDomain.CurrentDomain.BaseDirectory;
-                string pending = Path.Combine(dir, "bake_pending.bin");
-                if (!File.Exists(pending)) return;
-
                 string json = File.ReadAllText(pending, Encoding.UTF8);
                 byte[] core = StripOverlay(File.ReadAllBytes(exePath));
                 byte[] payload = Encoding.UTF8.GetBytes(json);
@@ -322,27 +340,68 @@ namespace CpqSystemTool
                     fs.Write(payload, 0, payload.Length);
                 }
 
-                // 备份（带时间戳）后替换正在运行的 exe（Windows 允许改名正在运行的镜像文件）
-                string bak = exePath + ".bak_" + DateTime.Now.ToString("yyyyMMddHHmmss");
-                File.Copy(exePath, bak, true);
-                string old = exePath + ".old";
-                if (File.Exists(old)) File.Delete(old);
-                File.Move(exePath, old);
-                File.Move(newPath, exePath);
-                try { File.Delete(old); } catch { }
-                File.Delete(pending);
+                // 替换前先确认新 exe 就位（存在且非空），避免拿半截文件替换主程序
+                var newInfo = new FileInfo(newPath);
+                if (!newInfo.Exists || newInfo.Length == 0)
+                {
+                    System.Diagnostics.Debug.WriteLine("[CpqSystemTool] ApplyPendingBake 失败(已忽略): 新 exe 未就位: " + newPath);
+                    return;
+                }
+
+                if (!ReplaceExecutableAtomically(exePath, newPath))
+                    System.Diagnostics.Debug.WriteLine("[CpqSystemTool] ApplyPendingBake 替换失败(已回滚): 主程序仍为原 exe, json 保持真相源");
+                try { if (File.Exists(pending)) File.Delete(pending); } catch { }
             }
             catch (Exception ex)
             {
                 // 固化失败：保留 json 为真相源，删除 pending 避免反复失败
                 System.Diagnostics.Debug.WriteLine("[CpqSystemTool] ApplyPendingBake 失败(已忽略): " + ex.Message);
-                try
+                try { if (File.Exists(pending)) File.Delete(pending); } catch { }
+            }
+        }
+
+        // ===== exe 原子自替换 =====
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+        private static extern bool MoveFileEx(string lpExistingFileName, string lpNewFileName, uint dwFlags);
+
+        private const uint MOVEFILE_REPLACE_EXISTING = 0x1;
+        private const uint MOVEFILE_WRITE_THROUGH = 0x8;
+
+        /// <summary>原子替换正在运行的 exe：优先 MoveFileEx 原地覆盖（同一卷 rename，一步完成）；
+        /// 因镜像被运行锁定而失败时，回退「改名旧 exe→.old + 移入新 exe」（Windows 允许改名运行中的镜像），
+        /// 任何失败经 finally 把 .old 改回 exe 回滚，保证主程序绝不处于「找不到 exe」状态。</summary>
+        private static bool ReplaceExecutableAtomically(string exePath, string newPath)
+        {
+            // 尝试一：直接原子覆盖。目标未被锁定时一步完成。
+            if (MoveFileEx(newPath, exePath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                return true;
+
+            // 回退：带时间戳备份（失败不阻断），再两步改名。
+            string bak = exePath + ".bak_" + DateTime.Now.ToString("yyyyMMddHHmmss");
+            try { File.Copy(exePath, bak, true); } catch { }
+
+            string old = exePath + ".old";
+            bool movedToOld = false;
+            try
+            {
+                if (File.Exists(old)) File.Delete(old);
+                if (!MoveFileEx(exePath, old, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                    return false; // 旧 exe 改不动，直接放弃（exe 仍在原位）
+                movedToOld = true;
+
+                if (!MoveFileEx(newPath, exePath, MOVEFILE_WRITE_THROUGH))
+                    return false; // 新 exe 移不到位，finally 回滚 old→exe
+                try { File.Delete(old); } catch { }
+                return true;
+            }
+            finally
+            {
+                // 回滚：新 exe 未就位且旧 exe 已被改名时，把 old 改回 exe
+                if (movedToOld && !File.Exists(exePath) && File.Exists(old))
                 {
-                    string dir = Path.GetDirectoryName(exePath) ?? AppDomain.CurrentDomain.BaseDirectory;
-                    string pending = Path.Combine(dir, "bake_pending.bin");
-                    if (File.Exists(pending)) File.Delete(pending);
+                    if (!MoveFileEx(old, exePath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                        System.Diagnostics.Debug.WriteLine("[CpqSystemTool] ApplyPendingBake 回滚失败(危险! Win32=" + System.Runtime.InteropServices.Marshal.GetLastWin32Error() + ")");
                 }
-                catch { }
             }
         }
     }

@@ -112,20 +112,34 @@ namespace CpqSystemTool
                 defWp.Children.Clear();
                 var bDisable = Btn("✘ 一键禁用 WD", ShouldFillDef("disable", disabled), () =>
                 {
+                    // 危险操作确认
+                    if (MessageBox.Show("确定要禁用 Windows Defender 吗？\n\n系统将失去实时病毒防护，此操作可在「一键恢复 WD」中还原。", "确认操作", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                        return;
+                    // 防重入：与其它耗时操作互斥
+                    if (!OperationLock.TryEnter("一键禁用 Defender", out string busyBy))
+                    {
+                        MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
                     _lastDefAction = "disable";
                     RebuildDefenderButtons(); // 立即刷新高亮，给点击反馈
                     pb.Visibility = Visibility.Visible;
-                    RunInBg(log, Defender.Disable, "已禁用 Defender", () => { pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); });
+                    RunInBg(log, Defender.Disable, "已禁用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); });
                 });
                 bDisable.HorizontalAlignment = HorizontalAlignment.Center;
                 Grid.SetColumn(bDisable, 0);
                 defWp.Children.Add(bDisable);
                 var bEnable = Btn("✔ 一键恢复 WD", ShouldFillDef("restore", !disabled), () =>
                 {
+                    if (!OperationLock.TryEnter("一键恢复 Defender", out string busyBy))
+                    {
+                        MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
                     _lastDefAction = "restore";
                     RebuildDefenderButtons(); // 立即刷新高亮，给点击反馈
                     pb.Visibility = Visibility.Visible;
-                    RunInBg(log, Defender.Enable, "已启用 Defender", () => { pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); });
+                    RunInBg(log, Defender.Enable, "已启用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); });
                 });
                 bEnable.HorizontalAlignment = HorizontalAlignment.Center;
                 Grid.SetColumn(bEnable, 1);
@@ -157,11 +171,17 @@ namespace CpqSystemTool
                     };
                     chk.Click += (s, e) =>
                     {
+                        if (!OperationLock.TryEnter(label, out string busyBy))
+                        {
+                            MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                            return;
+                        }
                         bool target = chk.IsChecked == true;
                         pb.Visibility = Visibility.Visible;
                         RunInBg(log, l => setter(target, l), (target ? "已启用 " : "已禁用 ") + label,
                             () =>
                             {
+                                OperationLock.Exit();
                                 pb.Visibility = Visibility.Collapsed;
                                 SyncDefToggles();         // 重新读 Get* 刷新 toggle（Set 失败时自动回滚）
                                 BuildDefenderStatus();    // 刷新"当前状态"行
@@ -222,10 +242,19 @@ namespace CpqSystemTool
 
             bClear.Click += (s, e) =>
             {
+                // 破坏性清理：需确认
+                if (MessageBox.Show("确定要清理 Windows Defender 策略残留吗？\n\n将移除注册表中的残留策略配置，可能影响当前生效的保护设置。", "确认操作", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                    return;
+                if (!OperationLock.TryEnter("清理策略残留", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
                 ApplyPolicyMode(bClear);
                 pb.Visibility = Visibility.Visible;
                 RunInBg(log, l => Defender.ClearAllPolicies(l), "策略已清理", () =>
                 {
+                    OperationLock.Exit();
                     pb.Visibility = Visibility.Collapsed;
                     SyncDefToggles();
                     BuildDefenderStatus();
@@ -234,10 +263,16 @@ namespace CpqSystemTool
             };
             bDiag.Click += (s, e) =>
             {
+                if (!OperationLock.TryEnter("诊断 Runtime", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
                 ApplyPolicyMode(bDiag);
                 pb.Visibility = Visibility.Visible;
                 RunInBg(log, Defender.DiagnoseRuntime, "诊断完成", () =>
                 {
+                    OperationLock.Exit();
                     pb.Visibility = Visibility.Collapsed;
                 });
             };
@@ -399,18 +434,36 @@ namespace CpqSystemTool
             bRefreshFw.Click += (s, e) => LoadFirewallData();
             bBlockSearch.Click += (s, e) =>
             {
+                if (!OperationLock.TryEnter("添加防火墙规则", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, PrivacyCore.AddSearchFirewallRule, "已添加阻止 SearchHost 规则", () => { pb.Visibility = Visibility.Collapsed; LoadFirewallData(); });
+                RunInBg(log, PrivacyCore.AddSearchFirewallRule, "已添加阻止 SearchHost 规则", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; LoadFirewallData(); });
             };
             bBlockTele.Click += (s, e) =>
             {
+                if (!OperationLock.TryEnter("添加防火墙规则", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, l => FirewallCore.AddBlockAddressRule("阻止Windows遥测域", TELEMETRY_HOSTS, l), "已添加阻止遥测域规则", () => { pb.Visibility = Visibility.Collapsed; LoadFirewallData(); });
+                RunInBg(log, l => FirewallCore.AddBlockAddressRule("阻止Windows遥测域", TELEMETRY_HOSTS, l), "已添加阻止遥测域规则", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; LoadFirewallData(); });
             };
             bRemoveSearch.Click += (s, e) =>
             {
+                // 删除类操作：需确认
+                if (MessageBox.Show("确定要移除「SearchHost」防火墙规则吗？\n\n移除后 Windows Search 将恢复联网。", "确认操作", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                    return;
+                if (!OperationLock.TryEnter("移除防火墙规则", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, PrivacyCore.RemoveSearchFirewallRule, "已移除 SearchHost 规则", () => { pb.Visibility = Visibility.Collapsed; LoadFirewallData(); });
+                RunInBg(log, PrivacyCore.RemoveSearchFirewallRule, "已移除 SearchHost 规则", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; LoadFirewallData(); });
             };
             bRemoveSel.Click += (s, e) =>
             {
@@ -422,8 +475,16 @@ namespace CpqSystemTool
                 }
                 var sel = ruleList.SelectedItem as FirewallCore.RuleInfo;
                 if (sel == null) { System.Windows.MessageBox.Show(this, "请先在列表中选择一条规则", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning); return; }
+                // 删除类操作：需确认
+                if (MessageBox.Show("确定要移除防火墙规则「" + sel.DisplayName + "」吗？\n\n此操作不可撤销，将删除该规则。", "确认操作", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                    return;
+                if (!OperationLock.TryEnter("移除防火墙规则", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, l => FirewallCore.RemoveRule(sel.DisplayName, l), "已移除规则: " + sel.DisplayName, () => { pb.Visibility = Visibility.Collapsed; LoadFirewallData(); });
+                RunInBg(log, l => FirewallCore.RemoveRule(sel.DisplayName, l), "已移除规则: " + sel.DisplayName, () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; LoadFirewallData(); });
             };
 
             root.Children.Add(fwCard);
@@ -469,11 +530,18 @@ namespace CpqSystemTool
             updInner.Children.Add(updateBtnHost);
 
             // 更新操作：写操作完成后重新异步读取真实状态并刷新按钮高亮；读操作保留日志内容。
-            void RunUpdate(Action<Action<string>> work, string label, bool navWhenDone = true)
+            void RunUpdate(string actionKey, Action<Action<string>> work, string label, bool navWhenDone = true)
             {
+                if (!OperationLock.TryEnter("更新管理", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                _lastUpdateAction = actionKey;
                 pb.Visibility = Visibility.Visible;
                 RunInBg(log, work, label, () =>
                 {
+                    OperationLock.Exit();
                     pb.Visibility = Visibility.Collapsed;
                     if (navWhenDone) LoadUpdateState();
                 });
@@ -490,12 +558,12 @@ namespace CpqSystemTool
                     Grid.SetColumn(b, col);
                     updateBtnHost.Children.Add(b);
                 }
-                AddBtn("禁用更新", ShouldFill("block", updateState.blocked), () => { _lastUpdateAction = "block"; RunUpdate(Updater.BlockUpdates, "已禁用更新"); }, 0);
-                AddBtn("恢复更新", ShouldFill("restore", !updateState.blocked), () => { _lastUpdateAction = "restore"; RunUpdate(Updater.RestoreUpdates, "已恢复更新"); }, 1);
-                AddBtn("长期暂停(10000天)", ShouldFill("pause", updateState.paused), () => { _lastUpdateAction = "pause"; RunUpdate(Updater.AllowLongPause, "已设置长期暂停"); }, 2);
-                AddBtn("查看更新状态", ShouldFill("status", false), () => { _lastUpdateAction = "status"; RunUpdate(Updater.UpdateStatus, "状态已刷新", false); }, 3);
-                AddBtn("计量连接 · 切换", ShouldFill("metered-toggle", updateState.metered), () => { _lastUpdateAction = "metered-toggle"; RunUpdate(MeteredConnection.ToggleMetered, "计量连接已切换"); }, 4);
-                AddBtn("计量连接 · 状态", ShouldFill("metered-status", false), () => { _lastUpdateAction = "metered-status"; RunUpdate(MeteredConnection.MeteredStatus, "状态已刷新", false); }, 5);
+                AddBtn("禁用更新", ShouldFill("block", updateState.blocked), () => RunUpdate("block", Updater.BlockUpdates, "已禁用更新"), 0);
+                AddBtn("恢复更新", ShouldFill("restore", !updateState.blocked), () => RunUpdate("restore", Updater.RestoreUpdates, "已恢复更新"), 1);
+                AddBtn("长期暂停(10000天)", ShouldFill("pause", updateState.paused), () => RunUpdate("pause", Updater.AllowLongPause, "已设置长期暂停"), 2);
+                AddBtn("查看更新状态", ShouldFill("status", false), () => RunUpdate("status", Updater.UpdateStatus, "状态已刷新", false), 3);
+                AddBtn("计量连接 · 切换", ShouldFill("metered-toggle", updateState.metered), () => RunUpdate("metered-toggle", MeteredConnection.ToggleMetered, "计量连接已切换"), 4);
+                AddBtn("计量连接 · 状态", ShouldFill("metered-status", false), () => RunUpdate("metered-status", MeteredConnection.MeteredStatus, "状态已刷新", false), 5);
             }
             RebuildUpdateButtons();
             LoadUpdateState();

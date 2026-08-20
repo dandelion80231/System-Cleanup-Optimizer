@@ -202,6 +202,18 @@ namespace CpqSystemTool
                     row.MouseEnter += (s, e) => { if (row.Background == Brushes.Transparent) row.Background = _rowHover; };
                     row.MouseLeave += (s, e) => { row.Background = Brushes.Transparent; };
                     content.Children.Add(row);
+                    // P2 常驻提示：关闭系统还原后危险操作将失去还原点兜底（提示位于该项下方，保证用户能看到）
+                    if (t.Id == "system_restore")
+                    {
+                        content.Children.Add(new TextBlock
+                        {
+                            Text = "⚠ 关闭系统还原后，危险操作将失去还原点兜底",
+                            Foreground = _textDim,
+                            FontSize = 11,
+                            Margin = new Thickness(44, 0, 0, 6),
+                            TextWrapping = TextWrapping.Wrap
+                        });
+                    }
                 }
             }
 
@@ -476,6 +488,11 @@ namespace CpqSystemTool
         private void ApplyChecked()
         {
             if (TweaksCheckBoxes == null || TweaksCheckBoxes.Count == 0) { System.Windows.MessageBox.Show(this, "当前没有可优化的项目", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning); return; }
+            // P1 确认：应用前弹出确认，避免误点导致批量改动系统设置（此前无任何确认对话框）
+            var confirm = System.Windows.MessageBox.Show(this,
+                "确定要应用这些优化吗？\n\n勾选=启用优化、取消勾选=恢复系统默认。部分优化项（如关闭系统还原、高风险项）可能影响系统稳定或失去还原点兜底。",
+                "确认应用优化", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+            if (confirm != System.Windows.MessageBoxResult.Yes) return;
             var desired = new Dictionary<string, TweakState?>();
             foreach (var kv in TweaksCheckBoxes)
             {
@@ -604,6 +621,12 @@ namespace CpqSystemTool
         /// 三态项按 On/Off/Default 应用，二态项仅 On 时 Enable、Off 时 Disable。</summary>
         private void ApplyTweaks(Dictionary<string, TweakState?> desired, string label)
         {
+            // P1 防重入：全局互斥，防止连点或跨模块并发（清理/优化同一时间只允许一个耗时操作）
+            if (!OperationLock.TryEnter("优化", out string busyBy))
+            {
+                System.Windows.MessageBox.Show(this, "已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
             // 1) 同步勾选框（仅纳入范围且非"系统默认"的项；Default 留待刷新回写）
             foreach (var kv in desired)
                 if (TweaksCheckBoxes != null && TweaksCheckBoxes.TryGetValue(kv.Key, out var cb) && kv.Value != null)
@@ -621,48 +644,55 @@ namespace CpqSystemTool
             // 2) 后台线程执行 + 不重建页面（避免闪烁）
             System.Threading.ThreadPool.QueueUserWorkItem(_ =>
             {
-                int ok = 0, fail = 0;
-                foreach (var kv in desired)
+                try
                 {
-                    var st = kv.Value;
-                    if (st == null) continue; // 不在范围，跳过
-                    var t = Tweaks.All.FirstOrDefault(x => x.Id == kv.Key);
-                    if (t == null) { fail++; continue; }
-                    try
-                    {
-                        if (t.IsThreeState) t.Apply3(st.Value, bgLog);
-                        else if (st == TweakState.On) t.Enable(bgLog);
-                        else t.Disable(bgLog);
-                        ok++;
-                    }
-                    catch { fail++; }
-                }
-                try { Dispatcher.Invoke(() =>
-                {
-                    pb.Visibility = Visibility.Collapsed;
-                    if (TweaksOptimized == null)
-                        TweaksOptimized = new HashSet<string>(StringComparer.Ordinal);
-                    // 3) 在原页面就地刷新每个项的实际状态（三态项反映 On/Off/系统默认），同步维护「已优化」集合
+                    int ok = 0, fail = 0;
                     foreach (var kv in desired)
                     {
-                        if (kv.Value == null) continue;
+                        var st = kv.Value;
+                        if (st == null) continue; // 不在范围，跳过
                         var t = Tweaks.All.FirstOrDefault(x => x.Id == kv.Key);
-                        if (t == null) continue;
-                        if (TweaksCheckBoxes != null && TweaksCheckBoxes.TryGetValue(kv.Key, out var cb))
+                        if (t == null) { fail++; continue; }
+                        try
                         {
-                            bool? curState = t.IsThreeState ? ToCheckBox(t.GetState3()) : (bool?)(t.State());
-                            cb.IsChecked = curState;
-                            if (curState == true)
-                                TweaksOptimized.Add(kv.Key);
-                            else
-                                TweaksOptimized.Remove(kv.Key);
+                            if (t.IsThreeState) t.Apply3(st.Value, bgLog);
+                            else if (st == TweakState.On) t.Enable(bgLog);
+                            else t.Disable(bgLog);
+                            ok++;
                         }
+                        catch { fail++; }
                     }
-                    SyncAllTweakColors();
-                    UpdateSelectedPanel();
-                    if (sb.Length > 0) TweaksOutputLine.Text = sb.ToString().Trim();
-                    SetStatus($"{label}: {ok}项完成, {fail}项失败");
-                }); } catch { /* 窗口已关闭，忽略 */ }
+                    try { Dispatcher.Invoke(() =>
+                    {
+                        pb.Visibility = Visibility.Collapsed;
+                        if (TweaksOptimized == null)
+                            TweaksOptimized = new HashSet<string>(StringComparer.Ordinal);
+                        // 3) 在原页面就地刷新每个项的实际状态（三态项反映 On/Off/系统默认），同步维护「已优化」集合
+                        foreach (var kv in desired)
+                        {
+                            if (kv.Value == null) continue;
+                            var t = Tweaks.All.FirstOrDefault(x => x.Id == kv.Key);
+                            if (t == null) continue;
+                            if (TweaksCheckBoxes != null && TweaksCheckBoxes.TryGetValue(kv.Key, out var cb))
+                            {
+                                bool? curState = t.IsThreeState ? ToCheckBox(t.GetState3()) : (bool?)(t.State());
+                                cb.IsChecked = curState;
+                                if (curState == true)
+                                    TweaksOptimized.Add(kv.Key);
+                                else
+                                    TweaksOptimized.Remove(kv.Key);
+                            }
+                        }
+                        SyncAllTweakColors();
+                        UpdateSelectedPanel();
+                        if (sb.Length > 0) TweaksOutputLine.Text = sb.ToString().Trim();
+                        SetStatus($"{label}: {ok}项完成, {fail}项失败");
+                    }); } catch { /* 窗口已关闭，忽略 */ }
+                }
+                finally
+                {
+                    OperationLock.Exit();   // P1：成功/失败/异常均释放全局互斥，避免锁泄漏
+                }
             });
         }
 

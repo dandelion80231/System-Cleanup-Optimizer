@@ -256,6 +256,12 @@ namespace CpqSystemTool
                 ApplyMode(btnClean);   // 切换到「开始清理」高亮
                 var sel = allCheckBoxes.Where(c => c.IsChecked == true).Select(c => (string)c.Tag).ToList();
                 if (sel.Count == 0) { log.AppendText("[!] 请先勾选要清理的项目\r\n"); return; }
+                // P1 防重入：全局互斥，防止连点或跨模块并发（清理/优化同一时间只允许一个耗时操作）
+                if (!OperationLock.TryEnter("清理", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
                 pb.Visibility = Visibility.Visible;
                 RunInBg(log, l =>
                 {
@@ -272,7 +278,7 @@ namespace CpqSystemTool
                         }
                     });
                     l("\r\n[OK] 清理完成！建议重启电脑以释放被占用的文件\r\n");
-                }, "清理完成", () => pb.Visibility = Visibility.Collapsed);
+                }, "清理完成", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; });
             }, 100);
             actionBar.Children.Add(btnClean);
 
