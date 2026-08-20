@@ -56,6 +56,15 @@
     <div class="container">
       <div class="timeline reveal">
         <div class="tl-item">
+          <span class="ver">v1.11</span><span class="date">2026-08-20</span>
+          <ul>
+            <li>🐞 修复：子进程双流读取死锁（Exec 异步并行排水，消除 64KB 管道缓冲互相阻塞）、后台任务运行中关闭窗口崩溃（safeUi 兜底）等 6 类缺陷</li>
+            <li>⚡ 性能：官方直链探针候选验证并行化（最坏 225s→约 45s，5 倍提速）、注册表 / WebView2 / Chocolatey 结果缓存、日志框写入优化等 5 项提速</li>
+            <li>♻️ 重构：MainWindow.Pages.cs 按功能域拆分 8 个 partial（5,599→833 行）、日志统一收编（DebugLog.Ignore）、HttpClient 静态单例复用</li>
+            <li>例行版本提升 v1.10 → v1.11</li>
+          </ul>
+        </div>
+        <div class="tl-item">
           <span class="ver">v1.10</span><span class="date">2026-08-18</span>
           <ul>
             <li>✨ 新增：内存工具页（镜像 RAMMap 只读视图 + 可选内存优化），分总览 / 拆解 / 优化三层</li>
