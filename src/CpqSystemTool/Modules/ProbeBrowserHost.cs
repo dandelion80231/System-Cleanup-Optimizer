@@ -45,6 +45,15 @@ namespace CpqSystemTool
         /// <summary>预检 Runtime 版本时的轻量超时。</summary>
         private static readonly TimeSpan RuntimeVersionCheckTimeout = TimeSpan.FromSeconds(5);
 
+        /// <summary>WebView2 就绪检测结果的进程内缓存 TTL（秒）。命中时直接返回，不再真实创建离屏 WebView2 初始化。</summary>
+        private static readonly TimeSpan WvReadyCacheTtl = TimeSpan.FromSeconds(30);
+
+        /// <summary>就绪检测缓存：(Ready, Error, TickCount64 时间戳)。Ticks==0 表示从未检测过。读写都经 _wvReadyLock 互斥保护。</summary>
+        private static (bool Ready, string Error, long Ticks) _wvReadyCache;
+
+        /// <summary>保护 _wvReadyCache 的锁：初始化在后台线程、读取在 UI 线程，必须互斥（值元组跨 8 字节，不可无锁读取）。</summary>
+        private static readonly object _wvReadyLock = new object();
+
         /// <summary>初始化失败时的真实异常信息（供调用方写入日志，便于排查）。</summary>
         public string InitError => _initError;
 
@@ -263,6 +272,30 @@ namespace CpqSystemTool
         /// 在 timeout 内成功返回 (true, null)；失败或超时返回 (false, 错误信息)。
         /// </summary>
         public static async Task<(bool Ready, string Error)> CheckWebView2ReadyAsync(TimeSpan timeout, Action<string> diag = null, Action<int> progress = null)
+        {
+            // —— 状态缓存（进程内 30s TTL）——
+            // 反复点击「管理依赖」每次都会真实创建离屏 WebView2 验证就绪（最长 15s）。这里把最近一次检测结果缓存 30s：
+            // 命中直接返回，未命中才真正初始化；成功与失败结果都缓存（失败同样 30s，避免反复失败时每次慢速重试）。
+            // 缓存只影响「是否真的跑初始化」；命中时无初始化过程，因此不触发 diag/progress 回调，
+            // 外部签名与行为（timeout 默认化、diag/progress 回调语义）保持不变。
+            lock (_wvReadyLock)
+            {
+                var cached = _wvReadyCache;
+                if (cached.Ticks != 0 && Environment.TickCount - cached.Ticks < (long)WvReadyCacheTtl.TotalMilliseconds)
+                    return (cached.Ready, cached.Error);
+            }
+
+            var result = await CheckWebView2ReadyCoreAsync(timeout, diag, progress);
+
+            lock (_wvReadyLock)
+            {
+                _wvReadyCache = (result.Ready, result.Error, Environment.TickCount);
+            }
+            return result;
+        }
+
+        /// <summary>CheckWebView2ReadyAsync 的真实初始化实现（无缓存），由公开方法在缓存未命中时调用。内容与原实现一致。</summary>
+        private static async Task<(bool Ready, string Error)> CheckWebView2ReadyCoreAsync(TimeSpan timeout, Action<string> diag = null, Action<int> progress = null)
         {
             if (timeout <= TimeSpan.Zero) timeout = DefaultInitTimeout;
             try

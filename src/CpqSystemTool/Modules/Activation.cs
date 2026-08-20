@@ -276,7 +276,7 @@ namespace CpqSystemTool
                     // 交互式提权脚本：给足 30 分钟超时（用户可能手动操作），超时则终止避免 UI 挂起
                     if (!p.WaitForExit(MAS_TIMEOUT_MS))
                     {
-                        try { p.Kill(); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                        try { p.Kill(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
                         log("  [!] MAS 脚本执行超时（30 分钟），已终止。");
                         return;
                     }

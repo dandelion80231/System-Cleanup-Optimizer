@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -475,28 +476,37 @@ namespace CpqSystemTool
         private static async Task<List<Cand>> FinalizeAsync(string entryUrl, List<CandidateUrl> found)
         {
             var cands = new List<Cand>();
-            foreach (var f in found)
+            using (var gate = new SemaphoreSlim(5, 5))
             {
-                var cl = ProbeData.Classify(f.Url);
-                bool shouldVerify = cl.isExe || ProbeData.FileRedirectRe.IsMatch(f.Url);
-                VerifyResult v;
-                if (shouldVerify) v = await VerifyExeAsync(f.Url, 0);
-                else v = new VerifyResult { url = f.Url, verified = false, status = "SKIP", ct = "", redirects = 0 };
-                if (v.redirects > 0 && Regex.IsMatch(v.finalUrl ?? f.Url, @"\.exe(\?|$)", RegexOptions.IgnoreCase))
-                    f.Strategy = (f.Strategy ?? "") + "+redirect";
-                cands.Add(new Cand
+                var tasks = found.Select(async f =>
                 {
-                    Url = f.Url,
-                    Strategy = f.Strategy,
-                    IsX64 = cl.isX64,
-                    IsArm64 = cl.isArm64,
-                    IsX86 = cl.isX86,
-                    Denylisted = cl.denylisted,
-                    Verified = v.verified,
-                    Status = v.status,
-                    Ct = v.ct ?? "",
-                    Redirects = v.redirects,
-                });
+                    await gate.WaitAsync().ConfigureAwait(false);
+                    try
+                    {
+                        var cl = ProbeData.Classify(f.Url);
+                        bool shouldVerify = cl.isExe || ProbeData.FileRedirectRe.IsMatch(f.Url);
+                        VerifyResult v;
+                        if (shouldVerify) v = await VerifyExeAsync(f.Url, 0).ConfigureAwait(false);
+                        else v = new VerifyResult { url = f.Url, verified = false, status = "SKIP", ct = "", redirects = 0 };
+                        if (v.redirects > 0 && Regex.IsMatch(v.finalUrl ?? f.Url, @"\.exe(\?|$)", RegexOptions.IgnoreCase))
+                            f.Strategy = (f.Strategy ?? "") + "+redirect";
+                        return new Cand
+                        {
+                            Url = f.Url,
+                            Strategy = f.Strategy,
+                            IsX64 = cl.isX64,
+                            IsArm64 = cl.isArm64,
+                            IsX86 = cl.isX86,
+                            Denylisted = cl.denylisted,
+                            Verified = v.verified,
+                            Status = v.status,
+                            Ct = v.ct ?? "",
+                            Redirects = v.redirects,
+                        };
+                    }
+                    finally { gate.Release(); }
+                }).ToList();
+                cands.AddRange(await Task.WhenAll(tasks).ConfigureAwait(false));
             }
 
             foreach (var c in cands)

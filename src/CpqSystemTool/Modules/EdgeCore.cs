@@ -31,7 +31,7 @@ namespace CpqSystemTool
                     return key.GetValue("Version")?.ToString() ?? "未安装";
                 }
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return "未安装"; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return "未安装"; }
         }
 
         public static string GetWebView2Version()
@@ -50,7 +50,7 @@ namespace CpqSystemTool
                     return key.GetValue("Version")?.ToString() ?? "未安装";
                 }
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return "未安装"; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return "未安装"; }
         }
 
         // Issue 6: 当前用户级别 WebView2（分开显示在 UI 上）
@@ -61,7 +61,7 @@ namespace CpqSystemTool
                 using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft EdgeWebView"))
                     return key?.GetValue("Version")?.ToString() ?? "未安装";
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return "未安装"; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return "未安装"; }
         }
 
         // === WebView2 安装/卸载 ===
@@ -128,7 +128,7 @@ namespace CpqSystemTool
             // 安全加固：下载后校验文件存在且非空，避免后续对损坏/截断的引导程序静默执行
             bool bootstrapperOk = false;
             try { bootstrapperOk = File.Exists(bootstrapper) && new FileInfo(bootstrapper).Length > 0; }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
             if (!bootstrapperOk)
             {
                 log("[!] 下载后引导程序文件缺失或损坏（为空），无法继续。");
@@ -323,7 +323,7 @@ namespace CpqSystemTool
                     }
                 }
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
 
             if (string.IsNullOrEmpty(uninstallString))
             {
@@ -420,7 +420,7 @@ namespace CpqSystemTool
                     }
                 }
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             return true; // 默认启用
         }
 

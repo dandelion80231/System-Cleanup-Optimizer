@@ -92,12 +92,17 @@ namespace CpqSystemTool
                 using (var p = Process.Start(psi))
                 {
                     if (p == null) return (-1, "", "无法启动 powershell");
-                    string outp = p.StandardOutput.ReadToEnd();
-                    string errp = p.StandardError.ReadToEnd();
+                    var sbOut = new StringBuilder();
+                    var sbErr = new StringBuilder();
+                    p.OutputDataReceived += (s, e) => { if (e.Data != null) sbOut.AppendLine(e.Data); };
+                    p.ErrorDataReceived += (s, e) => { if (e.Data != null) sbErr.AppendLine(e.Data); };
+                    p.BeginOutputReadLine();
+                    p.BeginErrorReadLine();
                     KillIfTimeout(p, PROCESS_TIMEOUT_MS);
+                    p.WaitForExit();   // 等待异步输出事件排空（Kill 后也会快速返回）
                     // 清洗 PowerShell 在非交互重定向下把错误序列化成 CLIXML 的噪声（#< CLIXML ... </Objs>），
                     // 否则日志框会被一坨 XML 刷屏（如 Edge 缓存清理时文件被占用）。
-                    return (p.ExitCode, SanitizeClixml(outp), SanitizeClixml(errp));
+                    return (p.ExitCode, SanitizeClixml(sbOut.ToString()), SanitizeClixml(sbErr.ToString()));
                 }
             }
             catch (Exception ex) { return (-1, "", "powershell 执行失败: " + ex.Message); }
@@ -220,9 +225,18 @@ namespace CpqSystemTool
                     if (p == null) { log("  [!] 无法启动: " + args[0]); return -1; }
                     if (capture)
                     {
-                        string outp = p.StandardOutput.ReadToEnd();
+                        var sbOut = new StringBuilder();
+                        var sbErr = new StringBuilder();
+                        p.OutputDataReceived += (s, e) => { if (e.Data != null) sbOut.AppendLine(e.Data); };
+                        p.ErrorDataReceived += (s, e) => { if (e.Data != null) sbErr.AppendLine(e.Data); };
+                        p.BeginOutputReadLine();
+                        p.BeginErrorReadLine();
                         KillIfTimeout(p, PROCESS_TIMEOUT_MS);
+                        p.WaitForExit();   // 等待异步输出事件排空（Kill 后也会快速返回）
+                        var outp = sbOut.ToString();
                         if (!string.IsNullOrWhiteSpace(outp)) log(outp.Trim());
+                        var errp = sbErr.ToString();
+                        if (!string.IsNullOrWhiteSpace(errp)) log("   [STDERR] " + errp.Trim());
                         return p.ExitCode;
                     }
                     KillIfTimeout(p, PROCESS_TIMEOUT_MS);
@@ -256,9 +270,15 @@ namespace CpqSystemTool
                 using (var p = Process.Start(psi))
                 {
                     if (p == null) { log("  [!] 无法启动: " + args[0]); return ""; }
-                    string outp = p.StandardOutput.ReadToEnd();
+                    var sbOut = new StringBuilder();
+                    var sbErr = new StringBuilder();
+                    p.OutputDataReceived += (s, e) => { if (e.Data != null) sbOut.AppendLine(e.Data); };
+                    p.ErrorDataReceived += (s, e) => { if (e.Data != null) sbErr.AppendLine(e.Data); };
+                    p.BeginOutputReadLine();
+                    p.BeginErrorReadLine();
                     KillIfTimeout(p, PROCESS_TIMEOUT_MS);
-                    return outp ?? "";
+                    p.WaitForExit();   // 等待异步输出事件排空（Kill 后也会快速返回）
+                    return sbOut.ToString() ?? "";
                 }
             }
             catch (Exception ex) { log("  [!] 执行 " + args[0] + " 失败: " + ex.Message); return ""; }
@@ -279,9 +299,18 @@ namespace CpqSystemTool
                     if (p == null) { log("  [!] 无法启动 cscript"); return -1; }
                     if (capture)
                     {
-                        string outp = p.StandardOutput.ReadToEnd();
+                        var sbOut = new StringBuilder();
+                        var sbErr = new StringBuilder();
+                        p.OutputDataReceived += (s, e) => { if (e.Data != null) sbOut.AppendLine(e.Data); };
+                        p.ErrorDataReceived += (s, e) => { if (e.Data != null) sbErr.AppendLine(e.Data); };
+                        p.BeginOutputReadLine();
+                        p.BeginErrorReadLine();
                         KillIfTimeout(p, PROCESS_TIMEOUT_MS);
+                        p.WaitForExit();   // 等待异步输出事件排空（Kill 后也会快速返回）
+                        var outp = sbOut.ToString();
                         if (!string.IsNullOrWhiteSpace(outp)) log(outp.Trim());
+                        var errp = sbErr.ToString();
+                        if (!string.IsNullOrWhiteSpace(errp)) log("   [STDERR] " + errp.Trim());
                         return p.ExitCode;
                     }
                     KillIfTimeout(p, PROCESS_TIMEOUT_MS);
@@ -300,9 +329,15 @@ namespace CpqSystemTool
                 using (var p = Process.Start(psi))
                 {
                     if (p == null) { log("  [!] 无法启动 cscript"); return ""; }
-                    string outp = p.StandardOutput.ReadToEnd();
+                    var sbOut = new StringBuilder();
+                    var sbErr = new StringBuilder();
+                    p.OutputDataReceived += (s, e) => { if (e.Data != null) sbOut.AppendLine(e.Data); };
+                    p.ErrorDataReceived += (s, e) => { if (e.Data != null) sbErr.AppendLine(e.Data); };
+                    p.BeginOutputReadLine();
+                    p.BeginErrorReadLine();
                     KillIfTimeout(p, PROCESS_TIMEOUT_MS);
-                    return outp ?? "";
+                    p.WaitForExit();   // 等待异步输出事件排空（Kill 后也会快速返回）
+                    return sbOut.ToString() ?? "";
                 }
             }
             catch (Exception ex) { log("  [!] 执行 VBS " + args[0] + " 失败: " + ex.Message); return ""; }

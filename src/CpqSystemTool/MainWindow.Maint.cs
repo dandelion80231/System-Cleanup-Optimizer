@@ -331,7 +331,7 @@ namespace CpqSystemTool
             manageDepsBtn.Click += (s, e) =>
             {
                 depsPopup.IsOpen = !depsPopup.IsOpen;
-                if (depsPopup.IsOpen) RefreshDepStatus(nodeHeader, wvHeader, logBox);
+                if (depsPopup.IsOpen) { var _ = RefreshDepStatus(nodeHeader, wvHeader, logBox); }
             };
             depsPopup.Opened += (s, e) =>
             {
@@ -707,38 +707,56 @@ namespace CpqSystemTool
         //  依赖状态刷新（维护工具页「管理依赖」菜单）
         // =====================================================================
 
+        /// <summary>重入保护：RefreshDepStatus 正在执行（含最长 15s 的 WebView2 初始化）时为 true，连点直接忽略。仅 UI 线程访问。</summary>
+        private bool _depRefreshing;
+
         /// <summary>
         /// 刷新「管理依赖」下拉面板中两种方案的状态文字。
         /// Node 就绪 = 本机或 probes/.tools 存在 node.exe 且 node_modules/playwright 存在。
         /// WebView2 就绪 = 真正创建离屏窗口并 EnsureCoreWebView2Async 初始化成功
         ///   （复用探针实际初始化路径，能识别「Runtime 已装但初始化挂起」这种此前误报就绪的故障）。
         /// </summary>
-        private async void RefreshDepStatus(TextBlock nodeHeader, TextBlock wvHeader, TextBox logBox = null)
+        private async Task RefreshDepStatus(TextBlock nodeHeader, TextBlock wvHeader, TextBox logBox = null)
         {
-            if (nodeHeader != null) nodeHeader.Text = "Node + Playwright + Chromium\n（检测中…）";
-            if (wvHeader != null) wvHeader.Text = "WebView2 Runtime（系统 Edge）\n（检测中…）";
-
-            var probesDir = ResolveProbesDir();
-            var nodeReady = false;
+            // 重入保护：上一次刷新仍在进行时（WebView2 初始化最长 15s），连点直接忽略，避免并发起多个初始化。
+            // 配合 ProbeBrowserHost 的 30s TTL 就绪缓存，首次真实初始化后 30s 内再点基本都会秒回。
+            if (_depRefreshing) return;
+            _depRefreshing = true;
             try
             {
-                nodeReady = IsNodeDepsReady(probesDir).Ready;
+                if (nodeHeader != null) nodeHeader.Text = "Node + Playwright + Chromium\n（检测中…）";
+                if (wvHeader != null) wvHeader.Text = "WebView2 Runtime（系统 Edge）\n（检测中…）";
+
+                var probesDir = ResolveProbesDir();
+                var nodeReady = false;
+                try
+                {
+                    nodeReady = IsNodeDepsReady(probesDir).Ready;
+                }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine("IsNodeDepsReady 检测异常: " + ex.Message); }
+
+                // 真实初始化校验：复用 InitAsync（离屏窗口渲染 + EnsureCoreWebView2Async），
+                // 给足超时（15s）容纳版本预检与浏览器进程初始化，避免把“可用”误判为“超时未就绪”。
+                // 下载百分比进度：经 Dispatcher 回到 UI 线程写入日志框（\r 前缀原地刷新最后一行）。
+                Action<int> dlProgress = p => Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (logBox != null) AppendOrReplaceLog(logBox, WebView2ProbeDeps.ProgressLine(p));
+                }));
+                var (wvReady, wvError) = await ProbeBrowserHost.CheckWebView2ReadyAsync(TimeSpan.FromSeconds(15), null, dlProgress);
+
+                if (nodeHeader != null)
+                    nodeHeader.Text = "Node + Playwright + Chromium\n" + (nodeReady ? "（已就绪）" : "（未安装）");
+                if (wvHeader != null)
+                    wvHeader.Text = "WebView2 Runtime（系统 Edge）\n" + (wvReady ? "（已就绪）" : "（未安装" + (string.IsNullOrEmpty(wvError) ? "" : "：" + wvError) + "）");
             }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("IsNodeDepsReady 检测异常: " + ex.Message); }
-
-            // 真实初始化校验：复用 InitAsync（离屏窗口渲染 + EnsureCoreWebView2Async），
-            // 给足超时（15s）容纳版本预检与浏览器进程初始化，避免把“可用”误判为“超时未就绪”。
-            // 下载百分比进度：经 Dispatcher 回到 UI 线程写入日志框（\r 前缀原地刷新最后一行）。
-            Action<int> dlProgress = p => Dispatcher.BeginInvoke(new Action(() =>
+            catch (System.Exception ex)
             {
-                if (logBox != null) AppendOrReplaceLog(logBox, WebView2ProbeDeps.ProgressLine(p));
-            }));
-            var (wvReady, wvError) = await ProbeBrowserHost.CheckWebView2ReadyAsync(TimeSpan.FromSeconds(15), null, dlProgress);
-
-            if (nodeHeader != null)
-                nodeHeader.Text = "Node + Playwright + Chromium\n" + (nodeReady ? "（已就绪）" : "（未安装）");
-            if (wvHeader != null)
-                wvHeader.Text = "WebView2 Runtime（系统 Edge）\n" + (wvReady ? "（已就绪）" : "（未安装" + (string.IsNullOrEmpty(wvError) ? "" : "：" + wvError) + "）");
+                DebugLog.Ignore(ex);
+            }
+            finally
+            {
+                _depRefreshing = false;
+            }
         }
     }
 }

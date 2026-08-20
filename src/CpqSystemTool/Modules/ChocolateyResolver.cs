@@ -1,10 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 
 namespace CpqSystemTool
 {
@@ -56,14 +57,36 @@ namespace CpqSystemTool
                                 new[] { "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-" }),
             };
 
+        // ---- 解析结果进程内 TTL 缓存（24h）----
+        // 只缓存“实时解析成功且带非空 SHA256”的确定性结果：同入参 24h 内不再发网络请求。
+        // 失败（异常/空结果/实时解析未命中而走快照）不缓存，下次重试。条目数≈软件数，内存可控。
+        private static readonly object ResolveCacheLock = new object();
+        private static readonly Dictionary<string, (string Url, string Sha256, string[] Args, long Ticks)> ResolveCache =
+            new Dictionary<string, (string, string, string[], long)>(StringComparer.OrdinalIgnoreCase);
+        private static readonly long ResolveCacheTtlTicks = TimeSpan.FromHours(24).Ticks;
+
         public static bool TryResolve(string id, out string url, out string sha256, out string[] args, Action<string> log)
         {
             url = null; sha256 = null; args = null;
+
+            // 0) 命中 24h 解析缓存 → 直接返回，不再发网络请求
+            string cacheKey = (id ?? "").Trim();
+            lock (ResolveCacheLock)
+            {
+                if (ResolveCache.TryGetValue(cacheKey, out var hit) &&
+                    DateTime.UtcNow.Ticks - hit.Ticks < ResolveCacheTtlTicks)
+                {
+                    url = hit.Url; sha256 = hit.Sha256; args = hit.Args;
+                    log("   [*] 使用 Chocolatey 解析缓存（24h 内同软件不重复请求）：" + id);
+                    return true;
+                }
+            }
 
             // 1) 实时解析（联网取最新，始终带当前 SHA256 → 永不失效）
             if (LiveResolve(id, out url, out sha256, out args, log) && !string.IsNullOrEmpty(sha256))
             {
                 log("   [*] 已从 Chocolatey 实时解析最新安装包：" + id);
+                StoreResolveCache(cacheKey, url, sha256, args);
                 return true;
             }
 
@@ -77,19 +100,36 @@ namespace CpqSystemTool
             return false;
         }
 
+        // 写入解析缓存：仅实时解析成功且带 SHA256 的结果；顺带清理已过期条目（软件数很少，遍历成本可忽略）。
+        private static void StoreResolveCache(string key, string url, string sha256, string[] args)
+        {
+            lock (ResolveCacheLock)
+            {
+                if (ResolveCache.Count > 0)
+                {
+                    long now = DateTime.UtcNow.Ticks;
+                    var stale = new List<string>();
+                    foreach (var kv in ResolveCache)
+                        if (now - kv.Value.Ticks >= ResolveCacheTtlTicks)
+                            stale.Add(kv.Key);
+                    foreach (var k in stale) ResolveCache.Remove(k);
+                }
+                ResolveCache[key] = (url, sha256, args, DateTime.UtcNow.Ticks);
+            }
+        }
+
         private static bool LiveResolve(string id, out string url, out string sha256, out string[] args, Action<string> log)
         {
             url = null; sha256 = null; args = null;
             try
             {
-                using var client = new HttpClient();
-                client.Timeout = TimeSpan.FromSeconds(25);
-                client.DefaultRequestHeaders.Add("User-Agent", "CpqSystemTool");
+                var client = HttpClients.Default; // 进程内共享单例复用（B4）：避免每次 new/dispose 造成 socket TIME_WAIT 堆积
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25)); // 原 client.Timeout=25s → 请求级超时（单例不改全局 Timeout）
 
                 // 先试 id 本体，再试 .install 变体（meta 包的安装逻辑在 .install 里）
                 foreach (var candidate in new[] { id, id + ".install" })
                 {
-                    if (ResolveCandidate(client, candidate, out url, out sha256, out args)) return true;
+                    if (ResolveCandidate(client, cts.Token, candidate, out url, out sha256, out args)) return true;
                 }
                 return false;
             }
@@ -100,7 +140,7 @@ namespace CpqSystemTool
             }
         }
 
-        private static bool ResolveCandidate(HttpClient client, string id, out string url, out string sha256, out string[] args)
+        private static bool ResolveCandidate(HttpClient client, CancellationToken ct, string id, out string url, out string sha256, out string[] args)
         {
             url = null; sha256 = null; args = null;
             // 安全加固：id 直接拼入 OData 过滤串（Id eq '...'），先做白名单校验，
@@ -109,13 +149,18 @@ namespace CpqSystemTool
                 return false;
             try
             {
-                string odata = client.GetStringAsync(
-                    "https://community.chocolatey.org/api/v2/Packages()?$filter=Id eq '" + id + "' and IsLatestVersion eq true&$select=Version,PackageDownload").Result;
+                string odata;
+                using (var req = BuildRequest("https://community.chocolatey.org/api/v2/Packages()?$filter=Id eq '" + id + "' and IsLatestVersion eq true&$select=Version,PackageDownload"))
+                using (var resp = client.SendAsync(req, ct).Result)
+                    odata = resp.Content.ReadAsStringAsync().Result;
                 var pkg = Match(odata, @"<d:PackageDownload m:type=""Edm.String"">([^<]+)</d:PackageDownload>");
                 if (string.IsNullOrEmpty(pkg)) return false;
                 pkg = System.Net.WebUtility.HtmlDecode(pkg);
 
-                byte[] nupkg = client.GetByteArrayAsync(pkg).Result;
+                byte[] nupkg;
+                using (var req = BuildRequest(pkg))
+                using (var resp = client.SendAsync(req, ct).Result)
+                    nupkg = resp.Content.ReadAsByteArrayAsync().Result;
                 using var ms = new MemoryStream(nupkg);
                 using var zip = new ZipArchive(ms);
                 string script = null;
@@ -145,6 +190,14 @@ namespace CpqSystemTool
                 return !string.IsNullOrEmpty(url);
             }
             catch { return false; }
+        }
+
+        // 单例共享后不能写 HttpClient.DefaultRequestHeaders（会污染全局请求头），UA 改为请求级注入，行为与原客户端级 UA 一致。
+        private static HttpRequestMessage BuildRequest(string url)
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.TryAddWithoutValidation("User-Agent", "CpqSystemTool");
+            return req;
         }
 
         private static string Match(string s, string pat)

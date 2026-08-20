@@ -3,6 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CpqSystemTool
@@ -144,11 +145,11 @@ namespace CpqSystemTool
         {
             await Task.Run(async () =>
             {
-                using (var client = new HttpClient())
+                using (var cts = new CancellationTokenSource(DownloadTimeoutMs)) // 原 client.Timeout=DownloadTimeoutMs → 请求级超时（单例不改全局 Timeout）
                 {
-                    client.Timeout = TimeSpan.FromMilliseconds(DownloadTimeoutMs);
+                    var client = HttpClients.Default; // 进程内共享单例复用（B4）：避免每次 new/dispose 造成 socket TIME_WAIT 堆积
                     // ResponseHeadersRead：先拿到响应头（含 Content-Length），再边读边计字节，才能算百分比。
-                    using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
+                    using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false))
                     {
                         response.EnsureSuccessStatusCode();
                         long total = response.Content.Headers.ContentLength ?? -1;

@@ -63,7 +63,7 @@ namespace CpqSystemTool
                     _cacheValid = true;
                 }
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  _cacheValid = false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  _cacheValid = false; }
         }
 
         private static void EnsureCache()
@@ -80,7 +80,7 @@ namespace CpqSystemTool
             {
                 return !GetRealtime() && !GetBehavior() && !GetCloud() && !GetSampleSubmit();
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         // ===================== 底层：Get-MpPreference / Set-MpPreference =====================
@@ -95,7 +95,7 @@ namespace CpqSystemTool
                 using (var k = Registry.LocalMachine.OpenSubKey(keyPath, false))
                     if (k?.GetValue(valName) is int v) return v;
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             return null;
         }
 

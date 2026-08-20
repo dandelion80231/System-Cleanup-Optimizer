@@ -24,7 +24,7 @@ namespace CpqSystemTool
         {
             try { using (var k = HKLM.OpenSubKey(@"SOFTWARE\Policies\Microsoft\Windows\Windows Search"))
                 return k?.GetValue("AllowCloudSearch") is int v && v == 0; }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         public static void DisableWebSearch(Action<string> log)
@@ -41,7 +41,7 @@ namespace CpqSystemTool
         {
             try { using (var k = HKCU.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Search"))
                 return k?.GetValue("BingSearchEnabled") is int v && v == 0; }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         public static void DisableAdvertisingID(Action<string> log)
@@ -58,14 +58,14 @@ namespace CpqSystemTool
         {
             try { using (var k = HKCU.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\AdvertisingInfo"))
                 return k?.GetValue("Enabled") is int v && v == 0; }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         public static bool IsTelemetryDisabled()
         {
             try { using (var k = HKLM.OpenSubKey(@"SOFTWARE\Policies\Microsoft\Windows\DataCollection"))
                 return k?.GetValue("AllowTelemetry") is int v && v == 0; }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
         public static void DisableTelemetry(Action<string> log)
         {
@@ -102,14 +102,14 @@ namespace CpqSystemTool
         {
             try { using (var k = HKLM.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config"))
                 return k?.GetValue("DownloadMode") is int v && v == 0; }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         public static bool IsActivityHistoryDisabled()
         {
             try { using (var k = HKLM.OpenSubKey(@"SOFTWARE\Policies\Microsoft\Windows\System"))
                 return k?.GetValue("EnableActivityFeed") is int v && v == 0; }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
         public static void DisableActivityHistory(Action<string> log)
         {
@@ -138,7 +138,7 @@ namespace CpqSystemTool
         {
             try { using (var k = HKLM.OpenSubKey(@"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"))
                 return k?.GetValue("TargetReleaseVersion") is int v && v == 1; }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         // === Issue 8: 补齐隐私设置（对齐 Win11EasyConfig Form5）===
@@ -158,7 +158,7 @@ namespace CpqSystemTool
         {
             try { using (var k = HKCU.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\SearchSettings"))
                 return k?.GetValue("IsDeviceSearchHistoryEnabled") is int v && v == 0; }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         // WSearch 服务停止/恢复
@@ -172,7 +172,7 @@ namespace CpqSystemTool
                     if (sc.Status == ServiceControllerStatus.Running) sc.Stop();
                 }
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             Exec.RunCmd(new[] { "sc", "config", "WSearch", "start=disabled" }, log);
             log("[OK] Windows Search 服务已禁用");
         }
@@ -190,7 +190,7 @@ namespace CpqSystemTool
                 using (var sc = new ServiceController("WSearch"))
                     return sc.StartType == ServiceStartMode.Disabled;
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         // 添加防火墙规则阻止 SearchHost.exe 联网
@@ -229,7 +229,7 @@ namespace CpqSystemTool
         {
             try { using (var k = HKCU.OpenSubKey(@"Software\Microsoft\Personalization\Settings"))
                 return k?.GetValue("AcceptedPrivacyPolicy") is int v && v == 0; }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         // 应用启动跟踪
@@ -247,7 +247,7 @@ namespace CpqSystemTool
         {
             try { using (var k = HKCU.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"))
                 return k?.GetValue("Start_TrackProgs") is int v && v == 0; }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         // 网站语言列表
@@ -265,7 +265,7 @@ namespace CpqSystemTool
         {
             try { using (var k = HKCU.OpenSubKey(@"Control Panel\International\User Profile"))
                 return k?.GetValue("HttpAcceptLanguageOptOut") is int v && v == 1; }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         // 设置应用建议内容（3 个 SubscribedContent-*）
@@ -287,7 +287,7 @@ namespace CpqSystemTool
         {
             try { using (var k = HKCU.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"))
                 return k?.GetValue("SubscribedContent-338393Enabled") is int v && v == 0; }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         // Windows 更新不包括恶意软件删除工具 (MRT)
@@ -305,7 +305,7 @@ namespace CpqSystemTool
         {
             try { using (var k = HKLM.OpenSubKey(@"SOFTWARE\Policies\Microsoft\MRT"))
                 return k?.GetValue("DontOfferThroughWUAU") is int v && v == 1; }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         // 开始菜单推荐项目显示行数（1/3/4）
@@ -323,7 +323,7 @@ namespace CpqSystemTool
         {
             try { using (var k = HKCU.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"))
                 { var v = k?.GetValue("Start_Layout"); if (v is int i) return i; } }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             return 0;
         }
     }

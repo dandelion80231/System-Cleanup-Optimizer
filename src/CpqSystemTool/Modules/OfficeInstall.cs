@@ -38,7 +38,7 @@ namespace CpqSystemTool
             string arch = Environment.Is64BitOperatingSystem ? "64" : "32";
             string xml = BuildConfig(Pids[editionIndex], Channels[editionIndex], arch, false);
             string dir = Path.Combine(Path.GetTempPath(), "ZyperOffice");
-            try { Directory.CreateDirectory(dir); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            try { Directory.CreateDirectory(dir); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             string xmlPath = Path.Combine(dir, "config.xml");
             File.WriteAllText(xmlPath, xml, Encoding.UTF8);
             log("配置已生成：" + xmlPath);
@@ -56,7 +56,7 @@ namespace CpqSystemTool
             string arch = Environment.Is64BitOperatingSystem ? "64" : "32";
             string xml = BuildConfig("", "", arch, true);
             string dir = Path.Combine(Path.GetTempPath(), "ZyperOffice");
-            try { Directory.CreateDirectory(dir); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            try { Directory.CreateDirectory(dir); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             string xmlPath = Path.Combine(dir, "uninstall.xml");
             File.WriteAllText(xmlPath, xml, Encoding.UTF8);
 
@@ -88,7 +88,7 @@ namespace CpqSystemTool
                 // 安全加固：下载后校验文件存在且大小合理（非空），避免后续对损坏/截断的 setup.exe 静默执行
                 bool setupOk = false;
                 try { setupOk = File.Exists(setup) && new FileInfo(setup).Length > 100000; }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
                 if (setupOk) return setup;
                 log("  [!] 下载的 setup.exe 无效");
             }

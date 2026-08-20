@@ -290,17 +290,20 @@ namespace CpqSystemTool
         {
             log?.Dispatcher.Invoke(() => { log.Visibility = Visibility.Visible; log.Clear(); });
             var disp = Dispatcher;
-            Action<string> logf = s => disp.BeginInvoke(new Action(() => AppendOrReplaceLog(log, s)));
+            // 窗口关闭后 Dispatcher 关停，BeginInvoke/Invoke 均抛 InvalidOperationException；
+            // 后台线程未处理异常在 net48 会直接终止进程。safeUi 统一兜底：UI 更新静默忽略。
+            Action<Action> safeUi = a => { try { disp.BeginInvoke(a); } catch { /* 窗口已关闭，忽略 */ } };
+            Action<string> logf = s => safeUi(() => AppendOrReplaceLog(log, s));
             new Thread(() =>
             {
                 try
                 {
                     work(logf);
-                    disp.Invoke(() => { SetStatus(done); onDoneUi?.Invoke(); });
+                    safeUi(() => { SetStatus(done); onDoneUi?.Invoke(); });
                 }
                 catch (Exception ex)
                 {
-                    disp.Invoke(() =>
+                    safeUi(() =>
                     {
                         logf("[!] 异常: " + ex.Message);
                         SetStatus("执行出错");
@@ -309,6 +312,11 @@ namespace CpqSystemTool
                 }
             }).Start();
         }
+
+        // 日志滚动降频参数：普通行在行数低于阈值时保持“每行 ScrollToEnd”（与旧行为一致）；
+        // 超过阈值后改为每 N 行滚动一次，降低长任务（清理/探针/下载）大量追加日志时的 UI 线程布局压力。
+        private const int LogScrollLineThreshold = 500;
+        private const int LogScrollEveryN = 10;
 
         /// <summary>
         /// 向日志框追加一行；若消息以 \r 开头，则原地替换最后一行（用于下载百分比等进度，避免刷屏）。
@@ -325,27 +333,44 @@ namespace CpqSystemTool
                 //   - 上一行是普通日志（如“检测到缺少…”）→ 进度行作为新行追加，不覆盖提示信息。
                 // 不把 \r 存进文本（WPF 会把孤立 \r 当换行，破坏显示），仅用 Tag 标记状态。
                 string content = s.Substring(1);
-                bool prevIsProgress = tb.Tag is string;
-                if (prevIsProgress)
+                if (tb.Tag is string)
                 {
-                    string text = tb.Text;
-                    if (text.EndsWith("\r\n")) text = text.Substring(0, text.Length - 2);
-                    int lastNl = text.LastIndexOf('\n');
-                    string head = lastNl >= 0 ? text.Substring(0, lastNl + 1) : "";
-                    tb.Text = head + content + "\r\n";
+                    // 原地替换最后一行：用行索引 API 直接定位替换区间（GetLineIndexFromCharacterIndex /
+                    // GetCharacterIndexFromLineIndex 走文本容器行表，不构造整段字符串副本），
+                    // 取代旧实现的「全量读 tb.Text + Substring + 整段回写」——日志再长也是 O(log n)，不随文本长度退化。
+                    // 语义与旧实现等价：替换最后一个“\r\n”之前的最后一行内容。
+                    // 本方法所有写入都以 "\r\n" 结尾（进度行/普通行均如此），故文本非空则必以 "\r\n" 收尾；
+                    // 进度行内容本身为单行（百分比等短消息），行表定位与 TextLength 天然对齐。
+                    int total = tb.Text.Length;
+                    if (total >= 2)
+                    {
+                        int lastLine = tb.GetLineIndexFromCharacterIndex(total);
+                        if (lastLine >= 1)
+                        {
+                            int lineStart = tb.GetCharacterIndexFromLineIndex(lastLine - 1);
+                            int len = total - lineStart;
+                            if (lineStart >= 0 && len > 0)
+                            {
+                                tb.Select(lineStart, len);
+                                tb.SelectedText = "";
+                            }
+                        }
+                    }
                 }
-                else
-                {
-                    tb.AppendText(content + "\r\n");
-                }
+                tb.AppendText(content + "\r\n");
                 tb.Tag = content;
+                // 进度行原地替换后行数不变，ScrollToEnd 不触发重排；保持进度数字持续可见（与旧行为一致）。
+                tb.ScrollToEnd();
+                return;
             }
-            else
-            {
-                tb.AppendText(s + "\r\n");
-                tb.Tag = null; // 普通行后，进度需重新起一行
-            }
-            tb.ScrollToEnd();
+
+            tb.AppendText(s + "\r\n");
+            tb.Tag = null; // 普通行后，进度需重新起一行
+            // 滚动降频：短日志（行数 < 阈值）每行都滚到底（与旧行为一致，避免小日志滚动迟滞）；
+            // 超阈值的长日志每 N 行滚一次。LineCount 是各日志框自身的行数（每追加一行 +1），
+            // 天然按框隔离，无 static 共享计数状态，多日志框并发追加时互不干扰、也不会丢失自动滚底。
+            if (tb.LineCount < LogScrollLineThreshold || tb.LineCount % LogScrollEveryN == 0)
+                tb.ScrollToEnd();
         }
 
         /// <summary>

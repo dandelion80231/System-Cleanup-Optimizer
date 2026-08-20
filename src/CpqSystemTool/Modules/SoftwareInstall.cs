@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Security.Cryptography;
 using System.Runtime.InteropServices;
@@ -70,6 +71,21 @@ namespace CpqSystemTool
             @"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
             @"HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
         };
+
+        /// <summary>Uninstall 根一次性枚举的缓存条目：子键完整路径 → (DisplayName, DisplayVersion)。</summary>
+        private sealed class UninstallEntry
+        {
+            public string DisplayName;
+            public string DisplayVersion;
+        }
+
+        // 常用软件页会对几十个软件×每个关键词各做一次 Uninstall 根全量枚举（GetSubKeyNames+逐个 OpenSubKey），
+        // 成本高且彼此重复。此处做进程内一次性枚举缓存（TTL 5 秒）：页面连续渲染所有软件共享同一次枚举；
+        // 安装/卸载后最多 5 秒内自动失效重取，避免陈旧误判。全部读取走同一把锁，保证后台/UI 线程安全。
+        private static readonly object _uninstallCacheLock = new object();
+        private static Dictionary<string, UninstallEntry> _uninstallCache;
+        private static DateTime _uninstallCacheStamp;
+        private const int UNINSTALL_CACHE_TTL_MS = 5000;
 
         // 私有构造：仅允许通过 Builder 创建，消除 11 参数长列表（数据簇味道）。
         private SoftwareDef() { }
@@ -272,7 +288,7 @@ namespace CpqSystemTool
         private void CleanupTemp()
         {
             try { if (_tempDir != null && Directory.Exists(_tempDir)) Directory.Delete(_tempDir, true); }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
         }
 
         private bool InstallFromStore(Action<string> log)
@@ -360,7 +376,7 @@ namespace CpqSystemTool
                     using (var p = Process.Start(psi))
                     {
                         if (p == null) { log("  [!] 无法启动卸载程序" + (elevate ? "(提权)" : "")); return -1; }
-                        if (!p.WaitForExit(UNINSTALL_TIMEOUT_MS)) { try { p.Kill(); } catch (Exception caughtEx) { Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); } return -2; }
+                        if (!p.WaitForExit(UNINSTALL_TIMEOUT_MS)) { try { p.Kill(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); } return -2; }
                         return p.ExitCode;
                     }
                 }
@@ -398,7 +414,20 @@ namespace CpqSystemTool
                 if (close > 0) { exe = u.Substring(1, close - 1); args = u.Substring(close + 1).Trim(); return; }
             }
             int sp = u.IndexOf(' ');
-            if (sp > 0) { exe = u.Substring(0, sp); args = u.Substring(sp + 1).Trim(); }
+            if (sp > 0)
+            {
+                // 未加引号路径可能含空格（如 C:\Program Files\...）：扫描所有空格位置，
+                // 取「实际存在文件的最长前缀」作为 exe，避免截断成 "C:\Program"。
+                string best = u.Substring(0, sp);
+                int idx = sp;
+                while (idx > 0 && (idx = u.IndexOf(' ', idx + 1)) > 0)
+                {
+                    string cand = u.Substring(0, idx);
+                    if (File.Exists(cand)) best = cand;
+                }
+                exe = best;
+                args = u.Substring(best.Length).Trim();
+            }
             else { exe = u; args = ""; }
         }
 
@@ -465,7 +494,7 @@ namespace CpqSystemTool
                 object val = Microsoft.Win32.Registry.GetValue(keyPath, valueName, null);
                 return val as string;
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return null; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return null; }
         }
 
         /// <summary>
@@ -512,7 +541,7 @@ namespace CpqSystemTool
                 if (!string.IsNullOrEmpty(major))
                     return !string.IsNullOrEmpty(minor) ? major + "." + minor : major;
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             return "";
         }
 
@@ -528,7 +557,7 @@ namespace CpqSystemTool
                 {
                     if (!string.IsNullOrEmpty(exe) && File.Exists(exe)) return true;
                 }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             }
             return false;
         }
@@ -544,14 +573,15 @@ namespace CpqSystemTool
                 string expect = string.IsNullOrWhiteSpace(sha256) ? Sha256 : sha256;
                 bool needHash = !string.IsNullOrWhiteSpace(expect);
                 log("   [*] 正在下载安装包…");
-                using (var client = new HttpClient())
+                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeout))) // 原 client.Timeout → 请求级超时（单例不改全局 Timeout）
                 {
-                    client.Timeout = TimeSpan.FromSeconds(timeout);
-                    client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36");
+                    var client = HttpClients.Default; // 进程内共享单例复用（B4）：避免每次 new/dispose 造成 socket TIME_WAIT 堆积
+                    using var req = new HttpRequestMessage(HttpMethod.Get, url); // UA/Referer 改请求级注入（不能写共享单例的 DefaultRequestHeaders）
+                    req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36");
                     if (!string.IsNullOrEmpty(Referer))
-                        client.DefaultRequestHeaders.Referrer = new Uri(Referer);
+                        req.Headers.Referrer = new Uri(Referer);
                     // ResponseHeadersRead：读完响应头即开始落盘，不等整包缓冲完（更快显现进度、更低峰值内存）
-                    using (var resp = client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).Result)
+                    using (var resp = client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token).Result)
                     {
                         if (!resp.IsSuccessStatusCode)
                         {
@@ -574,7 +604,7 @@ namespace CpqSystemTool
                         actual = BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
                     if (!string.Equals(actual, expect.Trim(), StringComparison.OrdinalIgnoreCase))
                     {
-                        try { File.Delete(dest); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); }
+                        try { File.Delete(dest); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
                         log("   [!] 校验失败：下载文件 SHA256 不匹配（期望 " + expect.Trim() + "，实际 " + actual + "），已拒绝安装。");
                         return false;
                     }
@@ -667,27 +697,77 @@ namespace CpqSystemTool
             else if (root.StartsWith("HKCU", StringComparison.OrdinalIgnoreCase)) { hive = RegistryHive.CurrentUser; sub = root.Substring(4); }
             else return null;
             try { using (var baseKey = RegistryKey.OpenBaseKey(hive, RegistryView.Default)) return baseKey.OpenSubKey(sub); }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return null; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return null; }
+        }
+
+        /// <summary>
+        /// 一次性枚举 3 个 Uninstall 根下全部子键路径→(DisplayName, DisplayVersion)，结果做进程内缓存（TTL 5 秒）。
+        /// 所有软件/关键词共享这一次枚举，替代原来每次调用重复的 GetSubKeyNames+逐个 OpenSubKey 全量遍历。
+        /// 线程安全：整个方法在锁内执行，后台线程与 UI 线程均可安全调用；缓存字典发布后不再被修改。
+        /// 失败时回退旧缓存（若有）；无旧缓存则返回本次已收集的部分结果（或空表），调用方自然回落为"未找到"。
+        /// 注意：这里只缓存枚举层数据（键存在性/DisplayName/DisplayVersion）；精确值读取（版本号、卸载命令等）仍走直读，不经过本缓存。
+        /// </summary>
+        private static Dictionary<string, UninstallEntry> EnumerateUninstallCache()
+        {
+            var now = DateTime.UtcNow;
+            lock (_uninstallCacheLock)
+            {
+                if (_uninstallCache != null
+                    && (now - _uninstallCacheStamp).TotalMilliseconds < UNINSTALL_CACHE_TTL_MS)
+                    return _uninstallCache;
+
+                var fresh = new Dictionary<string, UninstallEntry>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    foreach (var root in UNINSTALL_ROOTS)
+                    {
+                        using (var key = OpenKey(root))
+                        {
+                            if (key == null) continue;
+                            foreach (var sub in key.GetSubKeyNames())
+                            {
+                                try
+                                {
+                                    using (var sk = key.OpenSubKey(sub))
+                                    {
+                                        if (sk == null) continue;
+                                        fresh[root + "\\" + sub] = new UninstallEntry
+                                        {
+                                            DisplayName = sk.GetValue("DisplayName") as string,
+                                            DisplayVersion = sk.GetValue("DisplayVersion") as string
+                                        };
+                                    }
+                                }
+                                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                            }
+                        }
+                    }
+                    _uninstallCache = fresh;
+                    _uninstallCacheStamp = now;
+                }
+                catch (Exception caughtEx)
+                {
+                    // 枚举失败：回退旧缓存保持健壮；无旧缓存则返回已收集的部分结果。时间戳不更新，下次调用会重试。
+                    DebugLog.Ignore(caughtEx);
+                    if (_uninstallCache != null) return _uninstallCache;
+                    return fresh;
+                }
+                return _uninstallCache;
+            }
         }
 
         private string FindUninstaller(string keyword)
         {
-            var roots = UNINSTALL_ROOTS;
-            foreach (var root in roots)
+            var entries = EnumerateUninstallCache();
+            foreach (var root in UNINSTALL_ROOTS)
             {
-                using (var key = OpenKey(root))
+                var prefix = root + "\\";
+                foreach (var kv in entries)
                 {
-                    if (key == null) continue;
-                    foreach (var sub in key.GetSubKeyNames())
-                    {
-                        using (var sk = key.OpenSubKey(sub))
-                        {
-                            if (sk == null) continue;
-                            var name = sk.GetValue("DisplayName") as string;
-                            if (!string.IsNullOrEmpty(name) && name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
-                                return sub;
-                        }
-                    }
+                    if (!kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                    var name = kv.Value.DisplayName;
+                    if (!string.IsNullOrEmpty(name) && name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return kv.Key.Substring(prefix.Length); // 仅子键名（不带根前缀），与原实现一致
                 }
             }
             return null;
@@ -699,22 +779,16 @@ namespace CpqSystemTool
         /// </summary>
         private string FindUninstallerFull(string keyword)
         {
-            var roots = UNINSTALL_ROOTS;
-            foreach (var root in roots)
+            var entries = EnumerateUninstallCache();
+            foreach (var root in UNINSTALL_ROOTS)
             {
-                using (var key = OpenKey(root))
+                var prefix = root + "\\";
+                foreach (var kv in entries)
                 {
-                    if (key == null) continue;
-                    foreach (var sub in key.GetSubKeyNames())
-                    {
-                        using (var sk = key.OpenSubKey(sub))
-                        {
-                            if (sk == null) continue;
-                            var name = sk.GetValue("DisplayName") as string;
-                            if (!string.IsNullOrEmpty(name) && name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
-                                return root + "\\" + sub; // 返回完整路径
-                        }
-                    }
+                    if (!kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                    var name = kv.Value.DisplayName;
+                    if (!string.IsNullOrEmpty(name) && name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return kv.Key; // 返回完整路径
                 }
             }
             return null;
@@ -731,46 +805,45 @@ namespace CpqSystemTool
                 return null;
             }
 
-            var roots = UNINSTALL_ROOTS;
+            var entries = EnumerateUninstallCache();
             var allKeywords = new List<string> { keyword };
             if (altKeywords != null) allKeywords.AddRange(altKeywords);
-            foreach (var root in roots)
+            foreach (var root in UNINSTALL_ROOTS)
             {
-                using (var baseKey = OpenKey(root))
+                var prefix = root + "\\";
+                foreach (var kv in entries)
                 {
-                    if (baseKey == null) continue;
-                    foreach (var sub in baseKey.GetSubKeyNames())
+                    if (!kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                    var name = kv.Value.DisplayName;
+                    if (!string.IsNullOrEmpty(name))
                     {
-                        try
+                        foreach (var kw in allKeywords)
                         {
-                            using (var sk = baseKey.OpenSubKey(sub, false))
+                            if (name.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
                             {
-                                if (sk == null) continue;
-                                var name = sk.GetValue("DisplayName") as string;
-                                if (!string.IsNullOrEmpty(name))
+                                try
                                 {
-                                    foreach (var kw in allKeywords)
+                                    // 版本号属于"安装后需精确读最新值"的数据，不经缓存，直接读被匹配键的实时值
+                                    using (var sk = OpenKey(kv.Key))
                                     {
-                                        if (name.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
+                                        if (sk == null) continue;
+                                        // 按优先级尝试多个版本值名（参考 Win11EasyConfig 策略）
+                                        var v = sk.GetValue("DisplayVersion") as string
+                                            ?? sk.GetValue("Version") as string
+                                            ?? sk.GetValue("VersionMajor") as string;
+                                        if (!string.IsNullOrEmpty(v)) return v;
+                                        // VersionMajor/VersionMinor 为 REG_DWORD，必须按整数读取后拼接
+                                        var major = ToVersionInt(sk.GetValue("VersionMajor"));
+                                        if (major.HasValue)
                                         {
-                                            // 按优先级尝试多个版本值名（参考 Win11EasyConfig 策略）
-                                            var v = sk.GetValue("DisplayVersion") as string
-                                                ?? sk.GetValue("Version") as string
-                                                ?? sk.GetValue("VersionMajor") as string;
-                                            if (!string.IsNullOrEmpty(v)) return v;
-                                            // VersionMajor/VersionMinor 为 REG_DWORD，必须按整数读取后拼接
-                                            var major = ToVersionInt(sk.GetValue("VersionMajor"));
-                                            if (major.HasValue)
-                                            {
-                                                var minor = ToVersionInt(sk.GetValue("VersionMinor"));
-                                                return minor.HasValue ? major.Value + "." + minor.Value : major.Value.ToString();
-                                            }
+                                            var minor = ToVersionInt(sk.GetValue("VersionMinor"));
+                                            return minor.HasValue ? major.Value + "." + minor.Value : major.Value.ToString();
                                         }
                                     }
                                 }
+                                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
                             }
                         }
-                        catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
                     }
                 }
             }
@@ -779,18 +852,17 @@ namespace CpqSystemTool
 
         private string GetUninstallString(string sub)
         {
-            var roots = UNINSTALL_ROOTS;
-            foreach (var root in roots)
+            var entries = EnumerateUninstallCache();
+            foreach (var root in UNINSTALL_ROOTS)
             {
-                using (var key = OpenKey(root))
+                var prefix = root + "\\";
+                foreach (var kv in entries)
                 {
-                    if (key == null) continue;
-                    using (var sk = key.OpenSubKey(sub))
-                    {
-                        if (sk == null) continue;
-                        var u = sk.GetValue("UninstallString") as string;
-                        if (!string.IsNullOrEmpty(u)) return u;
-                    }
+                    if (!kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!string.Equals(kv.Key.Substring(prefix.Length), sub, StringComparison.OrdinalIgnoreCase)) continue;
+                    // 卸载命令属于精确操作数据，不经缓存，直接读取实时值
+                    var u = ReadRegString(kv.Key, "UninstallString");
+                    if (!string.IsNullOrEmpty(u)) return u;
                 }
             }
             return null;
@@ -1164,11 +1236,11 @@ namespace CpqSystemTool
                     {
                         foreach (var d in Directory.GetDirectories(tmp, "swinst_" + sw.Id + "_*"))
                         {
-                            try { Directory.Delete(d, true); count++; } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                            try { Directory.Delete(d, true); count++; } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
                         }
                     }
                 }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             }
             if (log != null) log("   [OK] 已清理 " + count + " 个临时目录。");
         }
@@ -1268,7 +1340,7 @@ namespace CpqSystemTool
             }
             catch (Exception caughtEx)
             {
-                System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);
+                DebugLog.Ignore(caughtEx);
                 return SigStatus.NotSigned; // 校验过程异常时保守放行（仅记入调试日志），不改变原有安装行为
             }
             finally
@@ -1294,13 +1366,14 @@ namespace CpqSystemTool
         {
             try
             {
-                using (var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = true }))
+                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30))) // 原 client.Timeout=30s → 请求级超时（单例不改全局 Timeout）
                 {
-                    client.Timeout = TimeSpan.FromSeconds(30);
-                    client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36");
+                    var client = HttpClients.Default; // 单例默认 handler 即 AllowAutoRedirect=true，与原显式配置行为一致；UA/Referer 改请求级注入
+                    using var req = new HttpRequestMessage(HttpMethod.Get, pageUrl);
+                    req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36");
                     if (pageUrl.IndexOf("y.qq.com/download", StringComparison.OrdinalIgnoreCase) >= 0)
-                        client.DefaultRequestHeaders.Referrer = new Uri("https://y.qq.com/download/download.html");
-                    using (var resp = client.GetAsync(pageUrl, HttpCompletionOption.ResponseContentRead).Result)
+                        req.Headers.Referrer = new Uri("https://y.qq.com/download/download.html");
+                    using (var resp = client.SendAsync(req, HttpCompletionOption.ResponseContentRead, cts.Token).Result)
                     {
                         string contentType = resp.Content.Headers.ContentType?.MediaType ?? "";
                         // 文件 / latest 指针直接重定向到文件（如 Xshell）：返回跟随重定向后的最终文件 URL

@@ -191,7 +191,7 @@ namespace CpqSystemTool
                     try { Path.GetFullPath(p); }
                     catch (Exception caughtEx)
                     {
-                        System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);
+                        DebugLog.Ignore(caughtEx);
                         ShowError("路径格式无效。");
                         return;
                     }
@@ -202,7 +202,7 @@ namespace CpqSystemTool
                         using (var k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(REG_KEY))
                             if (k != null) k.SetValue(REG_VALUE, p, Microsoft.Win32.RegistryValueKind.String);
                     }
-                    catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); }
+                    catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
                 }
                 DialogResult = true;
             }, 110) : new Button { Content = "确定", Width = 110 };
@@ -227,7 +227,7 @@ namespace CpqSystemTool
                     }
                 }
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
         }
 
         /// <summary>内联错误提示：统一淡入（替代原生 MessageBox，风格与主界面一致）。</summary>

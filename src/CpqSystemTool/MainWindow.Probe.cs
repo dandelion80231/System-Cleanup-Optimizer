@@ -140,7 +140,7 @@ namespace CpqSystemTool
                     if (p != null)
                     {
                         string outp = p.StandardOutput.ReadToEnd();
-                        p.WaitForExit();
+                        if (!p.WaitForExit(10000)) { try { p.Kill(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); } }
                         var lines = outp.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                         var firstLine = lines.Length > 0 ? lines[0] : null;
                         if (!string.IsNullOrWhiteSpace(firstLine))
@@ -151,7 +151,7 @@ namespace CpqSystemTool
                     }
                 }
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
 
             // 2) 本地 .tools\node\node.exe
             var local = Path.Combine(probesDir, ".tools", "node", "node.exe");
@@ -217,7 +217,7 @@ namespace CpqSystemTool
                     // 超时 15 分钟强制结束，避免 UI 永久挂起
                     if (!p.WaitForExit(900000))
                     {
-                        try { p.Kill(); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); }
+                        try { p.Kill(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
                         outStdout = sb.ToString();
                         logf("[!] 进程超时（15 分钟）已被强制结束。");
                         return false;
@@ -487,7 +487,7 @@ namespace CpqSystemTool
             }
         }
 
-        // ===================== JSON 解析（自带 MiniJson，不依赖任何 JSON 库） =====================
+        // ===================== JSON 解析（收编至 Helpers/MiniJson.cs，零依赖） =====================
 
         /// <summary>
         /// 从探针 JSON 输出中解析候选行与推荐直链。
@@ -583,138 +583,7 @@ namespace CpqSystemTool
             return "?";
         }
 
-        // ===================== 极简 JSON 解析器（递归下降，无外部依赖） =====================
-        // 支持对象 / 数组 / 字符串(含转义) / 数字 / true|false|null。
-        // 返回值：Dictionary<string,object>（对象）、List<object>（数组）、string、long、double、bool、null。
-        private static class MiniJson
-        {
-            public static object Parse(string json)
-            {
-                int i = 0;
-                SkipWs(json, ref i);
-                return ParseValue(json, ref i);
-            }
-
-            private static void SkipWs(string s, ref int i)
-            {
-                while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
-            }
-
-            private static object ParseValue(string s, ref int i)
-            {
-                SkipWs(s, ref i);
-                if (i >= s.Length) return null;
-                char c = s[i];
-                if (c == '{') return ParseObject(s, ref i);
-                if (c == '[') return ParseArray(s, ref i);
-                if (c == '"') return ParseString(s, ref i);
-                if (c == 't' || c == 'f') return ParseBool(s, ref i);
-                if (c == 'n') { i += 4; return null; }       // null
-                if (c == '-' || (c >= '0' && c <= '9')) return ParseNumber(s, ref i);
-                i++;
-                return null;
-            }
-
-            private static Dictionary<string, object> ParseObject(string s, ref int i)
-            {
-                var dict = new Dictionary<string, object>();
-                i++; // 跳过 {
-                SkipWs(s, ref i);
-                if (i < s.Length && s[i] == '}') { i++; return dict; }
-                while (i < s.Length)
-                {
-                    SkipWs(s, ref i);
-                    if (i >= s.Length || s[i] != '"') break;
-                    string key = ParseString(s, ref i);
-                    SkipWs(s, ref i);
-                    if (i < s.Length && s[i] == ':') i++;
-                    object val = ParseValue(s, ref i);
-                    dict[key] = val;
-                    SkipWs(s, ref i);
-                    if (i < s.Length && s[i] == ',') { i++; continue; }
-                    if (i < s.Length && s[i] == '}') { i++; break; }
-                    break;
-                }
-                return dict;
-            }
-
-            private static List<object> ParseArray(string s, ref int i)
-            {
-                var list = new List<object>();
-                i++; // 跳过 [
-                SkipWs(s, ref i);
-                if (i < s.Length && s[i] == ']') { i++; return list; }
-                while (i < s.Length)
-                {
-                    object val = ParseValue(s, ref i);
-                    list.Add(val);
-                    SkipWs(s, ref i);
-                    if (i < s.Length && s[i] == ',') { i++; continue; }
-                    if (i < s.Length && s[i] == ']') { i++; break; }
-                    break;
-                }
-                return list;
-            }
-
-            private static string ParseString(string s, ref int i)
-            {
-                i++; // 跳过开头的 "
-                var sb = new StringBuilder();
-                while (i < s.Length)
-                {
-                    char c = s[i++];
-                    if (c == '"') break;
-                    if (c == '\\')
-                    {
-                        if (i >= s.Length) break;
-                        char e = s[i++];
-                        switch (e)
-                        {
-                            case '"': sb.Append('"'); break;
-                            case '\\': sb.Append('\\'); break;
-                            case '/': sb.Append('/'); break;
-                            case 'b': sb.Append('\b'); break;
-                            case 'f': sb.Append('\f'); break;
-                            case 'n': sb.Append('\n'); break;
-                            case 'r': sb.Append('\r'); break;
-                            case 't': sb.Append('\t'); break;
-                            case 'u':
-                                if (i + 4 <= s.Length)
-                                {
-                                    string hex = s.Substring(i, 4);
-                                    i += 4;
-                                    sb.Append((char)int.Parse(hex, System.Globalization.NumberStyles.HexNumber));
-                                }
-                                break;
-                            default: sb.Append(e); break;
-                        }
-                    }
-                    else sb.Append(c);
-                }
-                return sb.ToString();
-            }
-
-            private static object ParseNumber(string s, ref int i)
-            {
-                int start = i;
-                if (i < s.Length && s[i] == '-') i++;
-                while (i < s.Length && (char.IsDigit(s[i]) || s[i] == '.' || s[i] == 'e' || s[i] == 'E' || s[i] == '+' || s[i] == '-')) i++;
-                string num = s.Substring(start, i - start);
-                if (num.IndexOf('.') < 0 && num.IndexOf('e') < 0 && num.IndexOf('E') < 0)
-                {
-                    if (long.TryParse(num, out long l)) return l;
-                }
-                if (double.TryParse(num, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d))
-                    return d;
-                return num;
-            }
-
-            private static bool ParseBool(string s, ref int i)
-            {
-                if (i + 4 <= s.Length && s.Substring(i, 4) == "true") { i += 4; return true; }
-                i += 5; // false
-                return false;
-            }
-        }
+        // ===================== JSON 解析 =====================
+        // 通用递归下降解析器已收编至 Helpers/MiniJson.cs（Parse 方法，签名不变）。
     }
 }

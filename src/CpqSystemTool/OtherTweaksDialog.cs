@@ -113,7 +113,7 @@ namespace CpqSystemTool
                     bgImg.Opacity = _owner.BgImage.Opacity;
                 }
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  /* 无背景图时静默降级为纯色 */ }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  /* 无背景图时静默降级为纯色 */ }
             rootGrid.Children.Add(bgImg);
 
             // 内容层：ScrollViewer（背景透明，让底层六边形图案透出来；卡片自带 _cardBg）
@@ -135,7 +135,7 @@ namespace CpqSystemTool
             root.Children.Add(SectionHeader("SysMain 服务管理"));
             AddToggle(root, "SysMain 服务",
                 "SysMain (Superfetch) 服务。禁用后内存压缩/预启动/页面合并将不可用",
-                () => { try { using (var sc = new System.ServiceProcess.ServiceController("SysMain")) return sc.Status == System.ServiceProcess.ServiceControllerStatus.Running; } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; } },
+                () => { try { using (var sc = new System.ServiceProcess.ServiceController("SysMain")) return sc.Status == System.ServiceProcess.ServiceControllerStatus.Running; } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; } },
                 on => Exec.RunCmd(new[] { "cmd", "/c", on ? "sc config SysMain start=auto && sc start SysMain" : "sc stop SysMain && sc config SysMain start=disabled" }, _ => { }));
             AddToggle(root, "内存压缩",
                 "MemoryCompression 使用 CPU 压缩内存以节省物理内存（需SysMain已启用）",
@@ -255,7 +255,7 @@ namespace CpqSystemTool
         {
             bool isToggle = getState != null && apply != null;
             bool initial = false;
-            if (isToggle) { try { initial = getState(); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  } }
+            if (isToggle) { try { initial = getState(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  } }
 
             // 外层卡片 Border（保持圆角+边框）
             var card = new Border
@@ -367,7 +367,7 @@ namespace CpqSystemTool
                                 });
                             }
                         }
-                        catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); 
+                        catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); 
                             Dispatcher.Invoke(() => { btn.Content = "❌ 失败"; btn.IsEnabled = true; });
                         }
                     });
@@ -464,7 +464,7 @@ namespace CpqSystemTool
 
         private int GetCurrentPort()
         {
-            try { using (var k = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp")) return k?.GetValue("PortNumber") is int v ? v : 3389; } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return 3389; }
+            try { using (var k = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp")) return k?.GetValue("PortNumber") is int v ? v : 3389; } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return 3389; }
         }
 
         private void ApplyPort()

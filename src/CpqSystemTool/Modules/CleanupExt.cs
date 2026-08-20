@@ -27,7 +27,7 @@ namespace CpqSystemTool
         };
 
         // 统一记录"已忽略的异常"，避免重复样板。
-        private static void LogIgnored(Exception ex) => System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + ex.Message);
+        private static void LogIgnored(Exception ex) => DebugLog.Ignore(ex);
 
         public static void RunSelected(IEnumerable<string> ids, Action<string> log)
         {

@@ -4,6 +4,34 @@
 
 ---
 
+## [v1.11] - 2026-08-20
+
+> 相对 v1.10 的源码变更：三轮代码审查（结构 / 性能 / 缺陷）驱动的一次全面优化——修复 6 类真实缺陷、5 项性能提速、5 项结构与冗余重构；例行版本提升 v1.10 → v1.11。
+
+### 🐞 修复
+- **子进程双流读取死锁（Exec）**：`RunPS`/`RunCmd`/`RunCmdGet`/`RunVbs`/`RunVbsGet` 由顺序 `ReadToEnd` 改为异步并行排水（`BeginOutputReadLine`/`BeginErrorReadLine`），消除子进程 stderr 写满 64KB 管道缓冲导致的互相阻塞（此前最坏挂到 15 分钟超时被杀）；capture 模式 stderr 不再静默丢弃（输出 `[STDERR]`）。
+- **后台任务运行时关闭窗口崩溃**：`MainWindow.RunInBg` 与 `DriverStorePanel.RunInBg` 的 Dispatcher 调用统一加 `safeUi` 兜底——清理/下载/探针/驱动加载等长任务执行中关闭主窗口，不再因 net48 未处理后台线程异常导致进程直接终止。
+- **卸载命令路径截断**：未加引号的 `UninstallString`（如 `C:\Program Files\X\un.exe /S`）按「最长存在的文件前缀」解析，不再截断成 `C:\Program` 导致卸载失败。
+- **`where node` 无超时挂死**：`ResolveNodeExe` 的 `WaitForExit()` 加 10s 超时 + 强杀，安全软件拦截时后台线程不再永久挂死。
+- **async void 异常逃逸面**：`RefreshDepStatus` / `DownloadUpdate` 改为 `async Task` + 外层兜底，消除 UI 线程崩溃面。
+
+### ⚡ 性能
+- **官方直链探针候选验证并行化**：串行 `foreach + await` → `SemaphoreSlim(5)` + `Task.WhenAll`（保序），多候选场景最坏 225s → 约 45s（5 倍提速）。
+- **常用软件页注册表枚举缓存**：3 个 Uninstall 根一次性枚举 + 5s TTL 内存缓存，页面渲染枚举成本 O(100×N) → O(N)。
+- **WebView2 就绪检测缓存**：`CheckWebView2ReadyAsync` 30s TTL（成功/失败均缓存）+ 「管理依赖」重入锁，反复打开秒回。
+- **Chocolatey / 页面解析结果缓存**：24h TTL（失败不缓存），重复安装每次省 2~6s。
+- **日志框写入优化**：进度行 O(n) 全量读写 → TextBox 行索引定位 O(log n)；长日志（>500 行）滚动降频，减轻 UI 线程布局压力。
+
+### ♻️ 重构 / 清理
+- **`MainWindow.Pages.cs` 拆分**：5,599 → 833 行，按功能域拆 8 个 partial（Tweaks/Appx/Software/About/Security/Config/Cleanup/SystemTools）+ 2 个独立类（`StoreSearchWindow`/`BoolToBrushConverter`）。
+- **日志统一**：113 处「异常(已忽略)」内联复制 → 公共 `DebugLog.Ignore(ex)`。
+- **公共工具收编**：版本比较两套合一（`VersionUtil`）、MiniJson 双实现合一（`MiniJson`）、3 处版本名映射字典合一（`EditionMap`，单一数据源双向查询）。
+- **Config 路径集中**：4 处 `BaseDirectory\Config` 硬编码 → `AppPaths.ConfigDir`。
+- **HttpClient 静态单例复用**：4 处「用完即弃」`new HttpClient` → 共享单例，消除 socket TIME_WAIT 堆积；请求级超时（CTS）与 UA/Referer 注入，探针专用单例保留。
+- **版本提升 v1.10 → v1.11**：同步 csproj（1.0.11.0 ×3）/ `APP_VERSION`（`v1.11`）/ 交付文件名 `系统清理与优化工具_v1.11.exe`。
+
+---
+
 ## [v1.10] - 2026-08-18
 
 > 相对 v1.09 的源码变更：新增「内存工具」导航页（镜像 RAMMap 只读视图 + 可选内存优化），置于「系统工具」之下；例行版本提升 v1.09 → v1.10。

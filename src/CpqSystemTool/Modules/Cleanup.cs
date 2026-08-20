@@ -25,7 +25,7 @@ namespace CpqSystemTool
         //  出错时仍 fallback 到 PowerShell（处理权限/占用等极端情况）。
 
         // 统一记录"已忽略的异常"，避免重复样板。
-        private static void LogIgnored(Exception ex) => System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + ex.Message);
+        private static void LogIgnored(Exception ex) => DebugLog.Ignore(ex);
 
         internal static void CleanDir(string name, string path, Action<string> log)
         {

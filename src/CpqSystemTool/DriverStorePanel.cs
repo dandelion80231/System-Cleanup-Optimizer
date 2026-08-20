@@ -714,7 +714,10 @@ namespace CpqSystemTool
         private void RunInBg(Action<Action<string>> work, string done)
         {
             var disp = Dispatcher;
-            Action<string> logf = s => disp.BeginInvoke(() =>
+            // 窗口关闭后 Dispatcher 关停，BeginInvoke/Invoke 均抛 InvalidOperationException；
+            // 后台线程未处理异常在 net48 会直接终止进程。safeUi 统一兜底：UI 更新静默忽略。
+            Action<Action> safeUi = a => { try { disp.BeginInvoke(a); } catch { /* 窗口已关闭，忽略 */ } };
+            Action<string> logf = s => safeUi(() =>
             {
                 if (_externalLog != null)
                 {
@@ -734,11 +737,11 @@ namespace CpqSystemTool
                 try
                 {
                     work(logf);
-                    disp.Invoke(() => { _owner?.SetStatus(done); });
+                    safeUi(() => { _owner?.SetStatus(done); });
                 }
                 catch (Exception ex)
                 {
-                    disp.Invoke(() =>
+                    safeUi(() =>
                     {
                         logf("[!] 异常: " + ex.Message);
                         _owner?.SetStatus("执行出错");

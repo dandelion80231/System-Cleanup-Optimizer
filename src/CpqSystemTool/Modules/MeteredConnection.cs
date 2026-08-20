@@ -272,7 +272,7 @@ namespace CpqSystemTool
                 RegSetKeySecurity(h, DACL_SECURITY_INFORMATION, backup);
                 RegCloseKey(h);
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             uint r = SetNamedSecurityInfoW(OBJ_NAME, SE_REGISTRY_KEY, OWNER_SECURITY_INFORMATION, system, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
             return r == 0;
         }
@@ -299,7 +299,7 @@ namespace CpqSystemTool
                 }
                 return false;
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
             finally { RegCloseKey(h); }
         }
 

@@ -127,7 +127,7 @@ namespace CpqSystemTool
                     else
                     {
                         DependencyObject hit = null;
-                        try { var pos = e.GetPosition(ContentArea); hit = VisualTreeHelper.HitTest(ContentArea, pos)?.VisualHit; } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                        try { var pos = e.GetPosition(ContentArea); hit = VisualTreeHelper.HitTest(ContentArea, pos)?.VisualHit; } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
                         var innerSv = FindVisualAncestor<ScrollViewer>(hit);
                         if (innerSv != null && innerSv != ContentArea && innerSv.ScrollableHeight > 0)
                             targetSv = innerSv;

@@ -53,14 +53,14 @@ namespace CpqSystemTool
                     }
                 }
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             return null;
         }
 
         /// <summary>查询可转换的目标版本列表（对齐 OSSQ 一键转换 7.0 的 14 个版本）</summary>
         public static List<string> GetTargetEditions(Action<string> log)
         {
-            // ⚠️ 键名必须与 GVLK / ChineseEditionName 字典一致；含 LTSC 等需证书版本（SkuInstalled 会检测）
+            // ⚠️ 键名必须与 GVLK / EditionMap.EnglishToChinese 一致；含 LTSC 等需证书版本（SkuInstalled 会检测）
             return new List<string>
             {
                 "Professional", "ProfessionalWorkstation", "ProfessionalEducation",
@@ -111,7 +111,7 @@ namespace CpqSystemTool
         {
             if (edition == null) return null;
             if (GVLK.TryGetValue(edition.Trim(), out string[] ks)) return ks;
-            string enName = MapChineseToEnglish(edition);
+            string enName = EditionMap.ToEnglish(edition);
             if (enName != null && GVLK.TryGetValue(enName, out ks)) return ks;
             return null;
         }
@@ -122,7 +122,7 @@ namespace CpqSystemTool
             // 入口先中文→英文映射：避免 UI 传入中文显示名（如"企业版 LTSC"）时命中 default→true，
             // 从而跳过 LTSC/IoT 转换必需的证书注入（InstallSkuCert）。
             if (edition != null)
-                edition = MapChineseToEnglish(edition) ?? edition;
+                edition = EditionMap.ToEnglish(edition) ?? edition;
             string dir;
             switch (edition == null ? "" : edition.Trim())
             {
@@ -138,7 +138,7 @@ namespace CpqSystemTool
             {
                 return System.IO.Directory.Exists(System.IO.Path.Combine(Environment.SystemDirectory, "spp", "tokens", "skus", dir));
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return true; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return true; }
         }
 
         /// <summary>
@@ -156,7 +156,7 @@ namespace CpqSystemTool
             // 1) 本机许可存储已存在该 SKU 证书 → 直接重装（离线、更快）
             bool existsLocally;
             try { existsLocally = System.IO.Directory.Exists(targetDir); }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); existsLocally = false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); existsLocally = false; }
 
             if (existsLocally)
             {
@@ -191,7 +191,7 @@ namespace CpqSystemTool
 
             string tmpDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "CpqSystemTool_Skus", sku);
             try { System.IO.Directory.CreateDirectory(tmpDir); }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
 
             log("   [*] 从内置证书包提取 " + resNames.Length + " 个 " + sku + " 证书并 slmgr /ilc 安装...");
             bool anyOk = false;
@@ -232,57 +232,7 @@ namespace CpqSystemTool
             return true;
         }
 
-        /// <summary>中文版名 → 英文版名映射（参考 OSSQ 一键转换的中文版列表 + DISM 中文输出格式）</summary>
-        public static string MapChineseToEnglish(string cnName)
-        {
-            if (cnName == null) return null;
-            cnName = cnName.Trim();
-            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                { "Windows 10 家庭版",                "Home" },
-                { "Windows 10 家庭单语言版",        "Home Single Language" },
-                { "Windows 10 家庭中文版",            "Home China" },
-                { "Windows 10 专业版",                "Professional" },
-                { "Windows 10 专业教育版",            "ProfessionalEducation" },
-                { "Windows 10 教育版",                "Education" },
-                { "Windows 10 企业版",                "Enterprise" },
-                { "Windows 11 家庭版",                "Home" },
-                { "Windows 11 家庭单语言版",        "Home Single Language" },
-                { "Windows 11 家庭中文版",            "Home China" },
-                { "Windows 11 专业版",                "Professional" },
-                { "Windows 11 专业教育版",            "ProfessionalEducation" },
-                { "Windows 11 专业工作站版",        "ProfessionalWorkstation" },
-                { "Windows 11 教育版",                "Education" },
-                { "Windows 11 企业版",                "Enterprise" },
-                { "Windows 11 企业版 G",            "EnterpriseG" },
-                { "Windows 10 专业单语言版",        "ProfessionalSingleLanguage" },
-                { "Windows 11 专业单语言版",        "ProfessionalSingleLanguage" },
-                { "Windows 10 专业中文版",          "ProfessionalCountrySpecific" },
-                { "Windows 11 专业中文版",          "ProfessionalCountrySpecific" },
-                { "Windows 10 企业版 LTSC",         "EnterpriseS" },
-                { "Windows 11 企业版 LTSC",         "EnterpriseS" },
-                { "Windows 10 企业 LTSC 版",        "EnterpriseS" },
-                { "Windows 11 企业 LTSC 版",        "EnterpriseS" },
-                { "Windows 10 虚拟桌面版",          "ServerRdsh" },
-                { "Windows 11 虚拟桌面版",          "ServerRdsh" },
-                { "Windows 10 IoT 企业版",          "IoTEnterprise" },
-                { "Windows 11 IoT 企业版",          "IoTEnterprise" },
-                { "Windows 10 核心版",                "Core" },
-                { "Windows 11 核心版",                "Core" },
-                // 兼容中英混合：去掉 Windows 前缀和"版"字后模糊匹配
-            };
-            if (map.TryGetValue(cnName, out string en)) return en;
-            // 模糊匹配：去掉前缀/版字后按关键字匹配（兼容中英混合输入）
-            // 专业 + 教育 → ProfessionalEducation（必须优先，避免误命中普通 Professional）
-            // 模糊匹配：在中文输入里按关键字直接映射英文 SKU（原实现误在中文 map 键里搜英文子串，恒为 false，整段失效）。
-            if (cnName.Contains("专业") && cnName.Contains("教育")) return "ProfessionalEducation";
-            if (cnName.Contains("专业") && cnName.Contains("工作站")) return "ProfessionalWorkstation";
-            if (cnName.Contains("专业") && cnName.Contains("单语言")) return "ProfessionalSingleLanguage";
-            if (cnName.Contains("专业") && cnName.Contains("中文")) return "ProfessionalCountrySpecific";
-            if (cnName.Contains("专业")) return "Professional";
-            if (cnName.Contains("教育")) return "Education";
-            return null;
-        }
+        // 中文版名 → 英文版名映射已收编至 Helpers/EditionMap.cs（ToEnglish / ChineseToEnglish）
 
         private const string REG_KEY_BACKUP = @"SOFTWARE\CpqSystemTool\VersionSwitch";
 
@@ -366,7 +316,7 @@ namespace CpqSystemTool
                 using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(REG_KEY_BACKUP))
                     return k != null && k.GetValue("SavedAt") != null;
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         /// <summary>
@@ -405,7 +355,7 @@ namespace CpqSystemTool
             // 步骤 0.5：证书检测与自动注入（LTSC/IoT LTSC 等镜像不预装证书的版本）
             if (!SkuInstalled(edition))
             {
-                string certSku = (MapChineseToEnglish(edition) ?? edition).Trim();
+                string certSku = (EditionMap.ToEnglish(edition) ?? edition).Trim();
                 log("   [!] 本机缺少 " + certSku + " 证书，尝试自动注入内置证书包...");
                 if (!InstallSkuCert(certSku, log))
                 {
@@ -423,7 +373,7 @@ namespace CpqSystemTool
                     if (k != null) k.SetValue("AllowOsUpdate", 1, Microsoft.Win32.RegistryValueKind.DWord);
                 log("   [OK] 已设置 AllowOsUpdate=1");
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  log("   [!] 注册表写入失败（需管理员权限）"); return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  log("   [!] 注册表写入失败（需管理员权限）"); return false; }
 
             // 步骤 2：注入目标密钥（slmgr /ipk，候选逐个尝试直到成功）
             log("   [*] 步骤 2/3：注入产品密钥（slmgr /ipk）...");
@@ -471,11 +421,11 @@ namespace CpqSystemTool
                         sc.Status != System.ServiceProcess.ServiceControllerStatus.StartPending)
                     {
                         try { sc.Start(); sc.WaitForStatus(System.ServiceProcess.ServiceControllerStatus.Running, TimeSpan.FromSeconds(10)); log("   [*] " + serviceName + " 已启动"); }
-                        catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  log("   [*] " + serviceName + " 启动失败（不影响继续，若转换报 0x80070490 再处理）"); }
+                        catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  log("   [*] " + serviceName + " 启动失败（不影响继续，若转换报 0x80070490 再处理）"); }
                     }
                 }
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  log("   [*] 服务 " + serviceName + " 不存在或不可访问"); }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  log("   [*] 服务 " + serviceName + " 不存在或不可访问"); }
         }
 
         /// <summary>仅安装产品密钥（slmgr /ipk，不转换版本）</summary>

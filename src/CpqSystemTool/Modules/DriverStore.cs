@@ -804,38 +804,12 @@ namespace CpqSystemTool
         /// <summary>判断 a 是否比 b 更新（版本号优先，其次日期）。</summary>
         private static bool IsNewer(DriverInfo a, DriverInfo b)
         {
-            int vc = CompareVersion(a.Version, b.Version);
+            int vc = VersionUtil.CompareVersion(a.Version, b.Version);
             if (vc != 0) return vc > 0;
             if (a.Date.HasValue && b.Date.HasValue) return a.Date.Value > b.Date.Value;
             if (a.Date.HasValue != b.Date.HasValue) return a.Date.HasValue; // 有日期者更新
             // 兜底：发布名称字符串比较（oem 序号越大通常越新）
             return string.Compare(a.OemName, b.OemName, StringComparison.OrdinalIgnoreCase) > 0;
-        }
-
-        private static int CompareVersion(string a, string b)
-        {
-            var aa = SplitVersion(a);
-            var bb = SplitVersion(b);
-            int n = Math.Max(aa.Count, bb.Count);
-            for (int i = 0; i < n; i++)
-            {
-                int x = i < aa.Count ? aa[i] : 0;
-                int y = i < bb.Count ? bb[i] : 0;
-                if (x != y) return x.CompareTo(y);
-            }
-            return 0;
-        }
-
-        private static List<int> SplitVersion(string v)
-        {
-            var r = new List<int>();
-            if (string.IsNullOrWhiteSpace(v)) return r;
-            foreach (var part in v.Split(new[] { '.', ',', ' ' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                if (int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)) r.Add(n);
-                else r.Add(0);
-            }
-            return r;
         }
 
         /// <summary>

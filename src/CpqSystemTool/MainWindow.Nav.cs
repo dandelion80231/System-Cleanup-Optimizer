@@ -15,8 +15,8 @@ namespace CpqSystemTool
     public partial class MainWindow
     {
         // 软件版本号：左下角显示（同 BuildAbout 关于页更新日志）。
-        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.10.0 ↔ v1.10），两处保持一致。
-        private const string APP_VERSION = "v1.10";
+        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.11.0 ↔ v1.11），两处保持一致。
+        private const string APP_VERSION = "v1.11";
 
         private void BuildSidebar()
         {
@@ -70,7 +70,7 @@ namespace CpqSystemTool
                 // 避免"图标变淡但点击无响应"的暗示落空。
                 footer.Children.Add(icon);
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); 
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); 
                 // 图标加载失败时用 emoji 占位
                 footer.Children.Add(new TextBlock { Text = "🎨", FontSize = 24, Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center });
             }

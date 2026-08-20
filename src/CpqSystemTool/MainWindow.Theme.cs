@@ -15,7 +15,7 @@ namespace CpqSystemTool
     public partial class MainWindow
     {
         // ---------- 自定义背景图（持久化到 Config\background.json） ----------
-        private static string _bgSettingsPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "background.json");
+        private static string _bgSettingsPath => Path.Combine(AppPaths.ConfigDir, "background.json");
         private string _customBgDarkPath = "";
         private string _customBgLightPath = "";
         private double _customBgDarkOpacity = 0.55;   // 深色默认半透明
@@ -41,7 +41,7 @@ namespace CpqSystemTool
                 if (do_.HasValue) _customBgDarkOpacity = do_.Value;
                 if (lo.HasValue) _customBgLightOpacity = lo.Value;
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
         }
 
         /// <summary>保存自定义背景设置到 Config\background.json</summary>
@@ -57,7 +57,7 @@ namespace CpqSystemTool
                     "\n}\n";
                 File.WriteAllText(_bgSettingsPath, json, System.Text.Encoding.UTF8);
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
         }
 
         // ---------- 极简 JSON 工具（不引入额外依赖） ----------
@@ -130,7 +130,7 @@ namespace CpqSystemTool
                     };
                     using (var p = System.Diagnostics.Process.Start(psi))
                     {
-                        if (!p.WaitForExit(IMAGE_CONVERT_TIMEOUT_MS)) { try { p.Kill(); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  } }
+                        if (!p.WaitForExit(IMAGE_CONVERT_TIMEOUT_MS)) { try { p.Kill(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  } }
                         else if (p.ExitCode == 0 && File.Exists(tmpPng))
                         {
                             var bi = new BitmapImage();
@@ -139,7 +139,7 @@ namespace CpqSystemTool
                             bi.CacheOption = BitmapCacheOption.OnLoad;
                             bi.EndInit();
                             bi.Freeze();
-                            try { File.Delete(tmpPng); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                            try { File.Delete(tmpPng); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
                             return bi;
                         }
                     }
@@ -167,7 +167,7 @@ namespace CpqSystemTool
                 {
                     if (File.Exists(c)) return c;
                 }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             }
             return null;
         }
@@ -186,7 +186,7 @@ namespace CpqSystemTool
                 var t = s.Trim();
                 return !string.IsNullOrEmpty(t) && t != "0";
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         /// <summary>自动安装 WebP Image Extensions：调用 AppxManager.Install 三级通道（winget → rg-adguard → Store 页面），
@@ -321,7 +321,7 @@ namespace CpqSystemTool
                     BgImage.Source = img;
                     BgImage.Opacity = _customBgDarkOpacity;
                 }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  BgImage.Source = null; }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  BgImage.Source = null; }
             }
             else
             {
@@ -339,7 +339,7 @@ namespace CpqSystemTool
                     BgImage.Source = img;
                     BgImage.Opacity = _customBgLightOpacity;
                 }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message); 
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); 
                     Background = _windowBg;
                     BgImage.Source = null;
                 }
@@ -427,7 +427,7 @@ namespace CpqSystemTool
                     }
                 }
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             return false; // 默认深色
         }
 

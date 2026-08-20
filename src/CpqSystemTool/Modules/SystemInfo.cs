@@ -45,7 +45,7 @@ namespace CpqSystemTool
                             if (mo["MaxClockSpeed"] != null) cpuMaxClock = Math.Max(cpuMaxClock, Convert.ToDouble(mo["MaxClockSpeed"]) / 1000.0);
                         }
                 }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
                 left.AppendLine("【CPU】");
                 left.AppendLine((string.IsNullOrEmpty(cpuName) ? "未知" : cpuName));
                 left.AppendLine("核心：" + (cores > 0 ? cores : Environment.ProcessorCount) +
@@ -72,7 +72,7 @@ namespace CpqSystemTool
                             left.AppendLine("  内存条" + dimmCount + "：" + (cap / (1024L * 1024 * 1024)) + " G  " + mfr + (speed > 0 ? "  " + speed + " MHz" : ""));
                         }
                 }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
 
                 // ====== 右侧：系统 + 网络 + 显卡 + 主板 + 硬盘 + 显示 ======
                 // 系统
@@ -113,7 +113,7 @@ namespace CpqSystemTool
                             nicList.Add((name, mac));
                         }
                 }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
                 right.AppendLine("【网络适配器】");
                 if (nicList.Count == 0)
                 {
@@ -155,14 +155,14 @@ namespace CpqSystemTool
                                         object qw = gpuKey.GetValue("qwMemorySize");
                                         if (name != null && qw != null)
                                         {
-                                            try { vramRegistry[name.Trim()] = Convert.ToUInt64(qw); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                                            try { vramRegistry[name.Trim()] = Convert.ToUInt64(qw); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                    catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                    catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
 
                     // nvidia-smi 备选
                     var vramNVIDIA = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
@@ -179,7 +179,7 @@ namespace CpqSystemTool
                             }
                         }
                     }
-                    catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                    catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
 
                     using (var searcher = new ManagementObjectSearcher("SELECT Name, DriverVersion, AdapterRAM, VideoProcessor, VideoModeDescription FROM Win32_VideoController"))
                     using (var moc = searcher.Get())
@@ -201,10 +201,10 @@ namespace CpqSystemTool
                             { if (nKey.Contains(kv.Key) || kv.Key.Contains(nKey)) { ram = kv.Value; found = true; break; } }
                             // WMI
                             if (!found && mo["AdapterRAM"] != null)
-                            { try { ram = Convert.ToUInt32(mo["AdapterRAM"]); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  ram = 0; } }
+                            { try { ram = Convert.ToUInt32(mo["AdapterRAM"]); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  ram = 0; } }
                             string ramStr = ram > 0 ? "  显存：" + (ram / (1024UL * 1024 * 1024)) + " GB" : "";
                             string modeStr = "";
-                            try { var mode = mo["VideoModeDescription"]; if (mode != null) modeStr = mode.ToString(); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                            try { var mode = mo["VideoModeDescription"]; if (mode != null) modeStr = mode.ToString(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
                             left.AppendLine("显卡" + gpuIdx + "：" + n);
                             left.AppendLine("  驱动：" + drv + ramStr);
                             left.AppendLine("  处理器：" + proc);
@@ -213,7 +213,7 @@ namespace CpqSystemTool
                         }
                     if (gpuIdx == 0) left.AppendLine("无显卡");
                 }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  left.AppendLine("（获取失败）"); }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  left.AppendLine("（获取失败）"); }
 
                 // 主板 — 移到左侧
                 left.AppendLine("【主板】");
@@ -233,7 +233,7 @@ namespace CpqSystemTool
                             break;
                         }
                 }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
 
                 // 硬盘 — 移到左侧
                 left.AppendLine("【硬盘】");
@@ -253,7 +253,7 @@ namespace CpqSystemTool
                         }
                     if (diskIdx == 0) left.AppendLine("无磁盘");
                 }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
 
                 // 显示 — 移到左侧
                 left.AppendLine("【显示】");
@@ -300,63 +300,20 @@ namespace CpqSystemTool
                     if (unix > 1_000_000_000_000L) return DateTimeOffset.FromUnixTimeMilliseconds(unix).LocalDateTime.ToString("yyyy-MM-dd");
                     if (unix > 1_000_000_000L) return DateTimeOffset.FromUnixTimeSeconds(unix).LocalDateTime.ToString("yyyy-MM-dd");
                 }
-                catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             }
             // 4) FILETIME 兜底（极大数值）
             if (long.TryParse(raw, out long ticks) && ticks > 1_000_000_000_000L)
             {
-                try { return DateTime.FromFileTimeUtc(ticks).ToLocalTime().ToString("yyyy-MM-dd"); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+                try { return DateTime.FromFileTimeUtc(ticks).ToLocalTime().ToString("yyyy-MM-dd"); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             }
             return "";
         }
 
         // Issue: 系统信息版本字符串应显示为中文。注册表 ProductName 在 Windows 11 上仍可能是英文
         //（如 "Windows 10 Pro for Workstations"），因此按 EditionID / ProductName 中的版本片段做中文映射。
+        // 映射数据源已收编至 Helpers/EditionMap.cs（EnglishToChinese / ToChinese）。
         // 覆盖项目支持的 Windows 10/11 全部主流版本（含 N / S(LTSC) / S 模式 / IoT 企业版 / 服务器 / 多会话）。
-        private static readonly Dictionary<string, string> EditionChineseMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            // 工作站版（含 N）
-            { "ProfessionalWorkstationN", "专业工作站版 N" },
-            { "ProfessionalWorkstation", "专业工作站版" },
-            { "Pro for Workstations N", "专业工作站版 N" },
-            { "Pro for Workstations", "专业工作站版" },
-            // 专业版（含 N / 教育）
-            { "ProfessionalEducationN", "专业教育版 N" },
-            { "ProfessionalEducation", "专业教育版" },
-            { "ProfessionalN", "专业版 N" },
-            { "Professional", "专业版" },
-            { "Pro N", "专业版 N" },
-            { "Pro", "专业版" },
-            // 企业版（含 N / S(LTSC) / 评估 / 多会话）
-            { "EnterpriseSN", "企业版 SN" },
-            { "EnterpriseS", "企业版 S" },
-            { "EnterpriseEvaluation", "企业版 评估版" },
-            { "EnterpriseN", "企业版 N" },
-            { "Enterprise", "企业版" },
-            { "ServerRdsh", "企业版多会话" },
-            // 教育版（含 N）
-            { "EducationN", "教育版 N" },
-            { "Education", "教育版" },
-            // 家庭版（含单语言 / 中国 / N）
-            { "CoreSingleLanguage", "家庭单语言版" },
-            { "CoreCountrySpecific", "家庭中文版" },
-            { "CoreN", "家庭版 N" },
-            { "HomeSingleLanguage", "家庭单语言版" },
-            { "Home", "家庭版" },
-            { "Core", "家庭版" },
-            // S 模式（Cloud）
-            { "CloudN", "S 模式版 N" },
-            { "Cloud", "S 模式版" },
-            // IoT 企业版
-            { "IoTEnterpriseS", "IoT 企业版 S" },
-            { "IoTEnterprise", "IoT 企业版" },
-            // 服务器
-            { "ServerDatacenter", "服务器数据中心版" },
-            { "ServerStandard", "服务器标准版" },
-            { "Server", "服务器版" },
-            // 其它
-            { "Ultimate", "旗舰版" }
-        };
 
         private static string GetWindowsVersionName(string currentBuild)
         {
@@ -376,18 +333,18 @@ namespace CpqSystemTool
 
         private static string LocalizeEdition(string edition, string productName)
         {
-            if (!string.IsNullOrEmpty(edition) && EditionChineseMap.TryGetValue(edition, out string cn1))
+            if (!string.IsNullOrEmpty(edition) && EditionMap.EnglishToChinese.TryGetValue(edition, out string cn1))
                 return cn1;
             // 从 ProductName 中匹配版本片段（如 "Windows 10 Pro for Workstations"）。
             // 按键长降序匹配，确保 "Pro for Workstations N" 优先于 "Pro" 等短片段，且不依赖字典枚举顺序。
             if (!string.IsNullOrEmpty(productName))
             {
-                var keys = new List<string>(EditionChineseMap.Keys);
+                var keys = new List<string>(EditionMap.EnglishToChinese.Keys);
                 keys.Sort((a, b) => b.Length.CompareTo(a.Length));
                 foreach (var key in keys)
                 {
                     if (productName.IndexOf(key, StringComparison.OrdinalIgnoreCase) >= 0)
-                        return EditionChineseMap[key];
+                        return EditionMap.EnglishToChinese[key];
                 }
             }
             // 未匹配到中文：优雅降级为英文原文，绝不报错。
@@ -418,7 +375,7 @@ namespace CpqSystemTool
                     }
                 }
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             return def;
         }
 
@@ -449,7 +406,7 @@ namespace CpqSystemTool
                 if (GlobalMemoryStatusEx(ref ms))
                     return (long)ms.ullTotalPhys;
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             return 0;
         }
     }

@@ -13,7 +13,7 @@ namespace CpqSystemTool
         public static void Trace(string stage)
         {
             try { System.IO.File.AppendAllText(TracePath, System.DateTime.Now.ToString("HH:mm:ss.fff") + "  " + stage + "\n"); }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
         }
 
         static App()
@@ -24,7 +24,7 @@ namespace CpqSystemTool
 
         protected override void OnStartup(StartupEventArgs e)
         {
-            try { System.IO.File.WriteAllText(TracePath, "=== trace " + System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " ===\n"); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            try { System.IO.File.WriteAllText(TracePath, "=== trace " + System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " ===\n"); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             Trace("OnStartup.start");
             // 启动时若有待固化标记，把增补列表写进 exe 自身（自包含；失败自动回退 json）
             SoftwareDefPersistence.ApplyPendingBakeIfAny();
@@ -67,7 +67,7 @@ namespace CpqSystemTool
                 sb.AppendLine();
                 File.AppendAllText(path, sb.ToString(), Encoding.UTF8);
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  /* 日志失败也不应再抛异常 */ }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  /* 日志失败也不应再抛异常 */ }
         }
 
         private static void ShowCrash(Exception ex)
@@ -80,7 +80,7 @@ namespace CpqSystemTool
                 msg += "\n\n（详细已写入 crash.log）";
                 MessageBox.Show(msg, "系统清理与优化工具 · 未处理异常", MessageBoxButton.OK, MessageBoxImage.Error);
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  /* MessageBox 不可用（极早期崩溃）时忽略，crash.log 已记录 */ }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  /* MessageBox 不可用（极早期崩溃）时忽略，crash.log 已记录 */ }
         }
     }
 }

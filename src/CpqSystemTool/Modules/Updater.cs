@@ -180,7 +180,7 @@ namespace CpqSystemTool
                 string outp = Exec.RunCmdGet(new[] { "reg", "query", WU_AU_KEY, "/v", "NoAutoUpdate" }, null);
                 return outp.IndexOf("0x1", StringComparison.Ordinal) >= 0;
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         /// <summary>检测当前是否处于长期暂停状态（PauseFeatureUpdates=1）</summary>
@@ -191,7 +191,7 @@ namespace CpqSystemTool
                 string pf = Exec.RunCmdGet(new[] { "reg", "query", WU_UX_KEY, "/v", "PauseFeatureUpdates" }, null);
                 return pf.IndexOf("0x1", StringComparison.Ordinal) >= 0;
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
     }

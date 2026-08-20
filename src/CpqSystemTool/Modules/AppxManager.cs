@@ -484,12 +484,12 @@ namespace CpqSystemTool
                 var s = Exec.RunPowerShellGet(ps, log).Trim();
                 return !string.IsNullOrEmpty(s) && s != "0";
             }
-            catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  return false; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
         private static void TryDelete(string path)
         {
-            try { if (!string.IsNullOrEmpty(path) && File.Exists(path)) File.Delete(path); } catch (Exception caughtEx) { System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + caughtEx.Message);  }
+            try { if (!string.IsNullOrEmpty(path) && File.Exists(path)) File.Delete(path); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
         }
 
         private static string FindWinget()
