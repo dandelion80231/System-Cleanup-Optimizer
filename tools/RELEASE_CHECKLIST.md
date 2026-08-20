@@ -157,11 +157,13 @@
 5. **保持约定**：内部链接一律**无后缀**（`features` / `download` / `changelog` / `/`），不要写回 `xxx.html`——Cloudflare Pretty URLs 会对 `.html` 做 308 重定向拖慢切页；每页 `<head>` 保留对其他兄弟页的 `<link rel="prefetch">`。
 6. **校验**：`python tools/validate_html.py` 四个页面标签平衡全 OK 再部署。
 7. **部署（必须用 managed venv 解释器，脚本依赖 `blake3`）**：
+   - 🔑 **CF token 从本地文件读取（不再要求用户每次提供）**：token 保存在用户级私有文件 `C:\Users\000\.workbuddy\cf_api_token.md`（**不在任何 git 仓库内**，禁止提交/上传/分享；泄露后到 Cloudflare 后台吊销轮换并更新该文件）。部署时用 shell 从文件提取：
    ```
-   CF_ACCOUNT_ID=fb0b2ada3007992934b696ba57e89f54 CF_API_TOKEN=<用户本次提供的 token> \
+   CF_ACCOUNT_ID=$(grep -oP '^CF_ACCOUNT_ID=\K.*' "C:\Users\000\.workbuddy\cf_api_token.md") \
+   CF_API_TOKEN=$(grep -oP '^CF_API_TOKEN=\K.*' "C:\Users\000\.workbuddy\cf_api_token.md") \
      C:\Users\000\.workbuddy\binaries\python\envs\default\Scripts\python.exe D:\电脑桌面\cpq\tools\deploy_site.py
    ```
-   - ⚠️ `CF_API_TOKEN` **不落盘**，每次发版需用户重新提供（与下方 SKILL.md 一致）；`CF_ACCOUNT_ID` 固定 `fb0b2ada3007992934b696ba57e89f54`。
+   - 若文件缺失或提取为空：先提示用户确认文件存在（路径 `C:\Users\000\.workbuddy\cf_api_token.md`），再请其重新提供 token 并更新该文件；**切勿把 token 写进本文件或任何 git 跟踪的文件**。
    - 脚本重传 site-dist 全部顶层文件（含 **8 个 exe（v1.01–v1.08），约 56MB**），完整上传约 4–6 分钟属正常。⚠️ **本 agent 运行时后台任务约 2 分钟会被掐断**，务必**前台运行并给足超时**（Bash 工具设 `timeout=540000`）再部署；若中途报 `failed` 且停在 `Step2 batch 7/10` 左右，就是被掐了，前台重跑一次即可。
    - 脚本内含 IPv4 强制解析 monkeypatch（Python 默认 IPv6 优先对 Cloudflare 握手失败），部署 API 无需额外代理。
    - 📌 **缓存策略与安全响应头现由 `tools/_worker.js`（Pages Functions）在每个响应上统一注入**：`Cache-Control`（指纹资源 `*.css|js|ico|exe|…` → `immutable` 长缓存；HTML → `max-age=300`）+ `Strict-Transport-Security` / `X-Frame-Options: DENY` / `X-Content-Type-Options: nosniff` / `Referrer-Policy` / `X-Robots-Tag`（4xx 页 `noindex`）。**Direct Upload 下 `_headers` 被 Functions 忽略**，要改缓存 TTL 或安全头请直接改 `_worker.js` 后重部署；`deploy_site.py` 会自动把 `tools/_worker.js` 复制进 site-dist 并作为独立 part 上传，无需手动处理。
