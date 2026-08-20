@@ -6,7 +6,10 @@
 
 ## [v1.12] - 2026-08-21
 
-> 相对 v1.11 的源码变更：继续清理技术债——统一 4 套下载实现、封死后台线程 Dispatcher 关窗崩溃面、消除全部 sync-over-async（`.Result`）；例行版本提升 v1.11 → v1.12。
+> 相对 v1.11 的源码变更：继续清理技术债——统一 4 套下载实现、封死后台线程 Dispatcher 关窗崩溃面、消除全部 sync-over-async（`.Result`），并修复「可多开窗口」的单实例缺失；例行版本提升 v1.11 → v1.12。
+
+### 🐞 修复
+- **单实例保护（v1.12 补丁）**：此前无任何 Mutex 保护，双击 exe 可无限多开窗口；现在同一时间只允许一个实例——第二实例启动时自动激活已有窗口（最小化则恢复前台）并退出，不再创建新窗口；Mutex 获取异常时放行启动，保证工具始终可用。
 
 ### ♻️ 重构 / 清理
 - **下载实现统一（`Helpers/Downloader.cs`）**：此前 4 套重复的 HTTP 下载逻辑（About 代理回退下载 / AppxManager 断点续传 / WebView2ProbeDeps 进度下载 / OfficeInstall 过时 `WebClient`）合并为单一 `Downloader.DownloadAsync`——支持重试、进度回调、请求级超时（CTS）、代理回退、断点续传（Range）、UA 注入；后续修下载类 bug 只需改一处，行为一致。
