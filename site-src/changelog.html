@@ -56,6 +56,15 @@
     <div class="container">
       <div class="timeline reveal">
         <div class="tl-item">
+          <span class="ver">v1.13</span><span class="date">2026-08-21</span>
+          <ul>
+            <li>♻️ 更新：exe 自替换原子化——ApplyPendingBakeIfAny 由「先改名后替换」改为 MoveFileEx 原子替换（MOVEFILE_REPLACE_EXISTING|WRITE_THROUGH），占用时回退「改名+移入」并带失败回滚，中途失败不再让主程序停在 .old，自包含更新始终可用</li>
+            <li>🛡️ 全局防重入：新增 OperationLock 全局互斥，清理 / 优化 / 安全防护（Defender 禁用/恢复、开关、防火墙规则、更新管理）等耗时操作同一时间只允许一个，冲突时提示「已有XX操作正在运行」</li>
+            <li>🛡️ 配置原子写入：ConfigBackup.Save / Theme.SaveBackgroundSettings / SoftwareDefPersistence.StageBake 由直写改为「同目录 tmp + MoveFileEx 原子替换」，崩溃不再留半截 JSON 导致配置静默丢失</li>
+            <li>🛡️ 危险操作确认 + 更新状态锁 + UI 提醒：「开始优化」「一键禁用 Defender」「清理策略残留」「移除防火墙规则」等高危操作补 YesNo 确认；「检查更新」「下载更新」加状态锁 + 按钮禁用联动，并发不再竞态；「关闭系统还原」项下常驻提示、配置目录不可写时首次弹窗告知，不再静默失败</li>
+          </ul>
+        </div>
+        <div class="tl-item">
           <span class="ver">v1.12</span><span class="date">2026-08-21</span>
           <ul>
             <li>♻️ 重构：4 套重复 HTTP 下载实现合并为统一 Downloader（Helpers/Downloader.cs）——支持重试、进度回调、请求级超时、代理回退、断点续传，下载类 bug 只改一处、行为一致</li>
