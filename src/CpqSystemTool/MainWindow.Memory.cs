@@ -261,7 +261,7 @@ namespace CpqSystemTool
                 var overview = MemoryAnalyzer.GetOverview();
                 var use = MemoryAnalyzer.GetUseCounts(overview.TotalPhys, overview);
                 var procs = MemoryAnalyzer.GetProcessWorkingSets(10);
-                Dispatcher.Invoke(() => applyUi(overview, use, procs));
+                try { Dispatcher.Invoke(() => applyUi(overview, use, procs)); } catch { /* 窗口已关闭，忽略 */ }
             }, "内存分析完成", () => pb.Visibility = Visibility.Collapsed);
         }
 

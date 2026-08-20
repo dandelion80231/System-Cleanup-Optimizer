@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace CpqSystemTool
 {
@@ -65,10 +66,10 @@ namespace CpqSystemTool
             new Dictionary<string, (string, string, string[], long)>(StringComparer.OrdinalIgnoreCase);
         private static readonly long ResolveCacheTtlTicks = TimeSpan.FromHours(24).Ticks;
 
-        public static bool TryResolve(string id, out string url, out string sha256, out string[] args, Action<string> log)
+        // 解析结果元组：ok=false 表示解析失败（调用方回退快照/返回安装失败）。
+        // async 方法不允许 out 参数，故 TryResolve 改造为返回元组（B6 sync-over-async 清理）。
+        public static async Task<(bool ok, string url, string sha256, string[] args)> TryResolveAsync(string id, Action<string> log)
         {
-            url = null; sha256 = null; args = null;
-
             // 0) 命中 24h 解析缓存 → 直接返回，不再发网络请求
             string cacheKey = (id ?? "").Trim();
             lock (ResolveCacheLock)
@@ -76,28 +77,27 @@ namespace CpqSystemTool
                 if (ResolveCache.TryGetValue(cacheKey, out var hit) &&
                     DateTime.UtcNow.Ticks - hit.Ticks < ResolveCacheTtlTicks)
                 {
-                    url = hit.Url; sha256 = hit.Sha256; args = hit.Args;
                     log("   [*] 使用 Chocolatey 解析缓存（24h 内同软件不重复请求）：" + id);
-                    return true;
+                    return (true, hit.Url, hit.Sha256, hit.Args);
                 }
             }
 
             // 1) 实时解析（联网取最新，始终带当前 SHA256 → 永不失效）
-            if (LiveResolve(id, out url, out sha256, out args, log) && !string.IsNullOrEmpty(sha256))
+            var live = await LiveResolveAsync(id, log);
+            if (live.ok && !string.IsNullOrEmpty(live.sha256))
             {
                 log("   [*] 已从 Chocolatey 实时解析最新安装包：" + id);
-                StoreResolveCache(cacheKey, url, sha256, args);
-                return true;
+                StoreResolveCache(cacheKey, live.url, live.sha256, live.args);
+                return (true, live.url, live.sha256, live.args);
             }
 
             // 2) 兜底：已验证快照（离线/解析失败/无哈希时）
             if (Fallback.TryGetValue(id, out var f))
             {
-                url = f.Url; sha256 = f.Sha256; args = f.Args;
                 log("   [*] 使用已验证 Chocolatey 快照（实时解析不可用）：" + id);
-                return true;
+                return (true, f.Url, f.Sha256, f.Args);
             }
-            return false;
+            return (false, null, null, null);
         }
 
         // 写入解析缓存：仅实时解析成功且带 SHA256 的结果；顺带清理已过期条目（软件数很少，遍历成本可忽略）。
@@ -118,9 +118,8 @@ namespace CpqSystemTool
             }
         }
 
-        private static bool LiveResolve(string id, out string url, out string sha256, out string[] args, Action<string> log)
+        private static async Task<(bool ok, string url, string sha256, string[] args)> LiveResolveAsync(string id, Action<string> log)
         {
-            url = null; sha256 = null; args = null;
             try
             {
                 var client = HttpClients.Default; // 进程内共享单例复用（B4）：避免每次 new/dispose 造成 socket TIME_WAIT 堆积
@@ -129,38 +128,38 @@ namespace CpqSystemTool
                 // 先试 id 本体，再试 .install 变体（meta 包的安装逻辑在 .install 里）
                 foreach (var candidate in new[] { id, id + ".install" })
                 {
-                    if (ResolveCandidate(client, cts.Token, candidate, out url, out sha256, out args)) return true;
+                    var r = await ResolveCandidateAsync(client, cts.Token, candidate);
+                    if (r.ok) return r;
                 }
-                return false;
+                return (false, null, null, null);
             }
             catch (Exception caughtEx)
             {
                 System.Diagnostics.Debug.WriteLine("[CpqSystemTool] Chocolatey 实时解析异常(降级兜底): " + caughtEx.Message);
-                return false;
+                return (false, null, null, null);
             }
         }
 
-        private static bool ResolveCandidate(HttpClient client, CancellationToken ct, string id, out string url, out string sha256, out string[] args)
+        private static async Task<(bool ok, string url, string sha256, string[] args)> ResolveCandidateAsync(HttpClient client, CancellationToken ct, string id)
         {
-            url = null; sha256 = null; args = null;
             // 安全加固：id 直接拼入 OData 过滤串（Id eq '...'），先做白名单校验，
             // 仅允许 [A-Za-z0-9.-]，避免注入破坏 OData 查询或引发异常。
             if (!Regex.IsMatch(id ?? "", @"^[A-Za-z0-9.\-]+$"))
-                return false;
+                return (false, null, null, null);
             try
             {
                 string odata;
                 using (var req = BuildRequest("https://community.chocolatey.org/api/v2/Packages()?$filter=Id eq '" + id + "' and IsLatestVersion eq true&$select=Version,PackageDownload"))
-                using (var resp = client.SendAsync(req, ct).Result)
-                    odata = resp.Content.ReadAsStringAsync().Result;
+                using (var resp = await client.SendAsync(req, ct))
+                    odata = await resp.Content.ReadAsStringAsync();
                 var pkg = Match(odata, @"<d:PackageDownload m:type=""Edm.String"">([^<]+)</d:PackageDownload>");
-                if (string.IsNullOrEmpty(pkg)) return false;
+                if (string.IsNullOrEmpty(pkg)) return (false, null, null, null);
                 pkg = System.Net.WebUtility.HtmlDecode(pkg);
 
                 byte[] nupkg;
                 using (var req = BuildRequest(pkg))
-                using (var resp = client.SendAsync(req, ct).Result)
-                    nupkg = resp.Content.ReadAsByteArrayAsync().Result;
+                using (var resp = await client.SendAsync(req, ct))
+                    nupkg = await resp.Content.ReadAsByteArrayAsync();
                 using var ms = new MemoryStream(nupkg);
                 using var zip = new ZipArchive(ms);
                 string script = null;
@@ -175,21 +174,21 @@ namespace CpqSystemTool
                         break;
                     }
                 }
-                if (string.IsNullOrEmpty(script)) return false;
+                if (string.IsNullOrEmpty(script)) return (false, null, null, null);
 
-                url = FirstNonEmpty(
+                string url = FirstNonEmpty(
                     Match(script, @"url64bit\s*=\s*['""]([^'""]+)['""]"),
                     Match(script, @"url64\s*=\s*['""]([^'""]+)['""]"),
                     Match(script, @"url\s*=\s*['""]([^'""]+)['""]"));
-                sha256 = FirstNonEmpty(
+                string sha256 = FirstNonEmpty(
                     Match(script, @"checksum64\s*=\s*['""]([^'""]+)['""]"),
                     Match(script, @"checksum\s*=\s*['""]([^'""]+)['""]"));
                 var sa = Match(script, @"silentArgs\s*=\s*['""]([^'""]*)['""]");
-                args = string.IsNullOrEmpty(sa) ? new string[0] : SplitArgs(sa);
+                string[] args = string.IsNullOrEmpty(sa) ? new string[0] : SplitArgs(sa);
 
-                return !string.IsNullOrEmpty(url);
+                return (!string.IsNullOrEmpty(url), url, sha256, args);
             }
-            catch { return false; }
+            catch { return (false, null, null, null); }
         }
 
         // 单例共享后不能写 HttpClient.DefaultRequestHeaders（会污染全局请求头），UA 改为请求级注入，行为与原客户端级 UA 一致。

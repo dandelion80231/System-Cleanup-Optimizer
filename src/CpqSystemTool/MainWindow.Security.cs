@@ -252,7 +252,7 @@ namespace CpqSystemTool
             {
                 try { Defender.RefreshStatusCache(); }
                 catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
-                disp.Invoke(() =>
+                try { disp.Invoke(() =>
                 {
                     defStatusHost.Children.Remove(defLoading);
                     BuildDefenderStatus();
@@ -261,7 +261,7 @@ namespace CpqSystemTool
                     bClear.IsEnabled = true;
                     bDiag.IsEnabled = true;
                     pb.Visibility = Visibility.Collapsed;
-                });
+                }); } catch { /* 窗口已关闭，忽略 */ }
             }) { IsBackground = true, Name = "DefenderInitLoader" }.Start();
 
             root.Children.Add(defCard);
@@ -382,17 +382,17 @@ namespace CpqSystemTool
                 new Thread(() =>
                 {
                     // 后台线程经 Dispatcher 封送写日志，避免跨线程访问 UI；FirewallCore 内部已兜底，此处不再静默吞错
-                    Action<string> flog = s => d.Invoke(() => log.AppendText("[防火墙] " + s + "\r\n"));
+                    Action<string> flog = s => { try { d.Invoke(() => log.AppendText("[防火墙] " + s + "\r\n")); } catch { /* 窗口已关闭，忽略 */ } };
                     var profiles = FirewallCore.GetProfiles(flog);
                     var rules = FirewallCore.ListRules(flog);
-                    d.Invoke(() =>
+                    try { d.Invoke(() =>
                     {
                         BuildFirewallStatus(profiles);
                         var ruleSrc = rules ?? new List<FirewallCore.RuleInfo>();
                         ruleList.ItemsSource = ruleSrc;
                         ruleEmptyHint.Visibility = ruleSrc.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
                         pb.Visibility = Visibility.Collapsed;
-                    });
+                    }); } catch { /* 窗口已关闭，忽略 */ }
                 }) { IsBackground = true, Name = "FirewallLoader" }.Start();
             }
 
@@ -448,11 +448,11 @@ namespace CpqSystemTool
                     try { b = Updater.IsUpdatesBlocked(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
                     try { p = Updater.IsLongPaused(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
                     try { m = MeteredConnection.IsMetered(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
-                    d.Invoke(() =>
+                    try { d.Invoke(() =>
                     {
                         updateState = (b, p, m);
                         RebuildUpdateButtons();
-                    });
+                    }); } catch { /* 窗口已关闭，忽略 */ }
                 }) { IsBackground = true, Name = "UpdateStateLoader" }.Start();
             }
 

@@ -149,7 +149,7 @@ namespace CpqSystemTool
             return _tempDir;
         }
 
-        public bool Install(Action<string> log, string customDir = null)
+        public async Task<bool> InstallAsync(Action<string> log, string customDir = null)
         {
             if (!string.IsNullOrEmpty(StoreId)) return InstallFromStore(log);
             log("=== 安装 " + Name + " ===");
@@ -160,9 +160,10 @@ namespace CpqSystemTool
             string sha256 = Sha256;
             if (!string.IsNullOrEmpty(ChocolateyId))
             {
-                if (ChocolateyResolver.TryResolve(ChocolateyId, out var rUrl, out var rSha, out var rArgs, log))
+                var r = await ChocolateyResolver.TryResolveAsync(ChocolateyId, log);
+                if (r.ok)
                 {
-                    downloadUrl = rUrl; args = rArgs; sha256 = rSha;
+                    downloadUrl = r.url; args = r.args; sha256 = r.sha256;
                 }
                 else
                 {
@@ -174,7 +175,7 @@ namespace CpqSystemTool
             // 运行时解析（官方下载页链接）：国产包实时抓取官方页/配置提取最新直链；失败时回退 DownloadUrl（已是官方直链，不再依赖私有镜像）
             if (!string.IsNullOrEmpty(PageUrl))
             {
-                string resolved = PageLinkResolver.Resolve(PageUrl, log);
+                string resolved = await PageLinkResolver.ResolveAsync(PageUrl, log);
                 if (!string.IsNullOrEmpty(resolved)) { downloadUrl = resolved; log("   [*] 已从官方页解析直链: " + resolved); }
                 else { log("   [!] 官方页解析失败，回退私有镜像 " + Name); }
             }
@@ -213,7 +214,7 @@ namespace CpqSystemTool
             string rawExt = System.IO.Path.GetExtension(downloadUrl)?.ToLowerInvariant();
             string ext = (rawExt == ".exe" || rawExt == ".msi" || rawExt == ".zip") ? rawExt : ".exe";
             string dest = Path.Combine(GetTempDir(), Id + "_setup" + ext);
-            if (!Download(downloadUrl, dest, log, DownloadTimeout, sha256)) return false;
+            if (!await DownloadAsync(downloadUrl, dest, log, DownloadTimeout, sha256)) return false;
             if (!VerifyIntegrity(dest, log)) return false;   // 下载文件完整性/签名校验
             string runPath = dest;
             bool extracted = false;
@@ -565,7 +566,7 @@ namespace CpqSystemTool
         // ---- 内部实现 ----
         // 采用流式下载：边下边落盘，避免把整个安装包（可能数百 MB）一次性读入内存造成 GC 压力；
         // 相比 GetByteArrayAsync + WriteAllBytes，对大文件更省内存、更快，且 SHA256 仍照常校验（不降低安全性）。
-        private bool Download(string url, string dest, Action<string> log, int timeout, string sha256 = null)
+        private async Task<bool> DownloadAsync(string url, string dest, Action<string> log, int timeout, string sha256 = null)
         {
             try
             {
@@ -581,17 +582,17 @@ namespace CpqSystemTool
                     if (!string.IsNullOrEmpty(Referer))
                         req.Headers.Referrer = new Uri(Referer);
                     // ResponseHeadersRead：读完响应头即开始落盘，不等整包缓冲完（更快显现进度、更低峰值内存）
-                    using (var resp = client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token).Result)
+                    using (var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token))
                     {
                         if (!resp.IsSuccessStatusCode)
                         {
                             log("   [!] 下载失败: HTTP " + (int)resp.StatusCode + " " + resp.ReasonPhrase);
                             return false;
                         }
-                        using (var inStream = resp.Content.ReadAsStreamAsync().Result)
+                        using (var inStream = await resp.Content.ReadAsStreamAsync())
                         using (var outStream = File.Create(dest))
                         {
-                            inStream.CopyTo(outStream); // 默认 80KB 缓冲块，增量写入
+                            await inStream.CopyToAsync(outStream); // 异步增量写入，避免占用后台线程做纯 IO
                         }
                     }
                 }
@@ -1209,11 +1210,11 @@ namespace CpqSystemTool
             return info;
         }
 
-        public static bool Install(string id, Action<string> log, string customDir = null)
+        public static async Task<bool> InstallAsync(string id, Action<string> log, string customDir = null)
         {
             var map = EffectiveMap();
             if (!map.ContainsKey(id)) { log("  [!] 未知软件 ID: " + id); return false; }
-            return map[id].Install(log, customDir);
+            return await map[id].InstallAsync(log, customDir);
         }
 
         public static bool Uninstall(string id, Action<string> log)
@@ -1362,7 +1363,7 @@ namespace CpqSystemTool
     /// </summary>
     internal static class PageLinkResolver
     {
-        public static string Resolve(string pageUrl, Action<string> log)
+        public static async Task<string> ResolveAsync(string pageUrl, Action<string> log)
         {
             try
             {
@@ -1373,7 +1374,7 @@ namespace CpqSystemTool
                     req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36");
                     if (pageUrl.IndexOf("y.qq.com/download", StringComparison.OrdinalIgnoreCase) >= 0)
                         req.Headers.Referrer = new Uri("https://y.qq.com/download/download.html");
-                    using (var resp = client.SendAsync(req, HttpCompletionOption.ResponseContentRead, cts.Token).Result)
+                    using (var resp = await client.SendAsync(req, HttpCompletionOption.ResponseContentRead, cts.Token))
                     {
                         string contentType = resp.Content.Headers.ContentType?.MediaType ?? "";
                         // 文件 / latest 指针直接重定向到文件（如 Xshell）：返回跟随重定向后的最终文件 URL
@@ -1388,7 +1389,7 @@ namespace CpqSystemTool
                         }
 
                         // 读正文（HTML 或 JSONP 配置等）
-                        string body = resp.Content.ReadAsStringAsync().Result;
+                        string body = await resp.Content.ReadAsStringAsync();
 
                         // QQ音乐官方配置（download.js JSONP）：提取 Windows PC 条目 Flink1（服务端签发签名，长期有效，随版本刷新）
                         if (body.IndexOf("\"Flink1\"", StringComparison.OrdinalIgnoreCase) >= 0)

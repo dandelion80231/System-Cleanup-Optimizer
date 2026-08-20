@@ -171,11 +171,11 @@ namespace CpqSystemTool
                     RunInBg(sharedLog, l =>
                     {
                         var list = RestorePoint.List(l);
-                        Dispatcher.Invoke(() =>
+                        try { Dispatcher.Invoke(() =>
                         {
                             listBox.Items.Clear();
                             foreach (var r in list) listBox.Items.Add(r);
-                        });
+                        }); } catch { /* 窗口已关闭，忽略 */ }
                     }, "列表已刷新", () => pb.Visibility = Visibility.Collapsed);
                 }, 110),
                 Btn("⏪ 还原选中", false, () =>

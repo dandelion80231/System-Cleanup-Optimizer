@@ -4,6 +4,18 @@
 
 ---
 
+## [v1.12] - 2026-08-21
+
+> 相对 v1.11 的源码变更：继续清理技术债——统一 4 套下载实现、封死后台线程 Dispatcher 关窗崩溃面、消除全部 sync-over-async（`.Result`）；例行版本提升 v1.11 → v1.12。
+
+### ♻️ 重构 / 清理
+- **下载实现统一（`Helpers/Downloader.cs`）**：此前 4 套重复的 HTTP 下载逻辑（About 代理回退下载 / AppxManager 断点续传 / WebView2ProbeDeps 进度下载 / OfficeInstall 过时 `WebClient`）合并为单一 `Downloader.DownloadAsync`——支持重试、进度回调、请求级超时（CTS）、代理回退、断点续传（Range）、UA 注入；后续修下载类 bug 只需改一处，行为一致。
+- **后台线程 Dispatcher 调用全部加兜底**：全项目甄别 35 处 `Dispatcher.Invoke/BeginInvoke`，其中 32 处后台线程调用（下载进度回调、Appx/软件页 ThreadPool 加载、Defender/防火墙状态刷新、还原点列表、内存分析、系统事件线程等）统一补 `try { } catch { /* 窗口已关闭，忽略 */ }`——后台任务运行中关闭窗口不再因 Dispatcher 关停抛未处理异常导致进程终止（延续 v1.11 的 RunInBg 修复，封死剩余面）。
+- **消除全部 `.Result`（sync-over-async）**：9 处阻塞等待全部改造——ChocolateyResolver 解析链、SoftwareInstall 下载/安装/页面解析链真 async 化（`TryResolveAsync`/`DownloadAsync`/`ResolveAsync`/`InstallAsync`），ProbeBrowserHost 已 await 完成取值改 `GetAwaiter().GetResult()`；全项目 `.Result` 清零，消除死锁隐患。
+- **版本提升 v1.11 → v1.12**：同步 csproj（1.0.12.0 ×3）/ `APP_VERSION`（`v1.12`）/ 交付文件名 `系统清理与优化工具_v1.12.exe`。
+
+---
+
 ## [v1.11] - 2026-08-20
 
 > 相对 v1.10 的源码变更：三轮代码审查（结构 / 性能 / 缺陷）驱动的一次全面优化——修复 6 类真实缺陷、5 项性能提速、5 项结构与冗余重构；例行版本提升 v1.10 → v1.11。

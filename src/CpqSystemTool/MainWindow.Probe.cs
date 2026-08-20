@@ -365,14 +365,14 @@ namespace CpqSystemTool
 
             // 不再自动回退 Node：由用户选择，避免在用户已删 Node 测试 WebView2 时强行跑安装脚本。
             bool switchToNode = false;
-            Dispatcher.Invoke(new Action(() =>
+            try { Dispatcher.Invoke(new Action(() =>
             {
                 var result = MessageBox.Show(this,
                     "WebView2 探针无法使用（详见日志），是否切换到 Node + Playwright 方案继续抓取？\n\n" +
                     "选「是」将安装/使用本地 Node 依赖；选「否」可在「维护工具 → 管理依赖 → 安装/升级/修复 WebView2 Runtime」中修复。",
                     "WebView2 不可用", MessageBoxButton.YesNo, MessageBoxImage.Question);
                 switchToNode = result == MessageBoxResult.Yes;
-            }));
+            })); } catch { /* 窗口已关闭，忽略 */ }
 
             if (switchToNode)
             {

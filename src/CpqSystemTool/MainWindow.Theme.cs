@@ -440,7 +440,7 @@ namespace CpqSystemTool
             Microsoft.Win32.SystemEvents.UserPreferenceChanged += (s, e) =>
             {
                 if (_userOverrodeTheme) return; // 用户手动选过，不跟随
-                Dispatcher.BeginInvoke(new Action(() =>
+                try { Dispatcher.BeginInvoke(new Action(() =>
                 {
                     bool systemLight = DetectSystemLightTheme();
                     bool newDark = !systemLight;
@@ -452,7 +452,7 @@ namespace CpqSystemTool
                         InvalidateDriverStoreCache(); // 主题变更后重建驱动清理页
                         Navigate(_activeNavKey);
                     }
-                }));
+                })); } catch { /* 窗口已关闭，忽略 */ }
             };
         }
 

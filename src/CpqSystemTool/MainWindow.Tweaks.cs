@@ -258,7 +258,7 @@ namespace CpqSystemTool
                 for (int i = 0; i < ids.Count; i += chunkSize)
                 {
                     var capturedChunk = ids.Skip(i).Take(chunkSize).ToList();
-                    Dispatcher.BeginInvoke(new Action(() =>
+                    try { Dispatcher.BeginInvoke(new Action(() =>
                     {
                         foreach (var id in capturedChunk)
                         {
@@ -270,10 +270,10 @@ namespace CpqSystemTool
                                 SyncTweakTextColor(id);
                             }
                         }
-                    }), System.Windows.Threading.DispatcherPriority.Background);
+                    }), System.Windows.Threading.DispatcherPriority.Background); } catch { /* 窗口已关闭，忽略 */ }
                 }
 
-                Dispatcher.BeginInvoke(new Action(() =>
+                try { Dispatcher.BeginInvoke(new Action(() =>
                 {
                     // 状态读取完成后，建立「当前已优化」集合，用于右侧列表显示 (已优化)
                     TweaksOptimized = new HashSet<string>(
@@ -291,7 +291,7 @@ namespace CpqSystemTool
                         SetTweaksOutput("当前没有检测到已优化项目。可点击「基本优化」或「深度优化」选择方案，然后点「开始优化」应用。");
                         SetTweaksStatus("当前没有已优化项目");
                     }
-                }), System.Windows.Threading.DispatcherPriority.Background);
+                }), System.Windows.Threading.DispatcherPriority.Background); } catch { /* 窗口已关闭，忽略 */ }
             });
 
             treeScroll.Content = treePanel;
@@ -637,7 +637,7 @@ namespace CpqSystemTool
                     }
                     catch { fail++; }
                 }
-                Dispatcher.Invoke(() =>
+                try { Dispatcher.Invoke(() =>
                 {
                     pb.Visibility = Visibility.Collapsed;
                     if (TweaksOptimized == null)
@@ -662,7 +662,7 @@ namespace CpqSystemTool
                     UpdateSelectedPanel();
                     if (sb.Length > 0) TweaksOutputLine.Text = sb.ToString().Trim();
                     SetStatus($"{label}: {ok}项完成, {fail}项失败");
-                });
+                }); } catch { /* 窗口已关闭，忽略 */ }
             });
         }
 

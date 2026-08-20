@@ -466,35 +466,6 @@ namespace CpqSystemTool
             throw new System.Exception("所有网络方式均失败：" + (last?.Message ?? "未知错误"), last);
         }
 
-        /// <summary>依次尝试多种代理方式下载文件，任一成功即返回；全部失败抛出汇总异常。</summary>
-        private static async System.Threading.Tasks.Task DownloadFileWithProxyFallback(string url, string fileName, string tag, System.Windows.Threading.Dispatcher disp, System.Action<int> onProgress)
-        {
-            System.Exception last = null;
-            foreach (var proxy in GetProxyCandidates())
-            {
-                try
-                {
-                    using (var wc = new WebClientWithTimeout { TimeoutMs = 120000, Proxy = proxy })
-                    {
-                        wc.Headers.Add("User-Agent", "CpqSystemTool");
-                        wc.DownloadProgressChanged += (s, e) => onProgress?.Invoke(e.ProgressPercentage);
-                        var tcs = new System.Threading.Tasks.TaskCompletionSource<object>();
-                        wc.DownloadFileCompleted += (s, e) =>
-                        {
-                            if (e.Error != null) tcs.TrySetException(e.Error);
-                            else if (e.Cancelled) tcs.TrySetCanceled();
-                            else tcs.TrySetResult(null);
-                        };
-                        wc.DownloadFileAsync(new Uri(url), fileName);
-                        await tcs.Task;
-                        return;
-                    }
-                }
-                catch (System.Exception ex) { last = ex; }
-            }
-            throw new System.Exception("所有网络方式均失败：" + (last?.Message ?? "未知错误"), last);
-        }
-
         /// <summary>检查官网 version.json 是否有新版本，结果经 Dispatcher 回到 UI 线程写入状态栏。</summary>
         private void CheckForUpdate()
         {
@@ -540,16 +511,24 @@ namespace CpqSystemTool
         }
 
         /// <summary>回到 UI 线程写入状态栏文本。</summary>
-        private void SetStatusUi(string message) => Dispatcher.Invoke(() => SetStatus(message));
+        private void SetStatusUi(string message)
+        {
+            try { Dispatcher.Invoke(() => SetStatus(message)); }
+            catch { /* 窗口已关闭，忽略 */ }
+        }
 
         /// <summary>回到 UI 线程写入状态栏文本，并同步「下载更新」按钮可见性。</summary>
         private void SetStatusUi(string message, Visibility downloadBtnVisibility)
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                SetStatus(message);
-                if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = downloadBtnVisibility;
-            });
+                Dispatcher.Invoke(() =>
+                {
+                    SetStatus(message);
+                    if (_aboutDownloadUpdateBtn != null) _aboutDownloadUpdateBtn.Visibility = downloadBtnVisibility;
+                });
+            }
+            catch { /* 窗口已关闭，忽略 */ }
         }
 
         /// <summary>用户点击「下载更新」后：弹出 SaveFileDialog 自选保存路径，然后从官网下载对应版本 exe。</summary>
@@ -581,12 +560,23 @@ namespace CpqSystemTool
                 if (string.IsNullOrEmpty(url)) url = OfficialSiteRoot + fileName;
                 SetStatus($"正在下载 {tag} …");
                 var disp = Dispatcher;
+                string downloadErr = null;
                 try
                 {
-                    await DownloadFileWithProxyFallback(url, dlg.FileName, tag, disp, pct =>
+                    // 统一走 Downloader：保留原代理回退顺序（系统→直连→Watt Toolkit）、进度回调与「保存后提示」行为
+                    bool ok = await Downloader.DownloadAsync(url, dlg.FileName,
+                        log: msg => { if (msg != null) downloadErr = msg; },
+                        progress: pct => { try { disp.Invoke(() => SetStatus($"正在下载 {tag}：{pct}%")); } catch { /* 窗口已关闭，忽略 */ } },
+                        maxAttempts: 1,          // 与原实现一致：每个代理各试一次（共 3 个候选）
+                        timeoutMs: 120000,
+                        readTimeoutMs: 300000,   // 等价原 WebClient 默认 ReadWriteTimeout（5 分钟无数据才断）
+                        useProxyFallback: true,
+                        userAgent: "CpqSystemTool");
+                    if (!ok)
                     {
-                        disp.Invoke(() => SetStatus($"正在下载 {tag}：{pct}%"));
-                    });
+                        SetStatus($"下载失败：{downloadErr ?? "未知错误"}");
+                        return;
+                    }
                     SetStatus($"新版本已保存：{dlg.FileName}");
                     if (MessageBox.Show("下载完成，是否打开所在文件夹？", "下载完成", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
                     {

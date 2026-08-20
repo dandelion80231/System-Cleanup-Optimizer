@@ -738,10 +738,11 @@ namespace CpqSystemTool
                 // 真实初始化校验：复用 InitAsync（离屏窗口渲染 + EnsureCoreWebView2Async），
                 // 给足超时（15s）容纳版本预检与浏览器进程初始化，避免把“可用”误判为“超时未就绪”。
                 // 下载百分比进度：经 Dispatcher 回到 UI 线程写入日志框（\r 前缀原地刷新最后一行）。
-                Action<int> dlProgress = p => Dispatcher.BeginInvoke(new Action(() =>
+                Action<int> dlProgress = p =>
                 {
-                    if (logBox != null) AppendOrReplaceLog(logBox, WebView2ProbeDeps.ProgressLine(p));
-                }));
+                    try { Dispatcher.BeginInvoke(new Action(() => { if (logBox != null) AppendOrReplaceLog(logBox, WebView2ProbeDeps.ProgressLine(p)); })); }
+                    catch { /* 窗口已关闭，忽略 */ }
+                };
                 var (wvReady, wvError) = await ProbeBrowserHost.CheckWebView2ReadyAsync(TimeSpan.FromSeconds(15), null, dlProgress);
 
                 if (nodeHeader != null)

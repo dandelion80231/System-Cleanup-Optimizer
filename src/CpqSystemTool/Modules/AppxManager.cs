@@ -385,9 +385,13 @@ namespace CpqSystemTool
                 if (string.IsNullOrEmpty(url)) { log("  [!!] 未找到可下载的 bundle（可能付费/加密应用）"); return false; }
                 log("  [OK] 找到: " + fname);
 
-                // 3. 下载（断点续传，最多 3 次尝试）
+                // 3. 下载（统一走 Downloader，保留断点续传 + 重试；调用点均在后台线程，GetAwaiter().GetResult() 安全）
                 string dest = Path.Combine(Path.GetTempPath(), "cpq_appx_" + Guid.NewGuid().ToString("N").Substring(0, 8) + Path.GetExtension(fname));
-                if (!DownloadWithResume(url, dest, log)) { log("  [!!] 下载失败"); TryDelete(dest); return false; }
+                bool downloaded = Downloader.DownloadAsync(url, dest, log,
+                    maxAttempts: 3, timeoutMs: 60000, readTimeoutMs: 60000,
+                    resume: true, retryDelayMs: 5000,
+                    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)").GetAwaiter().GetResult();
+                if (!downloaded) { log("  [!!] 下载失败"); TryDelete(dest); return false; }
 
                 // 4. Add-AppxPackage 安装（当前用户；admin 下默认安装到当前用户）
                 // ★ 不能用退出码判断成败：powershell.exe 对纯 cmdlet 恒返回 0（Exec.RunPS 取进程 ExitCode），
@@ -424,48 +428,6 @@ namespace CpqSystemTool
             using (var resp = (HttpWebResponse)req.GetResponse())
             using (var reader = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
                 return reader.ReadToEnd();
-        }
-
-        /// <summary>
-        /// 断点续传下载器：微软 CDN 支持 Range（实测 HTTP 206 + Accept-Ranges: bytes）。
-        /// 每失败一次，下次从已下载字节数继续；服务器忽略 Range 时自动从头覆盖。
-        /// </summary>
-        private static bool DownloadWithResume(string url, string dest, Action<string> log, int maxAttempts = 3)
-        {
-            for (int attempt = 1; attempt <= maxAttempts; attempt++)
-            {
-                try
-                {
-                    long existing = File.Exists(dest) ? new FileInfo(dest).Length : 0;
-                    var req = (HttpWebRequest)WebRequest.Create(url);
-                    req.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)";
-                    req.Timeout = 60000;          // 连接超时
-                    req.ReadWriteTimeout = 60000;  // 流读取超时（60s 无数据才断）
-                    req.AllowAutoRedirect = true;
-                    if (existing > 0) req.AddRange(existing);  // 从断点续传
-                    using (var resp = (HttpWebResponse)req.GetResponse())
-                    {
-                        // 服务器返回 206 且本地已有部分 → 追加；否则（200 全量）→ 覆盖
-                        bool append = (resp.StatusCode == HttpStatusCode.PartialContent) && existing > 0;
-                        using (var src = resp.GetResponseStream())
-                        using (var dst = new FileStream(dest, append ? FileMode.Append : FileMode.Create, FileAccess.Write))
-                        {
-                            byte[] buf = new byte[65536];
-                            int n;
-                            while ((n = src.Read(buf, 0, buf.Length)) > 0) dst.Write(buf, 0, n);
-                        }
-                    }
-                    long total = new FileInfo(dest).Length;
-                    log("  [下载] 完成 " + total + " 字节" + (existing > 0 ? "（续传 " + existing + " + 新 " + (total - existing) + "）" : ""));
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    log("  [下载] 第 " + attempt + " 次失败: " + ex.Message);
-                    if (attempt < maxAttempts) { log("  [下载] 5 秒后从断点续传重试..."); System.Threading.Thread.Sleep(5000); }
-                }
-            }
-            return false;
         }
 
         /// <summary>按 StoreId 检查包是否已安装（优先按 Catalog 的 PackageFamilyName 精确匹配，否则按 Name 模糊）。

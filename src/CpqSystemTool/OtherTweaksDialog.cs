@@ -343,7 +343,7 @@ namespace CpqSystemTool
                             if (wasOn)
                             {
                                 apply(false);
-                                Dispatcher.Invoke(() =>
+                                try { Dispatcher.Invoke(() =>
                                 {
                                     stateTag.Text = "[已禁用]";
                                     stateTag.Foreground = _danger;
@@ -351,12 +351,12 @@ namespace CpqSystemTool
                                     btn.Foreground = _fg;
                                     initial = false;
                                     btn.IsEnabled = true;
-                                });
+                                }); } catch { /* 窗口已关闭，忽略 */ }
                             }
                             else
                             {
                                 apply(true);
-                                Dispatcher.Invoke(() =>
+                                try { Dispatcher.Invoke(() =>
                                 {
                                     stateTag.Text = "[已启用]";
                                     stateTag.Foreground = _success;
@@ -364,11 +364,11 @@ namespace CpqSystemTool
                                     btn.Foreground = _fg;
                                     initial = true;
                                     btn.IsEnabled = true;
-                                });
+                                }); } catch { /* 窗口已关闭，忽略 */ }
                             }
                         }
                         catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); 
-                            Dispatcher.Invoke(() => { btn.Content = "❌ 失败"; btn.IsEnabled = true; });
+                            try { Dispatcher.Invoke(() => { btn.Content = "❌ 失败"; btn.IsEnabled = true; }); } catch { /* 窗口已关闭，忽略 */ }
                         }
                     });
                 }

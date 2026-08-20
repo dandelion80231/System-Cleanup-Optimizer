@@ -466,12 +466,12 @@ namespace CpqSystemTool
             DriverStore.MarkOldVersions(list);
             DriverStore.DetectInUse(list, logf);
             DriverStore.EstimateSizes(list, logf);
-            Dispatcher.Invoke(() =>
+            try { Dispatcher.Invoke(() =>
             {
                 _drivers = list;
                 ApplyGrouping();
                 UpdateSelStatus();
-            });
+            }); } catch { /* 窗口已关闭，忽略 */ }
         }
 
         /// <summary>按当前分组方式应用到 _drivers，并设置为 DataGrid 数据源。</summary>

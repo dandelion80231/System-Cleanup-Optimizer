@@ -266,7 +266,7 @@ namespace CpqSystemTool
                     {
                         // 不在日志输出调试信息（_=>{} 吃掉后端日志），只更新 countLbl + 填充卡片
                         var items = AppxManager.ListCatalogWithStatus(_ => {});
-                        Dispatcher.Invoke(() =>
+                        try { Dispatcher.Invoke(() =>
                         {
                             int showCount = 0;
                             foreach (var it in items)
@@ -288,12 +288,12 @@ namespace CpqSystemTool
                                 }
                                 else countLbl.Foreground = _textDim;
                             }
-                        });
+                        }); } catch { /* 窗口已关闭，忽略 */ }
                     }
                     else
                     {
                         var items = AppxManager.ListProvisioned(_ => {});
-                        Dispatcher.Invoke(() =>
+                        try { Dispatcher.Invoke(() =>
                         {
                             int showCount = 0;
                             foreach (var it in items)
@@ -305,10 +305,10 @@ namespace CpqSystemTool
                             }
                             countLbl.Text = $"[OK] 共 {items.Count} 个系统预装应用";
                             if (!string.IsNullOrEmpty(q)) countLbl.Text += $" · 筛选: {showCount}";
-                        });
+                        }); } catch { /* 窗口已关闭，忽略 */ }
                     }
                 }
-                catch (Exception ex) { Dispatcher.Invoke(() => log.AppendText("[!] " + ex.Message + "\r\n")); }
+                catch (Exception ex) { try { Dispatcher.Invoke(() => log.AppendText("[!] " + ex.Message + "\r\n")); } catch { /* 窗口已关闭，忽略 */ } }
             });
         }
 
@@ -391,7 +391,7 @@ namespace CpqSystemTool
                         nowInstalled = it != null && !string.IsNullOrEmpty(it.FullName);
                     }
                     catch { }
-                    Dispatcher.Invoke(() =>
+                    try { Dispatcher.Invoke(() =>
                     {
                         var parent = (Panel)card.Parent;
                         if (parent != null)
@@ -405,7 +405,7 @@ namespace CpqSystemTool
                             }
                         }
                         SetPageContent(BuildAppx()); // 兜底：找不到容器时重建整页
-                    });
+                    }); } catch { /* 窗口已关闭，忽略 */ }
                 });
             };
 
@@ -474,7 +474,7 @@ namespace CpqSystemTool
                 RunInBg(log, l =>
                 {
                     var items = AppxManager.ListInstalled(l);
-                    Dispatcher.Invoke(() =>
+                    try { Dispatcher.Invoke(() =>
                     {
                         listStack.Children.Clear();
                         rowItems.Clear();
@@ -543,7 +543,7 @@ namespace CpqSystemTool
                             rowItems.Add(Tuple.Create(chk, rowBorder, it));
                         }
                         countLbl.Text = $"[OK] 共 {items.Count} 个应用包";
-                    });
+                    }); } catch { /* 窗口已关闭，忽略 */ }
                 }, "列表已刷新", () => pb.Visibility = Visibility.Collapsed);
             }
 

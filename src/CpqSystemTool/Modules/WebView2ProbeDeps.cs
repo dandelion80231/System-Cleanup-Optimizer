@@ -1,9 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.IO.Compression;
-using System.Net.Http;
 using System.Reflection;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace CpqSystemTool
@@ -137,49 +135,15 @@ namespace CpqSystemTool
 
         /// <summary>
         /// 异步下载 nupkg 到临时文件，并在下载过程中通过 progress 回调报告百分比（0–100）。
-        /// 使用 Task.Run 包裹异步 HttpClient 调用，以脱离任何可能存在的 SynchronizationContext
-        /// （避免在 UI 线程上 sync-over-async 死锁），同时仍由 HttpClient 自动使用系统代理。
-        /// 方法本身返回 Task，调用方 await 即可，不再同步阻塞其线程。
+        /// 内部统一走 Downloader（基于 HttpClients.Default 单例 + 请求级 CTS 超时），进度语义与原实现一致；
+        /// 失败返回 false 时抛异常，由外层 EnsureWebView2ProbeDepsAsync 的 try/catch 统一报告并回退 Node 方案。
         /// </summary>
         private static async Task DownloadFileWithClientAsync(string url, string destPath, Action<string> log, Action<int> progress)
         {
-            await Task.Run(async () =>
-            {
-                using (var cts = new CancellationTokenSource(DownloadTimeoutMs)) // 原 client.Timeout=DownloadTimeoutMs → 请求级超时（单例不改全局 Timeout）
-                {
-                    var client = HttpClients.Default; // 进程内共享单例复用（B4）：避免每次 new/dispose 造成 socket TIME_WAIT 堆积
-                    // ResponseHeadersRead：先拿到响应头（含 Content-Length），再边读边计字节，才能算百分比。
-                    using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false))
-                    {
-                        response.EnsureSuccessStatusCode();
-                        long total = response.Content.Headers.ContentLength ?? -1;
-                        using (var src = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
-                        using (var dst = File.Create(destPath))
-                        {
-                            var buffer = new byte[8192];
-                            long downloaded = 0;
-                            int lastPercent = -1;
-                            int read;
-                            while ((read = await src.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
-                            {
-                                await dst.WriteAsync(buffer, 0, read).ConfigureAwait(false);
-                                downloaded += read;
-                                if (total > 0)
-                                {
-                                    int pct = (int)(downloaded * 100 / total);
-                                    if (pct != lastPercent)
-                                    {
-                                        lastPercent = pct;
-                                        progress?.Invoke(pct);
-                                    }
-                                }
-                            }
-                            // 仅在确知总长度时补发 100% 收尾信号（无 Content-Length 时本就不显示百分比，不发以免误导）。
-                            if (total > 0) progress?.Invoke(100);
-                        }
-                    }
-                }
-            }).ConfigureAwait(false);
+            bool ok = await Downloader.DownloadAsync(url, destPath, log, progress,
+                maxAttempts: 1, timeoutMs: DownloadTimeoutMs).ConfigureAwait(false);
+            if (!ok)
+                throw new IOException("下载 WebView2 依赖失败（详见日志）");
         }
 
         private static void ExtractEntries(string nupkgPath, string exeDir, Action<string> log)

@@ -95,7 +95,9 @@ namespace CpqSystemTool
                 var verTask = Task.Run(() => CoreWebView2Environment.GetAvailableBrowserVersionString(null));
                 var completedVer = await Task.WhenAny(verTask, Task.Delay(RuntimeVersionCheckTimeout));
                 if (completedVer == verTask)
-                    diag?.Invoke("[WebView2] 检测到系统 Runtime 版本：" + verTask.Result);
+                    // verTask 已被 WhenAny 确认完成，此处读取不阻塞（非 sync-over-async）；
+                    // GetAwaiter().GetResult() 保留原始异常语义、避免 AggregateException 包装。
+                    diag?.Invoke("[WebView2] 检测到系统 Runtime 版本：" + verTask.GetAwaiter().GetResult());
                 else
                     diag?.Invoke("[WebView2] 检测 Runtime 版本超时（5 秒），可能已损坏或无法访问");
             }

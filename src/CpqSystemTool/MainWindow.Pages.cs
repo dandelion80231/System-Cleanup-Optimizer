@@ -219,7 +219,7 @@ namespace CpqSystemTool
                         try { dis = ServiceOptimizer.IsDisabled(s.Name); } catch { dis = false; }
                         states[s.Name] = dis;
                     });
-                    Dispatcher.Invoke(() =>
+                    try { Dispatcher.Invoke(() =>
                     {
                         foreach (var s in ServiceOptimizer.All)
                         {
@@ -237,7 +237,7 @@ namespace CpqSystemTool
                             };
                         }
                         pb.Visibility = Visibility.Collapsed;
-                    });
+                    }); } catch { /* 窗口已关闭，忽略 */ }
                 }, "服务状态已加载");
             });
 
@@ -676,12 +676,12 @@ namespace CpqSystemTool
                 RunInBg(null, l =>
                 {
                     var d = SystemInfo.CollectDual();
-                    Dispatcher.Invoke(() =>
+                    try { Dispatcher.Invoke(() =>
                     {
                         leftInfoBox.Clear(); leftInfoBox.AppendText(d.Left);
                         rightInfoBox.Clear(); rightInfoBox.AppendText(d.Right);
                         _lastSystemInfo = d.Left + "\r\n" + d.Right;
-                    });
+                    }); } catch { /* 窗口已关闭，忽略 */ }
                 }, "信息采集完成", () => pb.Visibility = Visibility.Collapsed);
             }));
             btnBar.Margin = new Thickness(0, 0, 0, 10);
@@ -773,12 +773,12 @@ namespace CpqSystemTool
                 RunInBg(null, l =>
                 {
                     var d = SystemInfo.CollectDual();
-                    Dispatcher.Invoke(() =>
+                    try { Dispatcher.Invoke(() =>
                     {
                         leftInfoBox.AppendText(d.Left);
                         rightInfoBox.AppendText(d.Right);
                         _lastSystemInfo = d.Left + "\r\n" + d.Right;
-                    });
+                    }); } catch { /* 窗口已关闭，忽略 */ }
                 }, "信息采集完成", null);
             });
 

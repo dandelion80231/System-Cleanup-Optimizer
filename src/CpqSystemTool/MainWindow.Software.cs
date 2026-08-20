@@ -75,7 +75,7 @@ namespace CpqSystemTool
                 try
                 {
                     var allSw = SoftwareInstall.GetAllStatus();
-                    Dispatcher.Invoke(() =>
+                    try { Dispatcher.Invoke(() =>
                     {
                         // 移除占位
                         root.Children.Remove(loadingBorder);
@@ -340,21 +340,21 @@ namespace CpqSystemTool
                                 try
                                 {
                                     var list = SoftwareInstall.GetAllStatus();
-                                    Dispatcher.Invoke(() =>
+                                    try { Dispatcher.Invoke(() =>
                                     {
                                         foreach (var info in list) RefreshRow(info.Id, info);
                                         pb.Visibility = Visibility.Collapsed;
                                         onComplete?.Invoke();
-                                    });
+                                    }); } catch { /* 窗口已关闭，忽略 */ }
                                 }
                                 catch (Exception ex)
                                 {
-                                    Dispatcher.Invoke(() =>
+                                    try { Dispatcher.Invoke(() =>
                                     {
                                         pb.Visibility = Visibility.Collapsed;
                                         log.AppendText("[!] 刷新列表失败: " + ex.Message + "\r\n");
                                         onComplete?.Invoke();
-                                    });
+                                    }); } catch { /* 窗口已关闭，忽略 */ }
                                 }
                             });
                         }
@@ -484,7 +484,10 @@ namespace CpqSystemTool
                                         customDir = k?.GetValue("InstallPath") as string;
                                 }
                                 catch { }
-                                RunInBg(log, l => SoftwareInstall.Install(sw.Id, l, customDir),
+                                // InstallAsync 为真异步（内部下载/解析不再阻塞）；此处后台线程同步等待其完成：
+                                // 无 SynchronizationContext，GetAwaiter().GetResult() 无死锁且异常同步传播（RunInBg 的 try/catch 可捕获，
+                                // 不用 async void lambda —— 其异常会逃逸到 ThreadPool 触发 UnhandledException 崩溃）。
+                                RunInBg(log, l => SoftwareInstall.InstallAsync(sw.Id, l, customDir).GetAwaiter().GetResult(),
                                     (sw.Installed ? "修复完成: " : "安装完成: ") + sw.Name, () => { RefreshAllRows(); });
                             }, 90);
                             instBtn.MinHeight = 26;
@@ -592,7 +595,8 @@ namespace CpqSystemTool
                                 foreach (var sw in selected)
                                 {
                                     if (sw.Installed) { l("  [SKIP] " + sw.Name + " 已安装"); continue; }
-                                    SoftwareInstall.Install(sw.Id, l, customDir);
+                                    // 后台线程同步等待异步安装（无 SyncContext 无死锁；异常同步传播到 RunInBg 兜底）
+                                    SoftwareInstall.InstallAsync(sw.Id, l, customDir).GetAwaiter().GetResult();
                                 }
                             }, $"已安装 {selected.Count(s => !s.Installed)}/{selected.Count} 款",
                             () => { RefreshAllRows(); });
@@ -772,7 +776,7 @@ namespace CpqSystemTool
                         // 稳健布局：root.MaxHeight 绑定到 ContentArea.ViewportHeight（自动跟随初始+缩放，规避 vp=0 跳过）
                         // listScroll 改由 root row2(Star) → listCard(Border Stretch) 约束，自动填满+滚动，无需手工 MaxHeight
                         BindRootHeightToViewport(root);
-                    });
+                    }); } catch { /* 窗口已关闭，忽略 */ }
                 }
                 catch { /* 静默 */ }
             });

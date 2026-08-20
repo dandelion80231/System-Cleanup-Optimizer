@@ -314,7 +314,7 @@ namespace CpqSystemTool
                                         _customBgDarkPath = dlg.FileName;
                                         SaveBackgroundSettings();
                                         l("[OK] WebP 解码器已安装，背景已自动应用");
-                                        Dispatcher.Invoke(() => { refreshThumbs(); ApplyShellColors(); });
+                                        try { Dispatcher.Invoke(() => { refreshThumbs(); ApplyShellColors(); }); } catch { /* 窗口已关闭，忽略 */ }
                                         return;
                                     }
                                     l("[FAIL] 解码器已安装但该图片仍无法加载（文件可能损坏）");
@@ -423,7 +423,7 @@ namespace CpqSystemTool
                                         _customBgLightPath = dlg.FileName;
                                         SaveBackgroundSettings();
                                         l("[OK] WebP 解码器已安装，背景已自动应用");
-                                        Dispatcher.Invoke(() => { refreshThumbs(); ApplyShellColors(); });
+                                        try { Dispatcher.Invoke(() => { refreshThumbs(); ApplyShellColors(); }); } catch { /* 窗口已关闭，忽略 */ }
                                         return;
                                     }
                                     l("[FAIL] 解码器已安装但该图片仍无法加载（文件可能损坏）");

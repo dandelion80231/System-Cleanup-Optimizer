@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using System.Net;
 using System.Text;
 
 namespace CpqSystemTool
@@ -78,24 +77,27 @@ namespace CpqSystemTool
             log("下载 Office 部署工具 (ODT) setup.exe ...");
             // 官方零售通道 setup.exe 直链（Office Tool Plus 同款回退地址）
             string url = "https://officecdn.microsoft.com/pr/ws01/Office/Setup.exe";
+            bool downloaded = false, setupOk = false;
             try
             {
-                using (var wc = new WebClient())
-                {
-                    wc.Headers.Add("User-Agent", "Mozilla/5.0");
-                    wc.DownloadFile(url, setup);
-                }
+                // 统一走 Downloader（阻塞式，等价原 WebClient.DownloadFile；失败原因经 log 输出）
+                downloaded = Downloader.DownloadAsync(url, setup, log,
+                    maxAttempts: 1,
+                    timeoutMs: 100000,      // 等价 WebClient 默认 100 秒超时
+                    userAgent: "Mozilla/5.0").GetAwaiter().GetResult();
                 // 安全加固：下载后校验文件存在且大小合理（非空），避免后续对损坏/截断的 setup.exe 静默执行
-                bool setupOk = false;
-                try { setupOk = File.Exists(setup) && new FileInfo(setup).Length > 100000; }
-                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
-                if (setupOk) return setup;
-                log("  [!] 下载的 setup.exe 无效");
+                if (downloaded)
+                {
+                    try { setupOk = File.Exists(setup) && new FileInfo(setup).Length > 100000; }
+                    catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); setupOk = false; }
+                }
             }
             catch (Exception ex)
             {
                 log("  [!] 下载失败: " + ex.Message);
             }
+            if (setupOk) return setup;
+            if (downloaded) log("  [!] 下载的 setup.exe 无效");
             log("  [提示] 请手动下载 Office 部署工具：https://www.microsoft.com/en-us/download/details.aspx?id=49117");
             log("        将 setup.exe 放到：" + dir);
             return "";
