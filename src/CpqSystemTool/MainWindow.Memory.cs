@@ -22,8 +22,27 @@ namespace CpqSystemTool
         private static readonly SolidColorBrush MemBrushFree = new SolidColorBrush(Color.FromRgb(0x27, 0xAE, 0x60));     // 绿（空闲+零页）
         private static readonly SolidColorBrush MemBrushUnknown = new SolidColorBrush(Color.FromRgb(0x9E, 0xA3, 0xA8));   // 灰（数据不可用占位）
 
+        // ---- 整页缓存（同 M1 常用软件页模式）：首次构建完成后缓存整页外壳，二次进页复用并仅重跑分析刷新数据 ----
+        private UIElement _cachedMemoryPage;
+        private string _memoryCacheKey;
+        private bool _memoryCacheDark;
+        private Action _memoryRefresh;
+
         private UIElement BuildMemory()
         {
+            // 记录本次构建时主题：缓存仅在主题一致时命中（主题切换会重建当前页，避免复用旧主题刷子的页面）。
+            bool buildDark = _isDarkMode;
+            // 缓存命中且主题一致 → 复用已构建页面外壳，仅复位动态状态并重跑内存分析（数据保持最新）。
+            if (_cachedMemoryPage != null && _memoryCacheDark == buildDark && _memoryCacheKey != null)
+            {
+                _memoryRefresh?.Invoke();
+                return _cachedMemoryPage;
+            }
+            // 主题变化 → 丢弃旧缓存，走完整重建。
+            _cachedMemoryPage = null;
+            _memoryRefresh = null;
+            _memoryCacheKey = null;
+
             var root = new StackPanel();
             root.Children.Add(Header("内存工具", "只读分析物理内存使用（使用中 / 备用 / 已修改 / 空闲），镜像 RAMMap 视图；并提供可选的内存优化（清备用列表 / 空工作集）。优化项为中风险且需管理员，默认收起。"));
 
@@ -248,6 +267,24 @@ namespace CpqSystemTool
 
             // 初次分析（后台拉取，不阻塞 UI）
             DoMemoryAnalyze(pb, applyUi);
+
+            // ---- 页面级缓存（同 M1 常用软件页模式）：首次构建完成后缓存整页；再次进入复用并仅复位动态状态 + 重跑分析 ----
+            // 仅在构建期间主题未变时写入缓存（避免把混入旧主题刷子的页面标记为可复用）。
+            if (buildDark == _isDarkMode)
+            {
+                _cachedMemoryPage = root;
+                _memoryCacheKey = "memory";
+                _memoryCacheDark = buildDark;
+                _memoryRefresh = () =>
+                {
+                    // 复位动态状态（与旧版每次新建页面行为一致）：优化卡片收起、清空优化日志、进度条隐藏。
+                    exp.IsExpanded = false;
+                    optLog.Clear();
+                    pb.Visibility = Visibility.Collapsed;
+                    // 重新触发原页面构建时的 AutoLoad 内存分析，保证二次进页内存数据最新。
+                    DoMemoryAnalyze(pb, applyUi);
+                };
+            }
 
             return root;
         }

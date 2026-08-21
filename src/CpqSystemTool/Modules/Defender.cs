@@ -33,42 +33,49 @@ namespace CpqSystemTool
         // ===================== 缓存：避免 BuildSecurity 启动 9 次 PowerShell =====================
         // 5 个 Get-MpPreference 值一次性取回缓存，Get* 全部读内存字段（O(1)），
         // 不再每次访问触发 powershell.exe 子进程。
-        private static int _cacheRealtime = 0, _cacheBehavior = 0, _cacheCloud = 2, _cacheSample = 1, _cacheTamper = 5;
-        private static bool _cacheValid = false;
+        private static volatile int _cacheRealtime = 0, _cacheBehavior = 0, _cacheCloud = 2, _cacheSample = 1, _cacheTamper = 5;
+        private static volatile bool _cacheValid = false;
+        private static readonly object _cacheLock = new object();
 
         /// <summary>一次 PowerShell 调用拿全部 5 个值，写入缓存。BuildSecurity 入口 + onDone 回调各调一次。</summary>
         public static void RefreshStatusCache()
         {
-            try
+            lock (_cacheLock)
             {
-                // PowerShell 用 -f 把 5 个值格式化成 pipe 分隔字符串，避开 ConvertTo-Json 的引号转义问题
-                var s = Exec.RunPowerShellGet(
-                    "$ErrorActionPreference='SilentlyContinue'; " +
-                    "$p = Get-MpPreference; " +
-                    "'{0}|{1}|{2}|{3}|{4}' -f " +
-                    "[int]$p.DisableRealtimeMonitoring, " +
-                    "[int]$p.DisableBehaviorMonitoring, " +
-                    "[int]$p.MAPSReporting, " +
-                    "[int]$p.SubmitSamplesConsent, " +
-                    "[int]$p.TamperProtection", null);
-                var t = s.Trim();
-                var parts = t.Split('|');
-                if (parts.Length >= 5)
+                try
                 {
-                    if (int.TryParse(parts[0], out int r)) _cacheRealtime = r;
-                    if (int.TryParse(parts[1], out int b)) _cacheBehavior = b;
-                    if (int.TryParse(parts[2], out int c)) _cacheCloud = c;
-                    if (int.TryParse(parts[3], out int sm)) _cacheSample = sm;
-                    if (int.TryParse(parts[4], out int tm)) _cacheTamper = tm;
-                    _cacheValid = true;
+                    // PowerShell 用 -f 把 5 个值格式化成 pipe 分隔字符串，避开 ConvertTo-Json 的引号转义问题
+                    var s = Exec.RunPowerShellGet(
+                        "$ErrorActionPreference='SilentlyContinue'; " +
+                        "$p = Get-MpPreference; " +
+                        "'{0}|{1}|{2}|{3}|{4}' -f " +
+                        "[int]$p.DisableRealtimeMonitoring, " +
+                        "[int]$p.DisableBehaviorMonitoring, " +
+                        "[int]$p.MAPSReporting, " +
+                        "[int]$p.SubmitSamplesConsent, " +
+                        "[int]$p.TamperProtection", null);
+                    var t = s.Trim();
+                    var parts = t.Split('|');
+                    if (parts.Length >= 5)
+                    {
+                        if (int.TryParse(parts[0], out int r)) _cacheRealtime = r;
+                        if (int.TryParse(parts[1], out int b)) _cacheBehavior = b;
+                        if (int.TryParse(parts[2], out int c)) _cacheCloud = c;
+                        if (int.TryParse(parts[3], out int sm)) _cacheSample = sm;
+                        if (int.TryParse(parts[4], out int tm)) _cacheTamper = tm;
+                        _cacheValid = true;
+                    }
                 }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  _cacheValid = false; }
             }
-            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  _cacheValid = false; }
         }
 
         private static void EnsureCache()
         {
-            if (!_cacheValid) RefreshStatusCache();
+            lock (_cacheLock)
+            {
+                if (!_cacheValid) RefreshStatusCache();
+            }
         }
 
         public static bool LastOperationFullSuccess { get; private set; } = true;

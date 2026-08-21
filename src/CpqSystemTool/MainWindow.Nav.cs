@@ -15,8 +15,8 @@ namespace CpqSystemTool
     public partial class MainWindow
     {
         // 软件版本号：左下角显示（同 BuildAbout 关于页更新日志）。
-        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.13.0 ↔ v1.13），两处保持一致。
-        private const string APP_VERSION = "v1.13";
+        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.14.0 ↔ v1.14），两处保持一致。
+        private const string APP_VERSION = "v1.14";
 
         private void BuildSidebar()
         {

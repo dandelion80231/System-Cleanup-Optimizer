@@ -161,8 +161,29 @@ namespace CpqSystemTool
         //  Module: 服务优化（保持不变）
         // =====================================================================
 
+        // 服务优化页缓存（与常用软件/Appx 页同款降级方案：整页实例缓存）。
+        // 服务列表构建时同步枚举，禁用状态由后台 AutoLoad 并行读取（每服务一次 sc qc，必须在后台线程）；
+        // 再次进页复用已构建面板，仅通过 _servicesRefresh 复位按钮并后台重刷状态，避免每次导航重建 ~20 行控件与重复枚举。
+        private UIElement _cachedServicesPage;
+        private string _servicesCacheKey;
+        private bool _servicesCacheDark;
+        private Action _servicesRefresh;
+
         private UIElement BuildServices()
         {
+            // 记录本次构建时主题：缓存仅在主题一致时命中（主题切换会重建当前页，避免复用旧主题刷子的页面）
+            bool buildDark = _isDarkMode;
+            // 缓存命中且主题一致 → 复用已构建页面，仅后台刷新服务状态
+            if (_cachedServicesPage != null && _servicesCacheDark == buildDark && _servicesCacheKey != null)
+            {
+                _servicesRefresh?.Invoke();
+                return _cachedServicesPage;
+            }
+            // 主题/状态变化 → 丢弃旧缓存，走完整重建
+            _cachedServicesPage = null;
+            _servicesRefresh = null;
+            _servicesCacheKey = null;
+
             var root = new StackPanel();
             root.Children.Add(Header("服务优化", "列出可安全禁用的后台服务，一键禁用/恢复。"));
 
@@ -208,38 +229,69 @@ namespace CpqSystemTool
 
             // 后台并行读取每个服务的禁用状态，再回到 UI 线程刷新按钮（绝不阻塞 UI 线程）
             // 静默加载，不显示进度条（避免切换页面时感觉慢）
-            AutoLoad(() =>
+            // 提取为局部方法：首次构建与缓存命中后的 _servicesRefresh 共用（保留原后台服务状态刷新逻辑，不重复）
+            void RefreshServiceStates()
             {
-                RunInBg(log, l =>
+                AutoLoad(() =>
                 {
-                    var states = new ConcurrentDictionary<string, bool>();
-                    Parallel.ForEach(ServiceOptimizer.All, new ParallelOptions { MaxDegreeOfParallelism = 6 }, s =>
+                    RunInBg(log, l =>
                     {
-                        bool dis = false;
-                        try { dis = ServiceOptimizer.IsDisabled(s.Name); } catch { dis = false; }
-                        states[s.Name] = dis;
-                    });
-                    try { Dispatcher.Invoke(() =>
-                    {
-                        foreach (var s in ServiceOptimizer.All)
+                        var states = new ConcurrentDictionary<string, bool>();
+                        Parallel.ForEach(ServiceOptimizer.All, new ParallelOptions { MaxDegreeOfParallelism = 6 }, s =>
                         {
-                            if (!btnByService.TryGetValue(s.Name, out var btn)) continue;
-                            bool dis = states.TryGetValue(s.Name, out var d) && d;
-                            var wasDis = dis;
-                            btn.Content = dis ? "恢复" : "禁用";
-                            btn.IsEnabled = true;
-                            btn.Click += (sender, e) =>
+                            bool dis = false;
+                            try { dis = ServiceOptimizer.IsDisabled(s.Name); } catch { dis = false; }
+                            states[s.Name] = dis;
+                        });
+                        try { Dispatcher.Invoke(() =>
+                        {
+                            foreach (var s in ServiceOptimizer.All)
                             {
-                                pb.Visibility = Visibility.Visible;
-                                RunInBg(log, l2 => ServiceOptimizer.Apply(s, !wasDis, l2),
-                                    wasDis ? "已恢复: " + s.Display : "已禁用: " + s.Display,
-                                    () => { pb.Visibility = Visibility.Collapsed; wasDis = !wasDis; btn.Content = wasDis ? "恢复" : "禁用"; });
-                            };
+                                if (!btnByService.TryGetValue(s.Name, out var btn)) continue;
+                                bool dis = states.TryGetValue(s.Name, out var d) && d;
+                                btn.Content = dis ? "恢复" : "禁用";
+                                btn.IsEnabled = true;
+                                // 仅首次挂 Click（btn.Tag 记录当前禁用态作去重标志），缓存复用重刷时不重复挂载，避免一次点击触发两次 Apply
+                                if (btn.Tag == null)
+                                {
+                                    btn.Click += (sender, e) =>
+                                    {
+                                        bool curDis = btn.Tag is bool tb && tb;
+                                        pb.Visibility = Visibility.Visible;
+                                        RunInBg(log, l2 => ServiceOptimizer.Apply(s, !curDis, l2),
+                                            curDis ? "已恢复: " + s.Display : "已禁用: " + s.Display,
+                                            () => { _cachedServicesPage = null; pb.Visibility = Visibility.Collapsed; btn.Tag = !curDis; btn.Content = !curDis ? "恢复" : "禁用"; });
+                                    };
+                                }
+                                btn.Tag = dis;
+                            }
+                            pb.Visibility = Visibility.Collapsed;
+                        }); } catch { /* 窗口已关闭，忽略 */ }
+                    }, "服务状态已加载");
+                });
+            }
+            RefreshServiceStates();
+
+            // 仅在构建期间主题未变时写入缓存（避免把混入旧主题刷子的页面标记为可复用）
+            if (buildDark == _isDarkMode)
+            {
+                _cachedServicesPage = root;
+                _servicesCacheKey = "services";
+                _servicesCacheDark = buildDark;
+                _servicesRefresh = () =>
+                {
+                    // 复位动态状态（与旧版每次新建页面行为一致）：复位各服务按钮为"检测中…"禁用态、后台重刷服务状态
+                    foreach (var s in ServiceOptimizer.All)
+                    {
+                        if (btnByService.TryGetValue(s.Name, out var b))
+                        {
+                            b.Content = "检测中…";
+                            b.IsEnabled = false;
                         }
-                        pb.Visibility = Visibility.Collapsed;
-                    }); } catch { /* 窗口已关闭，忽略 */ }
-                }, "服务状态已加载");
-            });
+                    }
+                    RefreshServiceStates();
+                };
+            }
 
             return root;
         }

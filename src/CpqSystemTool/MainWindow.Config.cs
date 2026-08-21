@@ -16,8 +16,27 @@ namespace CpqSystemTool
         //  Module: 配置管理（显示默认路径 + 可修改）
         // =====================================================================
 
+        // 配置管理页缓存（与常用软件/Appx 同款模式）：首次构建后缓存整页外壳，
+        // 二次进页复用并仅刷新动态状态（清空日志/复位进度条/刷新默认路径/透明度滑块/背景缩略图 + 重触发 AutoLoad 配置列表加载）；
+        // 导出/导入/自动保存/背景变更等操作完成回调中置空缓存 → 下次进页重建，保证列表与状态最新。
+        private UIElement _cachedConfigPage;
+        private string _configCacheKey;
+        private bool _configCacheDark;
+        private Action _configRefresh;
+
         private UIElement BuildConfig()
         {
+            // 记录本次构建时主题：缓存仅在主题一致时命中（主题切换会重建当前页，避免复用旧主题刷子的页面）
+            bool buildDark = _isDarkMode;
+            // 缓存命中且主题一致 → 复用已构建页面，仅刷新动态状态
+            if (_cachedConfigPage != null && _configCacheDark == buildDark && _configCacheKey != null)
+            {
+                _configRefresh?.Invoke();
+                return _cachedConfigPage;
+            }
+            // 缓存未命中 / 主题变化 → 丢弃旧缓存，走完整重建
+            _cachedConfigPage = null;
+
             // Grid 布局：内容卡撑满视口，最大化时日志贴底、背景图放大、无死区
             var root = new Grid();
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // Header
@@ -151,6 +170,7 @@ namespace CpqSystemTool
                     {
                         var cfg = CollectConfig();
                         ConfigBackup.Save(dlg.FileName, cfg, s => log.AppendText(s + "\r\n"));
+                        _cachedConfigPage = null; // 已存配置列表变化 → 失效缓存，下次进页重建
                     }
                 }),
                 Btn("📤 导入配置...", false, () =>
@@ -160,6 +180,7 @@ namespace CpqSystemTool
                     {
                         var cfg = ConfigBackup.Load(dlg.FileName, s => log.AppendText(s + "\r\n"));
                         ApplyConfig(cfg, log);
+                        _cachedConfigPage = null; // 已应用配置，优化项状态变化 → 失效缓存
                     }
                 }),
                 Btn("💾 自动保存当前配置", false, () =>
@@ -168,6 +189,7 @@ namespace CpqSystemTool
                     var cfg = CollectConfig();
                     ConfigBackup.AutoSave(cfg, s => log.AppendText(s + "\r\n"));
                     log.AppendText("[OK] 已保存到: " + Path.Combine(ConfigBackup.ConfigDir, "autosave.json") + "\r\n");
+                    _cachedConfigPage = null; // 已写备份文件，配置目录内容变化 → 失效缓存
                 }),
                 Btn("📋 列出已存配置", false, () =>
                 {
@@ -250,6 +272,7 @@ namespace CpqSystemTool
                 log.AppendText("[OK] 已恢复为内置默认背景\r\n");
                 refreshThumbs();
                 ApplyShellColors();
+                _cachedConfigPage = null; // 背景设置已变化 → 失效缓存
             }, 130);
             resetBgBtn.VerticalAlignment = VerticalAlignment.Center;
             DockPanel.SetDock(resetBgBtn, Dock.Right);
@@ -322,7 +345,7 @@ namespace CpqSystemTool
                                 }
                                 // 未装成功或仍失败——给手动指引
                                 l("提示：可右键 webp → 打开方式 → 画图 → 另存为 PNG 后再选。");
-                            }, "WebP 扩展安装中", () => { pb.Visibility = Visibility.Collapsed; });
+                            }, "WebP 扩展安装中", () => { pb.Visibility = Visibility.Collapsed; _cachedConfigPage = null; });
                             return;
                         }
                         log.AppendText("[FAIL] 图片加载失败：" + Path.GetFileName(dlg.FileName) + "\r\n");
@@ -339,6 +362,7 @@ namespace CpqSystemTool
                     log.AppendText("[OK] 深色背景已设置: " + Path.GetFileName(dlg.FileName) + "\r\n");
                     refreshThumbs();
                     ApplyShellColors();
+                    _cachedConfigPage = null; // 背景设置已变化 → 失效缓存
                 }
             }, 110);
             darkBtn.FontSize = 11;
@@ -430,7 +454,7 @@ namespace CpqSystemTool
                                     l("[FAIL] 解码器已安装但该图片仍无法加载（文件可能损坏）");
                                 }
                                 l("提示：可右键 webp → 打开方式 → 画图 → 另存为 PNG 后再选。");
-                            }, "WebP 扩展安装中", () => { pb.Visibility = Visibility.Collapsed; });
+                            }, "WebP 扩展安装中", () => { pb.Visibility = Visibility.Collapsed; _cachedConfigPage = null; });
                             return;
                         }
                         log.AppendText("[FAIL] 图片加载失败：" + Path.GetFileName(dlg.FileName) + "\r\n");
@@ -447,6 +471,7 @@ namespace CpqSystemTool
                     log.AppendText("[OK] 浅色背景已设置: " + Path.GetFileName(dlg.FileName) + "\r\n");
                     refreshThumbs();
                     ApplyShellColors();
+                    _cachedConfigPage = null; // 背景设置已变化 → 失效缓存
                 }
             }, 110);
             lightBtn.FontSize = 11;
@@ -522,22 +547,48 @@ namespace CpqSystemTool
             root.Children.Add(card);
 
             // 打开时默认列出配置目录下的所有 *.json → 写入日志
-            AutoLoad(() =>
+            // 抽成局部方法：首次构建与缓存命中（_configRefresh）共用同一数据加载，保证二次进页数据最新
+            void ReloadConfigList()
             {
-                try
+                AutoLoad(() =>
                 {
-                    var configs = ConfigBackup.ListConfigs();
-                    string listText = "默认配置目录: " + ConfigBackup.ConfigDir + "\r\n" +
-                        "已存配置 (" + configs.Count + " 个):\r\n" +
-                        (configs.Count > 0 ? string.Join("\r\n", configs.Select(c => "  • " + c)) : "  (无)");
-                    Dispatcher.Invoke(() => log.AppendText(listText + "\r\n"));
-                }
-                catch { }
-            });
+                    try
+                    {
+                        var configs = ConfigBackup.ListConfigs();
+                        string listText = "默认配置目录: " + ConfigBackup.ConfigDir + "\r\n" +
+                            "已存配置 (" + configs.Count + " 个):\r\n" +
+                            (configs.Count > 0 ? string.Join("\r\n", configs.Select(c => "  • " + c)) : "  (无)");
+                        Dispatcher.Invoke(() => log.AppendText(listText + "\r\n"));
+                    }
+                    catch { }
+                });
+            }
+            ReloadConfigList();
 
             // 稳健高度约束：绑定到 ContentArea.ActualHeight（只读 DP，自动跟随首帧+缩放，
             // 彻底消除"首次打开未填充 / 最大化后恢复默认尺寸内容漂移"两类时序 bug）
             BindRootHeightToViewport(root);
+
+            // ---- 页面级缓存：首次构建完成后缓存整页；再次进入复用并仅刷新动态状态 ----
+            // 仅在构建期间主题未变时写入缓存（避免把混入旧主题刷子的页面标记为可复用）
+            if (buildDark == _isDarkMode)
+            {
+                _cachedConfigPage = root;
+                _configCacheKey = "config";
+                _configCacheDark = buildDark;
+                _configRefresh = () =>
+                {
+                    // 复位动态状态（与旧版每次新建页面行为一致）：
+                    // 清空日志、复位进度条、刷新默认路径/透明度滑块/背景缩略图，并重触发 AutoLoad 的配置列表加载
+                    log.Clear();
+                    pb.Visibility = Visibility.Collapsed;
+                    pathInput.Text = ConfigBackup.ConfigDir;
+                    darkOpSlider.Value = _customBgDarkOpacity;
+                    lightOpSlider.Value = _customBgLightOpacity;
+                    refreshThumbs();
+                    ReloadConfigList();
+                };
+            }
 
             return root;
         }

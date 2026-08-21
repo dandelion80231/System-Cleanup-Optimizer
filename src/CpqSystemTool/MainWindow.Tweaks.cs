@@ -19,8 +19,29 @@ namespace CpqSystemTool
         //  Module: 系统优化（含预设按钮）
         // =====================================================================
 
+        // 系统优化页缓存（降级方案：面板/页面实例缓存）：首次构建完成后缓存整页，
+        // 再次进入复用已构建面板，仅复位动态状态（勾选/预设高亮/展开折叠/输出/计数），
+        // 避免每次导航重建 116 项 × 多控件。主题一致性由 _tweaksCacheDark 保证。
+        private UIElement _cachedTweaksPage;
+        private string _tweaksCacheKey;
+        private bool _tweaksCacheDark;
+        private Action _tweaksRefresh;
+
         private UIElement BuildTweaks()
         {
+            // 记录本次构建时主题：缓存仅在主题一致时命中（主题切换会重建当前页，避免复用旧主题刷子的页面）
+            bool buildDark = _isDarkMode;
+            // 缓存命中且主题一致 → 复用已构建页面，仅复位动态状态
+            if (_cachedTweaksPage != null && _tweaksCacheDark == buildDark && _tweaksCacheKey != null)
+            {
+                _tweaksRefresh?.Invoke();
+                return _cachedTweaksPage;
+            }
+            // 主题/失效 → 丢弃旧缓存，走完整重建
+            _cachedTweaksPage = null;
+            _tweaksRefresh = null;
+            _tweaksCacheKey = null;
+
             App.Trace("BuildTweaks.start");
             List<TweakEntry> allTweaks;
             try { allTweaks = Tweaks.All; }
@@ -138,12 +159,15 @@ namespace CpqSystemTool
                 .ThenBy(g => g.Key);
 
             // 先创建分组折叠标题（同步，用户能立刻看到分组结构，不会白板）
+            // 记录各分组 Expander，供缓存刷新时复位展开状态
+            var groupExpanders = new List<Expander>();
             foreach (var g in groups)
             {
                 var exHeader = new TextBlock { Text = g.Key, FontWeight = FontWeights.SemiBold, Foreground = _accent, FontSize = 13.5 };
                 var content = new StackPanel { Margin = new Thickness(20, 4, 0, 4) };
                 var expander = MakeLineArrowExpander(exHeader, content, true, new Thickness(0, 4, 0, 4));
                 treePanel.Children.Add(expander);
+                groupExpanders.Add(expander);
                 groupContents[g.Key] = content;
             }
 
@@ -253,6 +277,9 @@ namespace CpqSystemTool
             UpdateSelectedPanel();
 
             // 后台读取真实状态，分块刷新 UI，避免一次性大量更新阻塞渲染线程
+            // 封装为可复用委托：首次构建与缓存命中进页时均调用，保证每次进页都展示真实优化状态（与旧版重建行为一致）
+            Action reloadTweaksStates = () =>
+            {
             var states = new ConcurrentDictionary<string, bool?>();
             System.Threading.ThreadPool.QueueUserWorkItem(_ =>
             {
@@ -305,6 +332,8 @@ namespace CpqSystemTool
                     }
                 }), System.Windows.Threading.DispatcherPriority.Background); } catch { /* 窗口已关闭，忽略 */ }
             });
+            };
+            reloadTweaksStates();
 
             treeScroll.Content = treePanel;
             Grid.SetRow(treeScroll, 1);
@@ -355,6 +384,35 @@ namespace CpqSystemTool
 
             // 稳健高度约束：绑定到 ContentArea.ActualHeight（只读 DP，自动跟随首帧+缩放，无 vp=0 时序 bug）
             BindRootHeightToViewport(root);
+
+            // 页面级缓存：首次构建完成后缓存整页；再次进入复用并仅复位动态状态
+            // 仅在构建期间主题未变时写入缓存（避免把混入旧主题刷子的页面标记为可复用）
+            if (buildDark == _isDarkMode)
+            {
+                _cachedTweaksPage = root;
+                _tweaksCacheKey = "tweaks";   // 列表静态定义，常量键即可；主题一致性由 _tweaksCacheDark 保证
+                _tweaksCacheDark = buildDark;
+                _tweaksRefresh = () =>
+                {
+                    // 复位动态状态（与旧版每次新建页面行为一致）：
+                    // 勾选复位为默认（二态未勾选/三态系统默认）、文本配色复位、预设按钮高亮复位（仅「基本优化」保持高亮）、
+                    // 分组折叠复位为展开、输出/状态计数复位、Touched 集合清空、右侧已选列表复位，随后后台重读真实优化状态
+                    foreach (var kv in checkBoxes)
+                    {
+                        var t = Tweaks.All.FirstOrDefault(x => x.Id == kv.Key);
+                        kv.Value.IsChecked = t != null && t.IsThreeState ? (bool?)null : false;
+                    }
+                    SyncAllTweakColors();
+                    foreach (var ex in groupExpanders) ex.IsExpanded = true;
+                    highlightPreset(btnBasic);
+                    TweaksOutputLine.Text = "";
+                    TweaksTouched = new HashSet<string>(StringComparer.Ordinal);
+                    UpdateSelectedPanel();
+                    _tweaksStatusBase = "";
+                    RefreshTweaksStatus();
+                    reloadTweaksStates();
+                };
+            }
 
             return root;
         }
@@ -664,6 +722,8 @@ namespace CpqSystemTool
                     }
                     try { Dispatcher.Invoke(() =>
                     {
+                        // 应用完成后 116 项勾选/实际状态可能已变化 → 整页缓存失效，下次进页重建以读取真实状态
+                        _cachedTweaksPage = null;
                         pb.Visibility = Visibility.Collapsed;
                         if (TweaksOptimized == null)
                             TweaksOptimized = new HashSet<string>(StringComparer.Ordinal);

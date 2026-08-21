@@ -143,9 +143,21 @@ namespace CpqSystemTool
             public SoftwareDef Build() => _d;
         }
 
+        /// <summary>把任意来源的软件 ID 清洗为只含 [A-Za-z0-9_-] 的安全形式，防止路径穿越（..\ 逃逸 %TEMP%）。</summary>
+        /// <remarks>用 internal static 而非 private：同时供 SoftwareInstall.CleanupDownloads 的同前缀临时目录枚举复用。</remarks>
+        internal static string SanitizeSwId(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return "unknown";
+            var sb = new StringBuilder(id.Length);
+            foreach (char c in id)
+                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-')
+                    sb.Append(c);
+            return sb.Length == 0 ? "unknown" : sb.ToString();
+        }
+
         private string GetTempDir()
         {
-            if (_tempDir == null) _tempDir = Path.Combine(Path.GetTempPath(), "swinst_" + Id + "_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            if (_tempDir == null) _tempDir = Path.Combine(Path.GetTempPath(), "swinst_" + SanitizeSwId(Id) + "_" + Guid.NewGuid().ToString("N").Substring(0, 8));
             return _tempDir;
         }
 
@@ -213,7 +225,7 @@ namespace CpqSystemTool
 
             string rawExt = System.IO.Path.GetExtension(downloadUrl)?.ToLowerInvariant();
             string ext = (rawExt == ".exe" || rawExt == ".msi" || rawExt == ".zip") ? rawExt : ".exe";
-            string dest = Path.Combine(GetTempDir(), Id + "_setup" + ext);
+            string dest = Path.Combine(GetTempDir(), SanitizeSwId(Id) + "_setup" + ext);
             if (!await DownloadAsync(downloadUrl, dest, log, DownloadTimeout, sha256)) return false;
             if (!VerifyIntegrity(dest, log)) return false;   // 下载文件完整性/签名校验
             string runPath = dest;
@@ -1235,7 +1247,7 @@ namespace CpqSystemTool
                     var tmp = Path.GetTempPath();
                     if (Directory.Exists(tmp))
                     {
-                        foreach (var d in Directory.GetDirectories(tmp, "swinst_" + sw.Id + "_*"))
+                        foreach (var d in Directory.GetDirectories(tmp, "swinst_" + SoftwareDef.SanitizeSwId(sw.Id) + "_*"))
                         {
                             try { Directory.Delete(d, true); count++; } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
                         }

@@ -429,6 +429,11 @@ namespace CpqSystemTool
             var id = (_idBox.Text ?? "").Trim();
             if (string.IsNullOrEmpty(id)) id = Slugify(name);
 
+            // 安全校验：ID 会原样拼入 %TEMP% 临时目录名（本程序以管理员权限运行），恶意 ID 含 ..\ 可逃逸 %TEMP% 实现任意路径写文件，
+            // 故仅允许 [A-Za-z0-9_-]（长度 1-64），与 SoftwareDef.SanitizeSwId 的使用点清洗构成双层防御
+            if (id.Length < 1 || id.Length > 64 || !id.All(c => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-'))
+            { ShowError("软件 ID 只能包含字母、数字、下划线和连字符（长度 1-64）。"); return; }
+
             var entry = new CustomSoftwareEntry
             {
                 id = id,

@@ -74,8 +74,29 @@ namespace CpqSystemTool
             new CleanupItemDef { Id="windows_old", Name="清理 Windows.old", Desc="删除系统升级遗留备份", Category="高级/大空间", DefaultChecked=false, Action=log=>Cleanup.BigSpaceWindowsOld(log) },
         };
 
+        // 清理优化页整页缓存（与 M1 常用软件页同款模式：面板/页面实例缓存）。
+        // 首次构建完成后缓存整页外壳；再次进入复用已构建面板，仅复位勾选/日志/进度等动态状态，
+        // 避免每次导航重建 ~35 项 CheckBox × 多事件闭包。清理执行（改变可清理大小）时缓存失效重建。
+        private UIElement _cachedCleanupPage;
+        private string _cleanupCacheKey;
+        private bool _cleanupCacheDark;
+        private Action _cleanupRefresh;
+
         private UIElement BuildCleanup()
         {
+            // 记录本次构建时主题：缓存仅在主题一致时命中（主题切换会重建当前页，避免复用旧主题刷子的页面）
+            bool buildDark = _isDarkMode;
+            // 缓存命中且主题一致 → 复用已构建页面，仅复位动态状态
+            if (_cachedCleanupPage != null && _cleanupCacheDark == buildDark && _cleanupCacheKey != null)
+            {
+                _cleanupRefresh?.Invoke();
+                return _cachedCleanupPage;
+            }
+            // 主题变化 → 丢弃旧缓存，走完整重建
+            _cachedCleanupPage = null;
+            _cleanupRefresh = null;
+            _cleanupCacheKey = null;
+
             // 双栏布局：左侧=清理项（撑满），右侧=操作按钮+日志（紧凑固定宽度）
             var root = new Grid { VerticalAlignment = VerticalAlignment.Stretch };
             root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });   // 左：清理项
@@ -104,6 +125,7 @@ namespace CpqSystemTool
             // 按类别分组展示
             var categories = CleanupCatalog.GroupBy(c => c.Category).OrderBy(g => g.Key);
             var allCheckBoxes = new List<CheckBox>();
+            var expanders = new List<Expander>();   // 缓存复用时复位分组展开状态
 
             void UpdateCleanupSelCount()
             {
@@ -117,6 +139,7 @@ namespace CpqSystemTool
                 var exHeader = new TextBlock { Text = cat.Key + " (" + cat.Count() + " 项)", Foreground = _accent, FontWeight = FontWeights.SemiBold, FontSize = 14, TextWrapping = TextWrapping.Wrap };
                 var grpSp = new StackPanel { Margin = new Thickness(16, 4, 0, 8) };
                 var groupExpander = MakeLineArrowExpander(exHeader, grpSp, true, new Thickness(0, 6, 0, 2));
+                expanders.Add(groupExpander);
                 foreach (var item in cat)
                 {
                     var chk = new CheckBox
@@ -279,7 +302,7 @@ namespace CpqSystemTool
                         }
                     });
                     l("\r\n[OK] 清理完成！建议重启电脑以释放被占用的文件\r\n");
-                }, "清理完成", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; });
+                }, "清理完成", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; _cachedCleanupPage = null; });
             }, 100);
             actionBar.Children.Add(btnClean);
 
@@ -353,7 +376,7 @@ namespace CpqSystemTool
                         var toDel = dlg.Selected;
                         if (toDel.Count == 0) { log.AppendText("\r\n[i] 未勾选任何项，已取消删除。\r\n"); return; }
                         pb.Visibility = Visibility.Visible;
-                        RunInBg(log, l2 => Cleanup.DeleteTier3(toDel, l2), "第三档删除完成", () => pb.Visibility = Visibility.Collapsed);
+                        RunInBg(log, l2 => Cleanup.DeleteTier3(toDel, l2), "第三档删除完成", () => { pb.Visibility = Visibility.Collapsed; _cachedCleanupPage = null; });
                     }
                 });
             };
@@ -393,6 +416,32 @@ namespace CpqSystemTool
             BindRootHeightToViewport(root);
 
             UpdateCleanupSelCount();
+
+            // ---- 页面级缓存：首次构建完成后缓存整页；再次进入复用并仅复位动态状态 ----
+            // 仅在构建期间主题未变时写入缓存（避免把混入旧主题刷子的页面标记为可复用）
+            if (buildDark == _isDarkMode)
+            {
+                _cachedCleanupPage = root;
+                _cleanupCacheKey = "cleanup";
+                _cleanupCacheDark = buildDark;
+                _cleanupRefresh = () =>
+                {
+                    // 复位动态状态（与每次新建页面行为一致）：
+                    // 恢复默认勾选、复位「全选当前页」与分组展开、清空日志（含旧扫描结果→回到未扫描态）、
+                    // 进度条收起、按钮高亮回到「开始清理」、刷新勾选计数
+                    foreach (var c in allCheckBoxes)
+                    {
+                        var def = CleanupCatalog.FirstOrDefault(d => d.Id == (string)c.Tag);
+                        c.IsChecked = (def != null && def.DefaultChecked);
+                    }
+                    chkAll.IsChecked = false;
+                    foreach (var ex in expanders) ex.IsExpanded = true;
+                    log.Clear();
+                    pb.Visibility = Visibility.Collapsed;
+                    ApplyMode(btnClean);
+                    UpdateCleanupSelCount();
+                };
+            }
             return root;
         }
     }

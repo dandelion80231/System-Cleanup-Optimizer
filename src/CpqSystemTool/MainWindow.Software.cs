@@ -20,12 +20,38 @@ namespace CpqSystemTool
 //        //  Module: 软件安装（已删除，与常用软件重复 — 合并到 BuildCommonSoftware）
 //        // =====================================================================
 
-// =====================================================================
+//        // =====================================================================
         //  Module: 常用软件（参考 Win11EasyConfig 风格：表格 + 一键安装/卸载）
         // =====================================================================
 
+        // 常用软件页缓存（降级方案：面板/页面实例缓存）。
+        // 每行 ~8 控件且 6 处以上事件闭包捕获行变量（MouseEnter/Leave、Checked/Unchecked、安装/卸载 Click），
+        // DataTemplate 化风险过高 → 不引入虚拟化，改为首次构建完成后缓存整页；
+        // 再次进入复用已构建面板，仅刷新版本号/状态/勾选/搜索等动态部分，避免每次导航重建 ~49 行 × 8 控件。
+        // 软件目录变化（增删自定义软件）时缓存自动失效并重建。
+        private UIElement _cachedSoftwarePage;
+        private string _softwareCacheKey;
+        private bool _softwareCacheDark;
+        private Action _softwareRefresh;
+
         private UIElement BuildCommonSoftware()
         {
+            // 记录本次构建时主题：缓存仅在主题一致时命中（主题切换会重建当前页，避免复用旧主题刷子的页面）
+            bool buildDark = _isDarkMode;
+            // 缓存命中且软件目录未变化且主题一致 → 复用已构建页面，仅后台刷新动态状态
+            if (_cachedSoftwarePage != null && _softwareCacheDark == buildDark && _softwareCacheKey != null
+                && string.Equals(_softwareCacheKey,
+                    string.Join("|", SoftwareInstall.GetEffectiveList().Select(s => s.Id)),
+                    StringComparison.Ordinal))
+            {
+                _softwareRefresh?.Invoke();
+                return _cachedSoftwarePage;
+            }
+            // 目录/主题变化 → 丢弃旧缓存，走完整重建
+            _cachedSoftwarePage = null;
+            _softwareRefresh = null;
+            _softwareCacheKey = null;
+
             // Grid 布局：header / actionBar / toolBar / 列表卡（撑满）/ pb / log
             var root = new Grid();
             // 稳健布局：root.MaxHeight 绑定到 ContentArea.ViewportHeight（自动跟随初始+缩放）
@@ -776,6 +802,37 @@ namespace CpqSystemTool
                         // 稳健布局：root.MaxHeight 绑定到 ContentArea.ViewportHeight（自动跟随初始+缩放，规避 vp=0 跳过）
                         // listScroll 改由 root row2(Star) → listCard(Border Stretch) 约束，自动填满+滚动，无需手工 MaxHeight
                         BindRootHeightToViewport(root);
+
+                        // ---- 页面级缓存：首次构建完成后缓存整页；再次进入复用并仅刷新动态状态 ----
+                        // 仅在构建期间主题未变时写入缓存（避免把混入旧主题刷子的页面标记为可复用）
+                        if (buildDark == _isDarkMode)
+                        {
+                            _cachedSoftwarePage = root;
+                            _softwareCacheKey = string.Join("|", rowItems.Select(t => t.Item3.Id));
+                            _softwareCacheDark = buildDark;
+                            _softwareRefresh = () =>
+                            {
+                                // 复位动态状态（与旧版每次新建页面行为一致）：
+                                // 恢复本地列表（若处于搜索结果态）、清空日志/搜索/分类筛选、复位全选与勾选、后台刷新安装状态
+                                rowsPanel.Children.Clear();
+                                rowsPanel.Children.Add(hdrBorder);
+                                foreach (var t in rowItems)
+                                {
+                                    t.Item1.IsChecked = false;   // 触发 Unchecked 同步复位行背景
+                                    rowsPanel.Children.Add(t.Item2);
+                                }
+                                swAllSelected = false;
+                                btnAll.Content = "☑ 全选";
+                                btnBackToLocal.Visibility = Visibility.Collapsed;
+                                searchBox.Text = "";
+                                if (catList.SelectedIndex != 0) catList.SelectedIndex = 0;
+                                log.Clear();
+                                RefreshPathBtn();  // 安装路径可能已在其它页面修改，重新读取
+                                ApplyFilter();     // 刷新计数与可见行
+                                UpdateSelCount();
+                                RefreshAllRows();  // 后台全量刷新版本号/状态/按钮（保留日志）
+                            };
+                        }
                     }); } catch { /* 窗口已关闭，忽略 */ }
                 }
                 catch { /* 静默 */ }

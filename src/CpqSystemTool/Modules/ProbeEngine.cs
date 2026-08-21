@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -288,9 +290,23 @@ namespace CpqSystemTool
             Timeout = TimeSpan.FromMilliseconds(ProbeData.VerifyTimeout)
         };
 
-        static ProbeEngine()
+        // UA 池：近期 Chrome/Edge 桌面 UA（Win11 x64），按静态计数器轮换，避免固定单一 UA 被目标站按指纹识别。
+        // 不再在 DefaultRequestHeaders 写死 UA，改为每个请求自行带一个池内 UA。
+        private static readonly string[] UaPool =
         {
-            Http.DefaultRequestHeaders.UserAgent.ParseAdd(ProbeData.UA);
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0"
+        };
+        private static int _uaCounter;
+
+        // 轮换取一个 UA：Interlocked 保证并发安全，uint 取模避免计数器溢出为负时出现负索引
+        private static string NextUa()
+        {
+            int idx = (int)((uint)Interlocked.Increment(ref _uaCounter) % (uint)UaPool.Length);
+            return UaPool[idx];
         }
 
         // 主入口：解析输入 → 快速 HTTP 路径 → 浏览器路径（WebView2）→ 兜底 CDN → 产出行。
@@ -558,6 +574,39 @@ namespace CpqSystemTool
         }
 
         // ===================== HTTP 工具 =====================
+
+        // 补齐浏览器常用请求头：UA 轮换、Accept / Accept-Encoding / Accept-Language、同源入口 Referer。
+        // Referer 取当前 URL 的 scheme://host/（同源入口），贴近浏览器导航行为；跨源重定向时按新 URL 重新计算，天然同源、不泄漏上一跳。
+        private static void ApplyBrowserHeaders(HttpRequestMessage req, string url)
+        {
+            req.Headers.TryAddWithoutValidation("User-Agent", NextUa());
+            req.Headers.TryAddWithoutValidation("Accept", "*/*");
+            req.Headers.TryAddWithoutValidation("Accept-Encoding", "gzip, deflate");
+            req.Headers.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+            try
+            {
+                var u = new Uri(url);
+                req.Headers.TryAddWithoutValidation("Referer", u.GetLeftPart(UriPartial.Authority) + "/");
+            }
+            catch { /* URL 非法时由上层校验兜底，这里不设 Referer */ }
+        }
+
+        // 按 Content-Encoding 手动解压响应正文再读为 UTF-8 字符串。
+        // HttpClientHandler 未开 AutomaticDecompression，协商了 gzip/deflate 后必须自行解压，否则读到的是压缩字节乱码。
+        private static async Task<string> ReadBodyDecompressedAsync(HttpContent content, string encoding)
+        {
+            using (var stream = await content.ReadAsStreamAsync())
+            {
+                if (encoding == "gzip")
+                    using (var ds = new GZipStream(stream, CompressionMode.Decompress))
+                    using (var sr = new StreamReader(ds, Encoding.UTF8))
+                        return await sr.ReadToEndAsync();
+                using (var ds = new DeflateStream(stream, CompressionMode.Decompress))
+                using (var sr = new StreamReader(ds, Encoding.UTF8))
+                    return await sr.ReadToEndAsync();
+            }
+        }
+
         private static async Task<(bool ok, int status, string finalUrl, string body, bool isBinary)> HttpGetAsync(string url, int maxRedirect, int depth, int timeoutMs)
         {
             if (depth > maxRedirect || !Uri.IsWellFormedUriString(url, UriKind.Absolute))
@@ -566,8 +615,7 @@ namespace CpqSystemTool
             {
                 using var cts = new CancellationTokenSource(timeoutMs);
                 var req = new HttpRequestMessage(HttpMethod.Get, url);
-                req.Headers.Add("Accept", "*/*");
-                req.Headers.Add("Accept-Encoding", "identity");
+                ApplyBrowserHeaders(req, url);
                 using var resp = await Http.SendAsync(req, cts.Token);
                 int code = (int)resp.StatusCode;
                 if (resp.Headers.Location != null && (code == 301 || code == 302 || code == 303 || code == 307 || code == 308))
@@ -579,7 +627,12 @@ namespace CpqSystemTool
                 bool isBinary = ProbeData.ExeBinCt.IsMatch(ct) || ProbeData.ExeUrlRe.IsMatch(url);
                 if (isBinary) return (code >= 200 && code < 300, code, url, "", true);
                 if (code < 200 || code >= 300) return (false, code, url, "", false);
-                var body = await resp.Content.ReadAsStringAsync();
+                string body;
+                var enc = (resp.Content.Headers.ContentEncoding.FirstOrDefault() ?? "").ToLowerInvariant();
+                if (enc == "gzip" || enc == "deflate")
+                    body = await ReadBodyDecompressedAsync(resp.Content, enc);
+                else
+                    body = await resp.Content.ReadAsStringAsync();
                 if (body.Length > 5 * 1024 * 1024) body = body.Substring(0, 5 * 1024 * 1024);
                 return (true, code, url, body, false);
             }
@@ -594,6 +647,7 @@ namespace CpqSystemTool
             {
                 using var cts = new CancellationTokenSource(ProbeData.VerifyTimeout);
                 var req = new HttpRequestMessage(HttpMethod.Get, rawUrl);
+                ApplyBrowserHeaders(req, rawUrl);
                 req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 1023);
                 using var resp = await Http.SendAsync(req, cts.Token);
                 int code = (int)resp.StatusCode;

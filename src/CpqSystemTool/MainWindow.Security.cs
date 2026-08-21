@@ -21,8 +21,30 @@ namespace CpqSystemTool
         //  Module: 安全防护（Defender + 更新管理 合并页）
         // =====================================================================
 
+        // 安全防护页缓存（与常用软件页/Appx 页同款模式）：首次构建完成后缓存整页外壳，
+        // 再次进入复用外壳并仅后台重刷动态状态（Defender 状态/开关/按钮、防火墙、更新）。
+        // 动态状态全部落在可重建/可复位的容器与属性上（defStatusHost/defWp/defToggles/fwStatusHost/ruleList/updateBtnHost、
+        // ApplyPolicyMode 高亮、_lastDefAction、日志），故操作完成后无需失效，仅靠 _securityRefresh 重刷。
+        private UIElement _cachedSecurityPage;
+        private string _securityCacheKey;
+        private bool _securityCacheDark;
+        private Action _securityRefresh;
+
         private UIElement BuildSecurity()
         {
+            // 记录本次构建时主题：缓存仅在主题一致时命中（主题切换会重建当前页，避免复用旧主题刷子的页面）
+            bool buildDark = _isDarkMode;
+            // 缓存命中且主题一致 → 复用已构建页面，仅后台重刷动态状态
+            if (_cachedSecurityPage != null && _securityCacheDark == buildDark && _securityCacheKey != null)
+            {
+                _securityRefresh?.Invoke();
+                return _cachedSecurityPage;
+            }
+            // 主题变化/未缓存 → 丢弃旧缓存，走完整重建
+            _cachedSecurityPage = null;
+            _securityRefresh = null;
+            _securityCacheKey = null;
+
             var root = new StackPanel();
             root.Children.Add(Header("安全防护", "Windows Defender 防病毒与 Windows Update 更新管控。均为高风险操作，谨慎使用。"));
 
@@ -571,6 +593,41 @@ namespace CpqSystemTool
             root.Children.Add(updCard);
             root.Children.Add(pb);
             root.Children.Add(logBorder);
+
+            // ---- 页面级缓存：首次构建完成后缓存整页；再次进入复用并仅刷新动态状态 ----
+            // 仅在构建期间主题未变时写入缓存（避免把混入旧主题刷子的页面标记为可复用）
+            if (buildDark == _isDarkMode)
+            {
+                _cachedSecurityPage = root;
+                _securityCacheKey = "security";
+                _securityCacheDark = buildDark;
+                _securityRefresh = () =>
+                {
+                    // 复位动态状态（与每次新建页面行为一致）：
+                    // 清空日志、复位 Defender 按钮「最后点击」高亮与底部策略按钮高亮；
+                    // 后台重刷 Defender 状态缓存后就地重绘状态区/开关/一键按钮，另重刷防火墙与更新状态
+                    log.Clear();
+                    _lastDefAction = null;
+                    ApplyPolicyMode(null);
+                    pb.Visibility = Visibility.Visible;
+                    var dispR = Dispatcher;
+                    new Thread(() =>
+                    {
+                        try { Defender.RefreshStatusCache(); }
+                        catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                        try { dispR.Invoke(() =>
+                        {
+                            pb.Visibility = Visibility.Collapsed;
+                            BuildDefenderStatus();
+                            RebuildDefenderButtons();
+                            SyncDefToggles(false);
+                        }); } catch { /* 窗口已关闭，忽略 */ }
+                    }) { IsBackground = true, Name = "SecurityRefreshLoader" }.Start();
+                    LoadFirewallData();  // 重刷防火墙配置文件状态 + 规则列表（含空状态提示）
+                    LoadUpdateState();   // 重刷 Windows 更新按钮高亮（保留 _lastUpdateAction 字段语义）
+                };
+            }
+
             return root;
         }
 

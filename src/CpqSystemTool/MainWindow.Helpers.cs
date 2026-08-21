@@ -317,6 +317,10 @@ namespace CpqSystemTool
         // 超过阈值后改为每 N 行滚动一次，降低长任务（清理/探针/下载）大量追加日志时的 UI 线程布局压力。
         private const int LogScrollLineThreshold = 500;
         private const int LogScrollEveryN = 10;
+        // 日志行数上限：超过 LOG_MAX_LINES 后从头部裁剪旧行（保留尾部 LOG_TRIM_KEEP_LINES 行，
+        // 留余量避免频繁触发），约束长任务（清理/探针/下载百分比）期间文本无限增长的内存与布局渲染开销。
+        private const int LOG_MAX_LINES = 3000;
+        private const int LOG_TRIM_KEEP_LINES = 2500;
 
         /// <summary>
         /// 向日志框追加一行；若消息以 \r 开头，则原地替换最后一行（用于下载百分比等进度，避免刷屏）。
@@ -360,17 +364,54 @@ namespace CpqSystemTool
                 tb.AppendText(content + "\r\n");
                 tb.Tag = content;
                 // 进度行原地替换后行数不变，ScrollToEnd 不触发重排；保持进度数字持续可见（与旧行为一致）。
+                // 行数上限：替换本身不增行数，但若此前普通行已把行数推超上限，仍需在此触发一次裁剪。
+                TrimLogHeadIfOverLimit(tb);
                 tb.ScrollToEnd();
                 return;
             }
 
             tb.AppendText(s + "\r\n");
             tb.Tag = null; // 普通行后，进度需重新起一行
+            // 行数上限：超 LOG_MAX_LINES 后裁剪头部旧行（低频 O(n)）。以 tb.LineCount 触发——
+            // 各框自身实时渲染行数，非 static 共享计数，天然按框隔离；进度行替换不增行数、log.Clear()
+            // 后归零，均自动与文本一致，无需额外维护计数。
+            TrimLogHeadIfOverLimit(tb);
             // 滚动降频：短日志（行数 < 阈值）每行都滚到底（与旧行为一致，避免小日志滚动迟滞）；
             // 超阈值的长日志每 N 行滚一次。LineCount 是各日志框自身的行数（每追加一行 +1），
             // 天然按框隔离，无 static 共享计数状态，多日志框并发追加时互不干扰、也不会丢失自动滚底。
             if (tb.LineCount < LogScrollLineThreshold || tb.LineCount % LogScrollEveryN == 0)
                 tb.ScrollToEnd();
+        }
+
+        /// <summary>
+        /// 日志行数上限裁剪：本框渲染行数超过 LOG_MAX_LINES 时，从头部删除旧行，保留尾部
+        /// LOG_TRIM_KEEP_LINES 行（留余量避免频繁触发）。
+        /// 触发用 tb.LineCount（各框自身实时行数，无 static 共享计数，Clear/多框互不干扰）；
+        /// 实际裁剪按文本中的 '\n' 精确定位（本方法所有写入均以 "\r\n" 结尾，'\n' 计数即行数），
+        /// 故日志含长行折行（LineCount 计折行行）时也不会删过头——逻辑行不足保留量则跳过。
+        /// 头部裁剪必然保留最后一行：Tag 标记的进度行始终在尾部，天然存活，无需清 Tag；
+        /// 裁剪后 ScrollToEnd() 保证用户仍看到底部最新日志。低频调用，O(n) 可接受。
+        /// </summary>
+        private static void TrimLogHeadIfOverLimit(TextBox tb)
+        {
+            if (tb.LineCount <= LOG_MAX_LINES) return;
+            string text = tb.Text;
+            // 统计当前总行数（按 '\n' 计）
+            int totalLines = 0;
+            for (int i = 0; i < text.Length; i++)
+                if (text[i] == '\n') totalLines++;
+            int removeLines = totalLines - LOG_TRIM_KEEP_LINES;
+            if (removeLines <= 0) return; // 折行导致渲染行数超限但逻辑行未超 → 不裁剪
+            int cut = 0;
+            for (int i = 0; i < removeLines; i++)
+            {
+                int nl = text.IndexOf('\n', cut);
+                if (nl < 0) break; // 防御：理论上不会发生（removeLines ≤ 总行数）
+                cut = nl + 1;
+            }
+            if (cut <= 0) return;
+            tb.Text = text.Substring(cut);
+            tb.ScrollToEnd();
         }
 
         /// <summary>

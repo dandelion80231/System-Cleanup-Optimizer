@@ -16,8 +16,31 @@ namespace CpqSystemTool
         //  Module: Appx 管理（两行三列卡片布局，含当前用户/系统预装切换）
         // =====================================================================
 
+        // Appx 商店页缓存（同「常用软件」M1 模式：整页实例缓存）。
+        // 主题一致 + key 匹配时复用已构建页面，Refresh 复位搜索/勾选/日志等动态状态并后台刷新。
+        private UIElement _cachedAppxPage;
+        private string _appxCacheKey;
+        private bool _appxCacheDark;
+        private Action _appxRefresh;
+
         private UIElement BuildAppx()
         {
+            // 记录本次构建时主题：缓存仅在主题一致时命中（主题切换会重建当前页，避免复用旧主题刷子的页面）
+            bool buildDark = _isDarkMode;
+            // 缓存命中且 catalog 目录未变化且主题一致 → 复用已构建页面，仅后台刷新动态状态
+            if (_cachedAppxPage != null && _appxCacheDark == buildDark && _appxCacheKey != null
+                && string.Equals(_appxCacheKey,
+                    string.Join("|", AppxManager.Catalog.Select(c => c.PackageFamily)),
+                    StringComparison.Ordinal))
+            {
+                _appxRefresh?.Invoke();
+                return _cachedAppxPage;
+            }
+            // catalog/主题变化 → 丢弃旧缓存，走完整重建
+            _cachedAppxPage = null;
+            _appxRefresh = null;
+            _appxCacheKey = null;
+
             // 用 Grid 让 cardsCard 撑满剩余空间，cardsScroll 内部独立滚动（不动搜索框/计数器）
             var root = new Grid();
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // Header
@@ -162,7 +185,7 @@ namespace CpqSystemTool
                             if (fam != null) AppxManager.UninstallProvisioned(new List<string> { fam.PackageFamily }, s => l(s));
                         }
                     }
-                }, "卸载完成", () => { pb.Visibility = Visibility.Collapsed; LoadAndRender(rbCurrent.IsChecked == true, cardsPanel, countLbl, searchBox.Text, log, UpdateAppxSelCount); });
+                }, "卸载完成", () => { _cachedAppxPage = null; _cachedAppxRawPage = null; pb.Visibility = Visibility.Collapsed; LoadAndRender(rbCurrent.IsChecked == true, cardsPanel, countLbl, searchBox.Text, log, UpdateAppxSelCount); });
             }, 110);
             toolBar.Children.Add(btnUninstall);
             Grid.SetColumn(toolBar, 2);
@@ -240,6 +263,28 @@ namespace CpqSystemTool
             // 高度约束：BindRootHeightToViewport 把 root.MaxHeight 绑定到 ContentArea.ActualHeight
             // （只读 DP，尺寸变化时自动通知）→ Star 行撑满剩余空间、外层永不滚动；
             // 首次布局与窗口缩放均自动跟随，无 vp=0 时序 bug。内容超出时由内层 cardsScroll 内部滚动。
+            // ---- 页面级缓存：首次构建完成后缓存整页；再次进入复用并仅刷新动态状态 ----
+            // 仅在构建期间主题未变时写入缓存（避免把混入旧主题刷子的页面标记为可复用）
+            if (buildDark == _isDarkMode)
+            {
+                _cachedAppxPage = root;
+                _appxCacheKey = string.Join("|", AppxManager.Catalog.Select(c => c.PackageFamily));
+                _appxCacheDark = buildDark;
+                _appxRefresh = () =>
+                {
+                    // 复位动态状态（与新建页面行为一致）：
+                    // 清空搜索（TextChanged 触发后台重载）、复位全选/勾选/模式/选项；
+                    // 搜索本就为空时显式后台重载（保证每次进页后台全量刷新一次）
+                    if (searchBox.Text.Length > 0) searchBox.Text = "";
+                    else LoadAndRender(true, cardsPanel, countLbl, "", log, UpdateAppxSelCount);
+                    allSelected = false;
+                    btnToggleSel.Content = "□ 全选";
+                    rbCurrent.IsChecked = true;
+                    chkConfirm.IsChecked = true;
+                    chkWithProvisioned.IsChecked = true;
+                };
+            }
+
             BindRootHeightToViewport(root);
             return root;
         }
@@ -381,6 +426,9 @@ namespace CpqSystemTool
             // 安装/卸载完成后【原地刷新本卡片】：重新查询状态并替换该卡片，保留页面与日志，不重建整页（避免日志丢失）
             Action refreshThisCard = () =>
             {
+                // 安装/卸载完成 → 显式失效整页缓存（下次进页重建，避免复用 stale 状态）
+                _cachedAppxPage = null;
+                _cachedAppxRawPage = null;
                 System.Threading.ThreadPool.QueueUserWorkItem(_ =>
                 {
                     bool nowInstalled = false;
@@ -436,8 +484,29 @@ namespace CpqSystemTool
         //  Module: Appx 管理（ZyperWin 风格：原始包名列表 + 勾选批量卸载）
         // =====================================================================
 
+        // Appx 管理页缓存（同 Appx 商店页模式：整页实例缓存，主题一致时复用，Refresh 复位动态状态并后台刷新）
+        private UIElement _cachedAppxRawPage;
+        private string _appxRawCacheKey;
+        private bool _appxRawCacheDark;
+        private Action _appxRawRefresh;
+
         private UIElement BuildAppxRaw()
         {
+            // 记录本次构建时主题：缓存仅在主题一致时命中
+            bool buildDark = _isDarkMode;
+            // 缓存命中且主题一致 → 复用已构建页面，仅后台刷新列表
+            // （列表签名来自 ListInstalled 的 PowerShell 扫描结果，无法在不扫描的前提下计算 →
+            //   用主题作唯一 key + 卸载后显式 invalidate 保证数据正确）
+            if (_cachedAppxRawPage != null && _appxRawCacheDark == buildDark && _appxRawCacheKey != null)
+            {
+                _appxRawRefresh?.Invoke();
+                return _cachedAppxRawPage;
+            }
+            // 主题变化 → 丢弃旧缓存，走完整重建
+            _cachedAppxRawPage = null;
+            _appxRawRefresh = null;
+            _appxRawCacheKey = null;
+
             // Grid 布局：header / 工具栏 / 列表卡（撑满）/ 进度条 / 日志
             var root = new Grid();
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // header
@@ -527,7 +596,7 @@ namespace CpqSystemTool
                                 if (string.IsNullOrEmpty(it.FullName)) { log.AppendText("[!] 未安装的包无法卸载\r\n"); return; }
                                 pb.Visibility = Visibility.Visible;
                                 RunInBg(log, ll => AppxManager.Uninstall(new System.Collections.Generic.List<string> { it.FullName }, ll),
-                                    "已卸载: " + it.Name, () => { pb.Visibility = Visibility.Collapsed; RefreshList(); });
+                                    "已卸载: " + it.Name, () => { _cachedAppxPage = null; _cachedAppxRawPage = null; pb.Visibility = Visibility.Collapsed; RefreshList(); });
                             }, 60);
                             uninstBtn.FontSize = 11;
                             Grid.SetColumn(uninstBtn, 2);
@@ -586,7 +655,7 @@ namespace CpqSystemTool
                     .Select(t => t.Item3.FullName).ToList();
                 if (sel.Count == 0) { log.AppendText("[!] 请先勾选要卸载的应用\r\n"); return; }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, l => AppxManager.Uninstall(sel, l), "卸载完成", () => { pb.Visibility = Visibility.Collapsed; RefreshList(true); });
+                RunInBg(log, l => AppxManager.Uninstall(sel, l), "卸载完成", () => { _cachedAppxPage = null; _cachedAppxRawPage = null; pb.Visibility = Visibility.Collapsed; RefreshList(true); });
             }, 110);
             btnUninstallSel.HorizontalAlignment = HorizontalAlignment.Center;
 
@@ -629,6 +698,23 @@ namespace CpqSystemTool
             // 关键：把 root 的 MaxHeight 绑定到 ContentArea.ViewportHeight（同 Appx 商店）
             // 这样外层 ContentArea 永不滚动，列表卡撑满剩余空间，溢出由 listScroll 内部滚动
             // 稳健布局：root.MaxHeight 绑定到 ContentArea.ViewportHeight（自动跟随初始+缩放，规避 vp=0 跳过）
+            // ---- 页面级缓存：首次构建完成后缓存整页；再次进入复用并仅刷新动态状态 ----
+            if (buildDark == _isDarkMode)
+            {
+                _cachedAppxRawPage = root;
+                _appxRawCacheKey = "appxraw";
+                _appxRawCacheDark = buildDark;
+                _appxRawRefresh = () =>
+                {
+                    // 复位动态状态（与新建页面行为一致）：清空勾选、复位全选、清空日志、后台刷新列表
+                    foreach (var t in rowItems) t.Item1.IsChecked = false;
+                    rawAllSelected = false;
+                    btnToggleRaw.Content = "📋 全选";
+                    log.Clear();
+                    RefreshList(false);
+                };
+            }
+
             BindRootHeightToViewport(root);
             return root;
         }
