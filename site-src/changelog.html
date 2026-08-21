@@ -56,6 +56,14 @@
     <div class="container">
       <div class="timeline reveal">
         <div class="tl-item">
+          <span class="ver">v1.15</span><span class="date">2026-08-21</span>
+          <ul>
+            <li>🎨 布局：侧边栏导航按钮改为 Grid 16 行 Star 均分占满，标准窗口（740 高）下 16 项正好填满、无底部空白</li>
+            <li>📐 兜底：按钮区包 ScrollViewer（Auto 滚动条），小屏 / 高 DPI 矮窗口时全部导航项仍可达</li>
+            <li>📌 固定：窗口压缩滚动时标题 / 副标题固定顶部不随滚动，导航区始终可用</li>
+          </ul>
+        </div>
+        <div class="tl-item">
           <span class="ver">v1.14</span><span class="date">2026-08-21</span>
           <ul>
             <li>🛡️ 安全：封禁自定义软件 ID 路径穿越——ID 仅允许 [A-Za-z0-9_-]（长度 1-64），SanitizeSwId 防御性清洗后拼路径，恶意 ..\ 不再能逃逸 %TEMP% 以管理员权限写任意路径</li>
