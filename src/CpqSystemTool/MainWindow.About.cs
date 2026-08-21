@@ -431,9 +431,15 @@ namespace CpqSystemTool
 
         // .NET Framework 的 WebClient 无 Timeout 属性（.NET 5+ 才有）；通过重写 GetWebRequest 设置底层请求超时。
         // Proxy 继承自基类 WebClient，外部可直接设置 wc.Proxy。
+        // 同时显式启用 TLS 1.2（.NET 4.8 WebClient 默认仅 TLS 1.0/1.1，Cloudflare/Pages 等现代 CDN 已禁用 → 握手失败误报"无法连接"）。
         private class WebClientWithTimeout : System.Net.WebClient
         {
             public int TimeoutMs { get; set; } = 10000;
+            static WebClientWithTimeout()
+            {
+                // 全局进程级升 TLS（向高版本兼容，安全）：让 WebClient/HttpWebRequest 握手 TLS 1.2+
+                System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
+            }
             protected override System.Net.WebRequest GetWebRequest(Uri uri)
             {
                 var w = base.GetWebRequest(uri);

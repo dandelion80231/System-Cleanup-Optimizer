@@ -10,6 +10,7 @@
 
 ### 🛡️ 健壮性 / 补强
 - **清理页 CheckBox 垂直对齐修复（v1.13 补丁）**：清理项列表的 CheckBox 由垂直居中改为**顶端对齐 + 3px 微调**，与文字顶端对齐（修复部分项 CheckBox 视觉偏低的上下错位）；WrapPanel 换行行为保持不变。
+- **「检查更新」TLS 1.2 启用（v1.13 补丁）**：`.NET Framework 4.8` 的 `WebClient` 默认仅 TLS 1.0/1.1，访问 Cloudflare Pages 等强制 TLS 1.2+ 的站点会握手失败误报"无法连接"；`WebClientWithTimeout` 静态构造器加 `ServicePointManager.SecurityProtocol |= Tls12`，启用 TLS 1.2 后「检查更新」可正常请求 `version.json`。
 - **exe 自替换原子化（P0）**：`ApplyPendingBakeIfAny` 由「先改名后替换」两步改为 `MoveFileEx` 原子替换（`MOVEFILE_REPLACE_EXISTING|WRITE_THROUGH`），占用时回退「改名+移入」并带**失败回滚**——中途失败不再让主程序停在 `.old`，自包含更新始终可用。
 - **全局操作防重入（P1）**：新增 `OperationLock` 全局互斥，清理 / 优化 / 安全防护（Defender 禁用/恢复、开关、防火墙规则、更新管理）等耗时操作同一时间只允许一个——按钮连点或跨模块并发不再并行删同目录 / 并行写同注册表键；冲突时提示「已有XX操作正在运行」。
 - **配置原子写入（P1）**：`ConfigBackup.Save` / `Theme.SaveBackgroundSettings` / `SoftwareDefPersistence.StageBake` 由 `WriteAllText` 直写改为「同目录 tmp + `MoveFileEx` 原子替换」——崩溃不再留半截 JSON 导致配置静默丢失。
