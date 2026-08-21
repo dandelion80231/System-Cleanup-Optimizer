@@ -15,8 +15,8 @@ namespace CpqSystemTool
     public partial class MainWindow
     {
         // 软件版本号：左下角显示（同 BuildAbout 关于页更新日志）。
-        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.14.0 ↔ v1.14），两处保持一致。
-        private const string APP_VERSION = "v1.14";
+        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.15.0 ↔ v1.15），两处保持一致。
+        private const string APP_VERSION = "v1.15";
 
         private void BuildSidebar()
         {
@@ -109,27 +109,37 @@ namespace CpqSystemTool
             DockPanel.SetDock(_aboutEntry, Dock.Bottom);
             dock.Children.Add(_aboutEntry);
 
-            // ---- 主体：标题 + 副标题 + 13 按钮（StackPanel 从上往下排）----
-            var sp = new StackPanel { Margin = new Thickness(14, 16, 12, 8) };
+            // ---- 主体：标题 + 副标题（Dock=Top 固定，不随滚动） + 滚动按钮区（ScrollViewer 兜底矮窗口）----
+            var scroller = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            };
+            // 按钮区用 Grid + Star 行：所有按钮按可用空间平均分配高度，标准窗口下无空白无滚动
+            var sp = new Grid { Margin = new Thickness(14, 6, 12, 8) };
+            int btnRow = 0;
 
-            // 侧边栏头部标题
-            var titleTb = new TextBlock { Text = "系统清理与优化", FontSize = 18, FontWeight = FontWeights.Bold, Foreground = _textMain, Margin = new Thickness(2, 0, 0, 2), Name = "SidebarTitle" };
-            var subtitleTb = new TextBlock { Text = "WPF 版 · 既全又可回退", FontSize = 11, Foreground = _accent, Opacity = 0.9, Margin = new Thickness(2, 0, 0, 14), Name = "SidebarSubtitle" };
-            sp.Children.Add(titleTb);
-            sp.Children.Add(subtitleTb);
+            // 侧边栏头部标题（放 DockPanel 顶部，按钮区滚动时标题固定不动）
+            var titleTb = new TextBlock { Text = "系统清理与优化", FontSize = 18, FontWeight = FontWeights.Bold, Foreground = _textMain, Margin = new Thickness(14, 14, 0, 2), Name = "SidebarTitle" };
+            var subtitleTb = new TextBlock { Text = "WPF 版 · 既全又可回退", FontSize = 11, Foreground = _accent, Opacity = 0.9, Margin = new Thickness(14, 0, 0, 8), Name = "SidebarSubtitle" };
+            dock.Children.Add(titleTb);
+            DockPanel.SetDock(titleTb, Dock.Top);
+            dock.Children.Add(subtitleTb);
+            DockPanel.SetDock(subtitleTb, Dock.Top);
 
             foreach (var n in _nav)
             {
                 if (n.Hidden) continue;   // 隐藏页（关于）不占列表，由底部品牌区进入
+                sp.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
                 var b = new Button
                 {
                     Content = n.Icon + "  " + n.Title,
                     Background = Brushes.Transparent,
                     Foreground = _textDim,
                     HorizontalContentAlignment = HorizontalAlignment.Left,
+                    VerticalContentAlignment = VerticalAlignment.Center,
                     Cursor = Cursors.Hand,
-                    Height = 36,
-                    Margin = new Thickness(0, 1, 0, 1),
+                    Margin = new Thickness(2, 0, 2, 0),
                     Padding = new Thickness(8, 0, 8, 0),
                     FontSize = 13,
                     BorderThickness = new Thickness(0),
@@ -145,11 +155,13 @@ namespace CpqSystemTool
                 {
                     if ((b.Tag as string) != _activeNavKey) b.Background = Brushes.Transparent;
                 };
+                Grid.SetRow(b, btnRow++);
                 sp.Children.Add(b);
             }
 
-            // sp 后加 → 自动填充 DockPanel 剩余空间（按钮区紧贴上方，footer 紧贴底部）
-            dock.Children.Add(sp);
+            scroller.Content = sp;
+            // scroller 后加 → 自动填充 DockPanel 剩余空间（标题固定顶部，按钮区矮窗可滚动，footer 贴底）
+            dock.Children.Add(scroller);
 
             // 已迁移至 XAML 全局 Button Style，代码中不再需要 FrameworkElementFactory。
             Sidebar.Child = dock;
