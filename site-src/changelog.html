@@ -56,6 +56,15 @@
     <div class="container">
       <div class="timeline reveal">
         <div class="tl-item">
+          <span class="ver">v1.14</span><span class="date">2026-08-21</span>
+          <ul>
+            <li>🛡️ 安全：封禁自定义软件 ID 路径穿越——ID 仅允许 [A-Za-z0-9_-]（长度 1-64），SanitizeSwId 防御性清洗后拼路径，恶意 ..\ 不再能逃逸 %TEMP% 以管理员权限写任意路径</li>
+            <li>🛡️ 竞态修复：Defender 状态缓存跨线程同步——6 个静态缓存字段全部 volatile + _cacheLock 整体包住刷新/读取，顺带消除并发双 PowerShell 子进程</li>
+            <li>🚀 性能：「整页缓存」铺开到 9 个高频页面（常用软件 / Appx 商店 / Appx 管理 / 系统优化 / 服务优化 / 安全防护 / 清理优化 / 内存工具 / 配置管理），二次进页不再全量重建</li>
+            <li>📈 优化：日志框超 3000 行自动裁剪头部保留最新日志；探针请求头优化——Accept-Encoding 支持 gzip, deflate、UA 池轮换、补 Accept-Language 与同源 Referer，降低被 WAF/CDN 识别为 bot 概率</li>
+          </ul>
+        </div>
+        <div class="tl-item">
           <span class="ver">v1.13</span><span class="date">2026-08-21</span>
           <ul>
             <li>♻️ 更新：exe 自替换原子化——ApplyPendingBakeIfAny 由「先改名后替换」改为 MoveFileEx 原子替换（MOVEFILE_REPLACE_EXISTING|WRITE_THROUGH），占用时回退「改名+移入」并带失败回滚，中途失败不再让主程序停在 .old，自包含更新始终可用</li>
