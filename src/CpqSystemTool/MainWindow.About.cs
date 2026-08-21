@@ -444,38 +444,53 @@ namespace CpqSystemTool
             }
         }
 
-        /// <summary>返回候选代理列表：系统代理 → 真正直连（空 WebProxy 绕 IE/系统代理继承）→ Watt Toolkit 本地 HTTP 代理。</summary>
-        private static System.Net.IWebProxy[] GetProxyCandidates()
-        {
-            return new System.Net.IWebProxy[]
-            {
-                System.Net.WebRequest.DefaultWebProxy,              // 1) 系统代理（Watt Toolkit System 模式等）
-                new System.Net.WebProxy(),                            // 2) 真正直连（空 WebProxy，避开 IE 继承；Proxy=null 会被 .NET 忽略）
-                new System.Net.WebProxy("http://127.0.0.1:26561", false) // 3) Watt Toolkit 本地端口（PAC/System 模式）
-            };
-        }
-
-        /// <summary>依次尝试多种代理方式下载字符串，任一成功即返回；全部失败抛出汇总异常。
-        /// 每次调用前显式启用 TLS 1.2（ServicePointManager 在 .NET 4.8 默认仅 TLS 1.0/1.1，
-        /// Cloudflare/Pages 等现代 CDN 已禁用 → 不显式升 TLS 就握手失败）。</summary>
+        /// <summary>依次尝试多种方式下载字符串，任一成功即返回；全部失败抛出汇总异常。
+        /// 核心修复：.NET Framework 4.8 的 HttpWebRequest DNS 解析 IPv6 优先且失败不回退 IPv4，
+        /// 而 Cloudflare Pages 返回 AAAA 记录、本机常无 IPv6 连通 → 直接超时"无法连接"。
+        /// 故首选「手动解析 IPv4 + IP 直连 + Host 头保留域名」，绕开该缺陷。</summary>
         private static string DownloadStringWithProxyFallback(string url)
         {
-            // 显式升 TLS 1.2（向高版本兼容；用赋值覆盖保证生效，不依赖静态构造器时机）
+            // 显式升 TLS 1.2（.NET 4.8 默认仅 TLS 1.0/1.1，Cloudflare 已禁用旧协议）
             System.Net.ServicePointManager.SecurityProtocol = System.Net.SecurityProtocolType.Tls12 | System.Net.SecurityProtocolType.Tls11;
             System.Exception last = null;
-            foreach (var proxy in GetProxyCandidates())
-            {
-                try
-                {
-                    using (var wc = new WebClientWithTimeout { TimeoutMs = 10000, Proxy = proxy })
-                    {
-                        wc.Headers.Add("User-Agent", "CpqSystemTool");
-                        return wc.DownloadString(url);
-                    }
-                }
-                catch (System.Exception ex) { last = ex; }
-            }
+            // 1) 首选：IPv4 直连（手动解析 A 记录，IP 直连 + Host 头，绕 IPv6 优先不回退 + 绕 IE 代理继承）
+            try { return DownloadStringIPv4Direct(url); }
+            catch (System.Exception ex) { last = ex; }
+            // 2) 系统代理
+            try { return DownloadStringViaProxy(url, System.Net.WebRequest.DefaultWebProxy); }
+            catch (System.Exception ex) { last = ex; }
+            // 3) Watt Toolkit 本地代理
+            try { return DownloadStringViaProxy(url, new System.Net.WebProxy("http://127.0.0.1:26561", false)); }
+            catch (System.Exception ex) { last = ex; }
             throw new System.Exception("所有网络方式均失败：" + (last?.Message ?? "未知错误"), last);
+        }
+
+        /// <summary>IPv4 直连：解析域名的 A 记录，用 IP 构造 URI 直连（无代理），Host 头写回原域名保证 SNI/证书校验正确。</summary>
+        private static string DownloadStringIPv4Direct(string url)
+        {
+            var uri = new Uri(url);
+            var ipv4 = System.Net.Dns.GetHostAddresses(uri.Host)
+                .FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+            if (ipv4 == null) throw new System.Net.WebException("无法解析 IPv4 地址: " + uri.Host);
+            var uri4 = new UriBuilder(uri) { Host = ipv4.ToString() }.Uri;
+            var req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(uri4);
+            req.Host = uri.Host;                       // 保留域名：SNI + 证书校验
+            req.Timeout = 10000;
+            req.UserAgent = "CpqSystemTool";
+            req.Proxy = new System.Net.WebProxy();      // 显式无代理
+            using (var resp = (System.Net.HttpWebResponse)req.GetResponse())
+            using (var sr = new System.IO.StreamReader(resp.GetResponseStream(), System.Text.Encoding.UTF8))
+                return sr.ReadToEnd();
+        }
+
+        /// <summary>走指定代理下载字符串（代理自己解析 DNS，无 IPv6 优先问题）。</summary>
+        private static string DownloadStringViaProxy(string url, System.Net.IWebProxy proxy)
+        {
+            using (var wc = new WebClientWithTimeout { TimeoutMs = 10000, Proxy = proxy })
+            {
+                wc.Headers.Add("User-Agent", "CpqSystemTool");
+                return wc.DownloadString(url);
+            }
         }
 
         /// <summary>检查官网 version.json 是否有新版本，结果经 Dispatcher 回到 UI 线程写入状态栏。</summary>

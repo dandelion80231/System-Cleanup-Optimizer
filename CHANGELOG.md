@@ -10,7 +10,7 @@
 
 ### 🛡️ 健壮性 / 补强
 - **清理页 CheckBox 垂直对齐修复（v1.13 补丁）**：清理项列表的 CheckBox 由垂直居中改为**顶端对齐 + 3px 微调**，与文字顶端对齐（修复部分项 CheckBox 视觉偏低的上下错位）；WrapPanel 换行行为保持不变。
-- **「检查更新」TLS 1.2 + 真正直连（v1.13 补丁）**：`.NET Framework 4.8` 的 `WebClient` 默认仅 TLS 1.0/1.1 + `Proxy=null` 仍会继承 IE/系统代理（导致三种代理候选实际可能都走用户的 Watt Toolkit `127.0.0.1:26561`，端口异常就全失败）；修复：每次调用前显式赋 `ServicePointManager.SecurityProtocol = Tls12|Tls11`，直连候选 `null` → `new WebProxy()`（空代理，真正直连），访问 Cloudflare Pages 的 `version.json` 应正常。
+- **「检查更新」IPv4 直连修复（v1.13 补丁·核心原因）**：根因是 `.NET Framework 4.8` 的 `HttpWebRequest` DNS 解析 **IPv6 优先且失败不回退 IPv4**，而 Cloudflare Pages 返回 AAAA 记录、本机无 IPv6 连通 → 直接超时"无法连接"（浏览器有 Happy Eyeballs 自动回退所以正常）。修复：`DownloadStringWithProxyFallback` 首选「手动解析 A 记录 → IP 直连 + Host 头保留域名（SNI/证书正确）」，系统代理 / Watt Toolkit 作回退；顺带每次显式升 TLS 1.2。
 - **exe 自替换原子化（P0）**：`ApplyPendingBakeIfAny` 由「先改名后替换」两步改为 `MoveFileEx` 原子替换（`MOVEFILE_REPLACE_EXISTING|WRITE_THROUGH`），占用时回退「改名+移入」并带**失败回滚**——中途失败不再让主程序停在 `.old`，自包含更新始终可用。
 - **全局操作防重入（P1）**：新增 `OperationLock` 全局互斥，清理 / 优化 / 安全防护（Defender 禁用/恢复、开关、防火墙规则、更新管理）等耗时操作同一时间只允许一个——按钮连点或跨模块并发不再并行删同目录 / 并行写同注册表键；冲突时提示「已有XX操作正在运行」。
 - **配置原子写入（P1）**：`ConfigBackup.Save` / `Theme.SaveBackgroundSettings` / `SoftwareDefPersistence.StageBake` 由 `WriteAllText` 直写改为「同目录 tmp + `MoveFileEx` 原子替换」——崩溃不再留半截 JSON 导致配置静默丢失。
