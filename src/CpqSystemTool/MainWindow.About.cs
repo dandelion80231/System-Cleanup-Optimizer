@@ -432,14 +432,10 @@ namespace CpqSystemTool
         // .NET Framework 的 WebClient 无 Timeout 属性（.NET 5+ 才有）；通过重写 GetWebRequest 设置底层请求超时。
         // Proxy 继承自基类 WebClient，外部可直接设置 wc.Proxy。
         // 同时显式启用 TLS 1.2（.NET 4.8 WebClient 默认仅 TLS 1.0/1.1，Cloudflare/Pages 等现代 CDN 已禁用 → 握手失败误报"无法连接"）。
+        // 且 Proxy=null 在 .NET Framework 里仍会继承 IE/系统代理 → 用空 WebProxy 显式表达"不使用任何代理"。
         private class WebClientWithTimeout : System.Net.WebClient
         {
             public int TimeoutMs { get; set; } = 10000;
-            static WebClientWithTimeout()
-            {
-                // 全局进程级升 TLS（向高版本兼容，安全）：让 WebClient/HttpWebRequest 握手 TLS 1.2+
-                System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
-            }
             protected override System.Net.WebRequest GetWebRequest(Uri uri)
             {
                 var w = base.GetWebRequest(uri);
@@ -448,20 +444,24 @@ namespace CpqSystemTool
             }
         }
 
-        /// <summary>返回候选代理列表：系统代理 → 直连 → Watt Toolkit 本地 HTTP 代理。</summary>
+        /// <summary>返回候选代理列表：系统代理 → 真正直连（空 WebProxy 绕 IE/系统代理继承）→ Watt Toolkit 本地 HTTP 代理。</summary>
         private static System.Net.IWebProxy[] GetProxyCandidates()
         {
             return new System.Net.IWebProxy[]
             {
                 System.Net.WebRequest.DefaultWebProxy,              // 1) 系统代理（Watt Toolkit System 模式等）
-                null,                                               // 2) 直连（无代理）
+                new System.Net.WebProxy(),                            // 2) 真正直连（空 WebProxy，避开 IE 继承；Proxy=null 会被 .NET 忽略）
                 new System.Net.WebProxy("http://127.0.0.1:26561", false) // 3) Watt Toolkit 本地端口（PAC/System 模式）
             };
         }
 
-        /// <summary>依次尝试多种代理方式下载字符串，任一成功即返回；全部失败抛出汇总异常。</summary>
+        /// <summary>依次尝试多种代理方式下载字符串，任一成功即返回；全部失败抛出汇总异常。
+        /// 每次调用前显式启用 TLS 1.2（ServicePointManager 在 .NET 4.8 默认仅 TLS 1.0/1.1，
+        /// Cloudflare/Pages 等现代 CDN 已禁用 → 不显式升 TLS 就握手失败）。</summary>
         private static string DownloadStringWithProxyFallback(string url)
         {
+            // 显式升 TLS 1.2（向高版本兼容；用赋值覆盖保证生效，不依赖静态构造器时机）
+            System.Net.ServicePointManager.SecurityProtocol = System.Net.SecurityProtocolType.Tls12 | System.Net.SecurityProtocolType.Tls11;
             System.Exception last = null;
             foreach (var proxy in GetProxyCandidates())
             {
