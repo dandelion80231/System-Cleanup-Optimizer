@@ -123,9 +123,10 @@ namespace CpqSystemTool
                     {
                         Tag = item.Id,
                         IsChecked = item.DefaultChecked,
-                        Margin = new Thickness(0),
+                        Margin = new Thickness(0, 3, 0, 0),
                         Cursor = Cursors.Hand,
-                        VerticalAlignment = VerticalAlignment.Center
+                        VerticalAlignment = VerticalAlignment.Top,
+                        VerticalContentAlignment = VerticalAlignment.Top
                     };
 
                     var nameTb = new TextBlock
