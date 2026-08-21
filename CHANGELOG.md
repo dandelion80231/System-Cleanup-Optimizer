@@ -19,6 +19,8 @@
 - **探针请求头优化**：`Accept-Encoding: identity` → `gzip, deflate`（手动解压）；固定 UA → 5 条 Chrome/Edge UA 池轮换；补 `Accept-Language` 与同源 Referer，降低被 WAF/CDN 识别为 bot 的概率。
 
 
+## [v1.13] - 2026-08-21
+
 > 相对 v1.12 的源码变更：按「基础设计缺失扫描」结论整体补强——exe 自替换原子化、全局操作防重入、配置原子写入、危险操作确认、更新状态锁，并新增两处 UI 提醒；例行版本提升 v1.12 → v1.13。
 
 ### 🛡️ 健壮性 / 补强
