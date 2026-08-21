@@ -450,8 +450,8 @@ namespace CpqSystemTool
         /// 故首选「手动解析 IPv4 + IP 直连 + Host 头保留域名」，绕开该缺陷。</summary>
         private static string DownloadStringWithProxyFallback(string url)
         {
-            // 显式升 TLS 1.2（.NET 4.8 默认仅 TLS 1.0/1.1，Cloudflare 已禁用旧协议）
-            System.Net.ServicePointManager.SecurityProtocol = System.Net.SecurityProtocolType.Tls12 | System.Net.SecurityProtocolType.Tls11;
+            // 显式叠加 TLS 1.2（防御：.NET 4.8 部分环境默认仅 TLS 1.0/1.1；用 |= 只加不减，保留系统默认的 TLS 1.3 等）
+            System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
             System.Exception last = null;
             // 1) 首选：IPv4 直连（手动解析 A 记录，IP 直连 + Host 头，绕 IPv6 优先不回退 + 绕 IE 代理继承）
             try { return DownloadStringIPv4Direct(url); }
