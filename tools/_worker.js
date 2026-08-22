@@ -41,8 +41,9 @@ export default {
     if (immutable) {
       out.headers.set("Cache-Control", "public, max-age=31556952, immutable");
     } else {
-      // HTML and everything else: short cache so updates propagate fast.
-      out.headers.set("Cache-Control", "public, max-age=300");
+      // HTML and everything else: NO caching — every navigation revalidates,
+      // so deploys are visible immediately (no "wait 5 min" confusion).
+      out.headers.set("Cache-Control", "no-cache, must-revalidate");
     }
 
     // Security / privacy headers.
