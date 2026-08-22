@@ -165,5 +165,12 @@
 }
 /* 右栏内容可能较高，限制高度并滚动，避免 panel 过长 */
 .dl-panel-right { max-height: 560px; overflow-y: auto; }
+/* 暗色主题下自定义细窄滚动条，避免系统默认白粗滚动条突兀 */
+.dl-panel-right::-webkit-scrollbar { width: 8px; }
+.dl-panel-right::-webkit-scrollbar-track { background: transparent; }
+.dl-panel-right::-webkit-scrollbar-thumb { background: rgba(255,255,255,.22); border-radius: 8px; }
+.dl-panel-right::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.35); }
+/* Firefox 滚动条协调（暗色细窄） */
+.dl-panel-right { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.22) transparent; }
 
 
