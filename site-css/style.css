@@ -35,17 +35,19 @@
 .dl-subnav a { color: var(--text-soft); font-size: 14px; font-weight: 700; padding: 6px 14px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); transition: background .2s, color .2s; }
 .dl-subnav a:hover { color: var(--accent-dark); background: var(--accent-soft); text-decoration: none; }
 /* v1.16 补丁：下载页页面级双栏布局（左下载信息 + 右 changelog） */
+.download { --dl-card-h: 360px; --dl-card-max-offset: 160px; --dl-tabs-h: 74px; --dl-scrollbar-w: 8px; }
 .download .container { max-width: 95vw; }
 .dl-layout { width: 100%; }
 .dl-layout-row { display: grid; grid-template-columns: minmax(380px, 0.65fr) minmax(0, 1.85fr); gap: 24px; align-items: stretch; }
 .dl-main { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.22); border-radius: var(--radius); padding: 26px; box-shadow: var(--shadow-lg); transition: transform .25s ease, box-shadow .25s ease; }
 .dl-main:hover { transform: translateY(-4px); box-shadow: 0 22px 52px rgba(20,60,70,.18); }
-.dl-main, .dl-changelog { height: 100%; display: flex; flex-direction: column; }
-.dl-main .dl-tabs { margin-bottom: 18px; max-height: 84px; overflow-y: auto; padding-right: 4px; }
-.dl-main .dl-tabs::-webkit-scrollbar { width: 8px; }
-.dl-main .dl-tabs::-webkit-scrollbar-thumb { background: rgba(255,255,255,.30); border-radius: 999px; }
-.dl-main .dl-tabs::-webkit-scrollbar-track { background: transparent; }
-.dl-panels { position: relative; min-height: 165px; flex: 1; }
+.dl-main, .dl-changelog { height: var(--dl-card-h); max-height: calc(100vh - var(--dl-card-max-offset)); overflow: hidden; display: flex; flex-direction: column; }
+.dl-main .dl-tabs { margin-bottom: 18px; max-height: var(--dl-tabs-h); overflow-y: auto; padding-right: 4px; }
+.dl-panels { position: relative; flex: 1; min-height: 0; overflow-y: auto; }
+.dl-tabs, .dl-panels, .chlog-panels { scrollbar-width: thin; }
+.dl-tabs::-webkit-scrollbar, .dl-panels::-webkit-scrollbar, .chlog-panels::-webkit-scrollbar { width: var(--dl-scrollbar-w); }
+.dl-tabs::-webkit-scrollbar-thumb, .dl-panels::-webkit-scrollbar-thumb, .chlog-panels::-webkit-scrollbar-thumb { background: rgba(255,255,255,.30); border-radius: 999px; }
+.dl-tabs::-webkit-scrollbar-track, .dl-panels::-webkit-scrollbar-track, .chlog-panels::-webkit-scrollbar-track { background: transparent; }
 .dl-panel { display: none; }
 .dl-panel.active { display: block; animation: fadeIn .25s ease; }
 .dl-main h2 { font-size: 18px; font-weight: 800; margin-bottom: 10px; color: #fff; white-space: nowrap; text-align: center; }
@@ -57,10 +59,7 @@
 .dl-changelog { text-align: left; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.22); border-radius: var(--radius); padding: 26px; box-shadow: var(--shadow-lg); transition: transform .25s ease, box-shadow .25s ease; }
 .dl-changelog:hover { transform: translateY(-4px); box-shadow: 0 22px 52px rgba(20,60,70,.18); }
 .dl-chlog-title-page { font-size: 16px; font-weight: 800; color: #fff; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.18); text-align: center; }
-.chlog-panels { position: relative; flex: 1; max-height: 560px; overflow-y: auto; padding-right: 6px; }
-.dl-changelog .chlog-panels::-webkit-scrollbar { width: 9px; }
-.dl-changelog .chlog-panels::-webkit-scrollbar-thumb { background: rgba(255,255,255,.30); border-radius: 999px; }
-.dl-changelog .chlog-panels::-webkit-scrollbar-track { background: transparent; }
+.chlog-panels { position: relative; flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px; }
 .chlog-panel { display: none; }
 .chlog-panel.active { display: block; animation: fadeIn .25s ease; }
 /* 右栏所有文字强制白色，便于查看 */
@@ -79,6 +78,7 @@
 @media (max-width: 900px) {
   .download .container { max-width: var(--maxw); }
   .dl-layout-row { grid-template-columns: 1fr; gap: 18px; }
+  .dl-main, .dl-changelog { height: auto; max-height: var(--dl-card-h); }
 }
 
 /* v1.16 同步：官网 changelog 富文本（与 CHANGELOG.md 完整内容一致） */
