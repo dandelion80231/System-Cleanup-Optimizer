@@ -139,7 +139,9 @@
             <div class="hash">SHA256: da15311eba98cf95eae6560a70cd8f55d46c758d231b110c79ff734ad05c74d8</div>
             <div class="dl-chlog-title">📋 本版更新</div>
             <ul class="dl-chlog-list" style="display:block;">
-              <li>查看完整更新日志 →</li>
+              <li>♻️ 重构：4 套重复 HTTP 下载实现合并为统一 Downloader（支持重试 / 进度回调 / 超时 / 代理）</li>
+              <li>🛡️ 健壮性：35 处 Dispatcher.Invoke 补 try/catch 兜底，消除后台线程崩溃</li>
+              <li>🚀 全项目 .Result 清零（消除 9 处 sync-over-async 死锁隐患）</li>
             </ul>
           </div>
           <div class="dl-panel" role="tabpanel" id="panel-v1.11" data-panel="v1.11">
@@ -149,7 +151,9 @@
             <div class="hash">SHA256: edb5835f89ec9000d13ecfe9a2b3e661c1dce5f4569e83a90437f318afb988b1</div>
             <div class="dl-chlog-title">📋 本版更新</div>
             <ul class="dl-chlog-list" style="display:block;">
-              <li>查看完整更新日志 →</li>
+              <li>🐞 子进程双流读取死锁修复 / 后台任务运行中关闭窗口崩溃等 6 类缺陷</li>
+              <li>⚡ 官方直链探针并行化（5 倍提速）+ 注册表 / WebView2 / Chocolatey 缓存</li>
+              <li>♻️ MainWindow 按功能域拆分 8 个 partial（5599→833 行）+ 日志统一收编</li>
             </ul>
           </div>
           <div class="dl-panel" role="tabpanel" id="panel-v1.10" data-panel="v1.10">
@@ -159,7 +163,9 @@
             <div class="hash">SHA256: 24F3499D1A516D28CA3DF45220B4CC8CF2D486AB4FCA764AEC7F9BEC3714546B</div>
             <div class="dl-chlog-title">📋 本版更新</div>
             <ul class="dl-chlog-list" style="display:block;">
-              <li>查看完整更新日志 →</li>
+              <li>✨ 新增内存工具页（RAMMap 镜像 + 可选内存优化）</li>
+              <li>🐞 修复 PDH 常量写反导致「使用中」为 0 与天文数字 GB</li>
+              <li>🔄 修复内存优化按钮执行后自动重新分析（视图即时刷新）</li>
             </ul>
           </div>
           <div class="dl-panel" role="tabpanel" id="panel-v1.09" data-panel="v1.09">
@@ -169,7 +175,8 @@
             <div class="hash">SHA256: 13428E824DB284F6229BD87459F5909F66D4FA687A9047C8A44C9462CAF2B9BF</div>
             <div class="dl-chlog-title">📋 本版更新</div>
             <ul class="dl-chlog-list" style="display:block;">
-              <li>查看完整更新日志 →</li>
+              <li>🧹 清理优化新增「Whesvc 诊断日志」项（系统文件类，默认不勾选）</li>
+              <li>⚙️ 服务优化候选清单新增 whesvc（Windows 健康状况和优化体验，风险 mid）</li>
             </ul>
           </div>
           <div class="dl-panel" role="tabpanel" id="panel-v1.08" data-panel="v1.08">
@@ -179,7 +186,9 @@
             <div class="hash">SHA256: EFBB9F2906F8ED64C3532BA166AE0ED778053370CFE1C20B879EDB044AE7E568</div>
             <div class="dl-chlog-title">📋 本版更新</div>
             <ul class="dl-chlog-list" style="display:block;">
-              <li>查看完整更新日志 →</li>
+              <li>🌐 关于页新增官网地址 https://cpq-system-tool.pages.dev/</li>
+              <li>🔄 检查更新改为从官网 version.json 获取新版本（普通用户无需访问 GitHub）</li>
+              <li>📦 官网安装包统一改为中文名（系统清理与优化工具_vX.XX.exe）</li>
             </ul>
           </div>
           <div class="dl-panel" role="tabpanel" id="panel-v1.07" data-panel="v1.07">
@@ -189,7 +198,9 @@
             <div class="hash">SHA256: CE6CDC3CD29A18C610018E17F6D4AD74EA62228C41679FCF48B30CBA23B62211</div>
             <div class="dl-chlog-title">📋 本版更新</div>
             <ul class="dl-chlog-list" style="display:block;">
-              <li>查看完整更新日志 →</li>
+              <li>🎨 全量 ComboBox 深 / 浅色主题统一，下拉弹层不再刺眼白底</li>
+              <li>🐞 修复自定义下拉「浮到最顶层」压窗问题</li>
+              <li>🌓 「安装到」按钮背景 / 字体随主题自适应</li>
             </ul>
           </div>
           <div class="dl-panel" role="tabpanel" id="panel-v1.06" data-panel="v1.06">
@@ -199,7 +210,9 @@
             <div class="hash">SHA256: 50933EE1422527A80BE9B86DF7B0240F167F8BEC82B1E45E32D285ECAF593F40</div>
             <div class="dl-chlog-title">📋 本版更新</div>
             <ul class="dl-chlog-list" style="display:block;">
-              <li>查看完整更新日志 →</li>
+              <li>🌐 WebView2 探针依赖改为运行时从 NuGet 拉取兜底</li>
+              <li>🎨 全量箭头线条化（chevron），视觉更统一</li>
+              <li>🐞 修复清理优化页分组标题丢失与箭头错位</li>
             </ul>
           </div>
           <div class="dl-panel" role="tabpanel" id="panel-v1.05" data-panel="v1.05">
@@ -209,7 +222,8 @@
             <div class="hash">SHA256: E131F241D7DCC5EA5E25ACC26754A7B0E7888725CF68B6952553B6217D38550D</div>
             <div class="dl-chlog-title">📋 本版更新</div>
             <ul class="dl-chlog-list" style="display:block;">
-              <li>查看完整更新日志 →</li>
+              <li>🔧 新增「驱动清理」模块（基于 Windows 原生 API 独立实现）</li>
+              <li>📊 设备名称补全、列头三态排序、DISM 双后端</li>
             </ul>
           </div>
           <div class="dl-panel" role="tabpanel" id="panel-v1.04" data-panel="v1.04">
@@ -219,7 +233,9 @@
             <div class="hash">SHA256: FE8AFC95F2F8939C16C1B2021B3CD769C22706AAB7EFF9E1EF4608CED966EBF6</div>
             <div class="dl-chlog-title">📋 本版更新</div>
             <ul class="dl-chlog-list" style="display:block;">
-              <li>查看完整更新日志 →</li>
+              <li>🧹 Edge 组策略双 hive（HKCU + HKLM）彻底清除</li>
+              <li>⚙️ WYSIWYG 应用策略：勾选即优化、取消即还原</li>
+              <li>🔖 版本号规范化回到两段式 vX.YY</li>
             </ul>
           </div>
           <div class="dl-panel" role="tabpanel" id="panel-v1.03" data-panel="v1.03">
@@ -229,7 +245,9 @@
             <div class="hash">SHA256: 38B7AD45D844DD5ACFD9FA4886E9A99B0EBFA6DF6933D312BC09CE0807208043</div>
             <div class="dl-chlog-title">📋 本版更新</div>
             <ul class="dl-chlog-list" style="display:block;">
-              <li>查看完整更新日志 →</li>
+              <li>🐞 WebView2 探针初始化 20s 超时终极修复（async / await 解除死锁）</li>
+              <li>🛡️ MAS 激活安全加固（powershell.exe 完整路径 + EncodedCommand 防 PATH 劫持）</li>
+              <li>🔍 三遍代码审查修复与代码清理</li>
             </ul>
           </div>
           <div class="dl-panel" role="tabpanel" id="panel-v1.02" data-panel="v1.02">
@@ -239,7 +257,9 @@
             <div class="hash">SHA256: 1F45BB1F497391F03CDBD352AE85717F13675D01C94302996659D161B1DB4F35</div>
             <div class="dl-chlog-title">📋 本版更新</div>
             <ul class="dl-chlog-list" style="display:block;">
-              <li>查看完整更新日志 →</li>
+              <li>✨ 新增 WebView2 官方 exe 直链探针模块（独立 STA 线程 + WinForms 承载）</li>
+              <li>🔧 PowerShell 调用统一迁移到 -EncodedCommand（消除引号 / 中文路径乱码）</li>
+              <li>📛 交付文件名带版本号（系统清理与优化工具_v1.02.exe）</li>
             </ul>
           </div>
           <div class="dl-panel" role="tabpanel" id="panel-v1.01" data-panel="v1.01">
@@ -249,7 +269,8 @@
             <div class="hash">SHA256: D79E8976124EDE8FBE8A4509BC85E2E435B794588B77404EBE9C6D91C62B0C8D</div>
             <div class="dl-chlog-title">📋 本版更新</div>
             <ul class="dl-chlog-list" style="display:block;">
-              <li>查看完整更新日志 →</li>
+              <li>🎉 初始版本发布（2026-07-25）</li>
+              <li>📦 12 模块雏形：系统优化、清理优化、服务优化、Appx 管理、常用软件、安全防护、Edge 管理、隐私设置、系统工具、激活等</li>
             </ul>
           </div>
         </div>
