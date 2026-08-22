@@ -41,9 +41,11 @@ export default {
     if (immutable) {
       out.headers.set("Cache-Control", "public, max-age=31556952, immutable");
     } else {
-      // HTML and everything else: NO caching — every navigation revalidates,
-      // so deploys are visible immediately (no "wait 5 min" confusion).
-      out.headers.set("Cache-Control", "no-cache, must-revalidate");
+      // HTML and everything else: NO caching at all. `no-store` is stronger
+      // than `no-cache` — it forbids memory cache, disk cache AND BFCache
+      // from retaining a copy, so every navigation fetches the latest HTML
+      // (no "wait 5 min", no back/forward cache showing stale page).
+      out.headers.set("Cache-Control", "no-store");
     }
 
     // Security / privacy headers.
