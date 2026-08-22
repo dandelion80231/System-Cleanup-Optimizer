@@ -42,7 +42,7 @@
 .dl-main { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.22); border-radius: var(--radius); padding: 26px; box-shadow: var(--shadow-lg); transition: transform .25s ease, box-shadow .25s ease; }
 .dl-main:hover { transform: translateY(-4px); box-shadow: 0 22px 52px rgba(20,60,70,.18); }
 .dl-main, .dl-changelog { height: var(--dl-card-h); max-height: calc(100vh - var(--dl-card-max-offset)); overflow: hidden; display: flex; flex-direction: column; }
-.dl-main .dl-tabs { margin-bottom: 18px; max-height: var(--dl-tabs-h); overflow-y: auto; padding-right: 4px; }
+.dl-main .dl-tabs { margin-bottom: 18px; max-height: var(--dl-tabs-h); overflow-y: auto; padding-right: 4px; padding-bottom: 2px; }
 .dl-panels { position: relative; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; }
 .dl-panels::-webkit-scrollbar { display: none; }
 .dl-tabs, .chlog-panels {
