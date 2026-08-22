@@ -12,6 +12,7 @@
 - **11 项 flags 推荐配置**：ANGLE 图形后端（推荐默认）、Edge Copilot 模式（推荐禁用）、并行下载、GPU 栅格化、硬件加速视频解码、QUIC/HTTP3、前进后退缓存、平滑滚动、TLS 1.3 Early Data、强制深色模式（推荐禁用）、Fluent 悬浮滚动条——每项下拉含「默认 (Default) / 启用 / 禁用」及 ⭐ 推荐值标记。
 - **⚡ 一键优化**：把所有 flags 设为推荐值（性能类启用、Copilot 禁用、ANGLE 保持默认）→ 自动写入注册表 `HKCU\Software\Microsoft\Edge\EdgeFlags` → **强制重启 Edge 立即生效**。
 - **↩ 一键恢复默认**：清除本程序管理的全部 flags 注册表值，恢复 Edge 出厂默认 → 强制重启 Edge。
+- **下载更新默认路径（v1.16 补丁）**：「下载更新」的 SaveFileDialog 默认保存目录从 `%UserProfile%` 改为**当前已安装 exe 同级目录**（`AppContext.BaseDirectory`）——覆盖更新（如 v1.14→v1.16）时下载文件默认落到旧版本旁边，不再跳到用户目录。
 - **UI 联动**：修改后 ComboBox 实时同步注册表状态；手动切换即写注册表（选「默认」恢复出厂）。
 - **注意事项**：实验性功能可能不稳定，逐项开启并在 edge://flags 可随时重置；修改需重启 Edge 生效（一键按钮已内置强制重启）。
 
