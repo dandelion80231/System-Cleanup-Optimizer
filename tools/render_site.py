@@ -39,6 +39,8 @@ SITE_DIST = os.environ.get("SITE_DIST", os.path.join(PROJECT_ROOT, "site-dist"))
 
 # CSS 唯一源（受 git 跟踪）→ 渲染产物 site-dist/style.{sha256前12}.css
 CSS_SRC = os.path.join(PROJECT_ROOT, "site-css", "style.css")
+# JS 唯一源（受 git 跟踪）→ 渲染产物 site-dist/script.{sha256前12}.js
+JS_SRC = os.path.join(PROJECT_ROOT, "site-js", "script.js")
 
 TEMPLATE_FILES = ["index.html", "download.html", "changelog.html", "features.html", "about.html"]
 
@@ -105,46 +107,66 @@ def render(data):
     print(f"[COPY] version.json -> {dst_ver}")
 
 
-def process_css():
-    # site-css/style.css（git 跟踪的唯一 CSS 源）→ site-dist/style.{hash}.css，
-    # 并同步更新 site-src 5 个 HTML 的 <link href>，保证渲染产物引用新文件名。
-    # hash = SHA-256 前 12 位（与现有 style.6f910698e1b1.css 的 style.{12hex}.css 命名格式兼容；
-    #       deploy_site.py 的 blake3 仅用于 Cloudflare 资产 key，与文件名无关，故不采用）。
-    if not os.path.isfile(CSS_SRC):
-        print(f"[SKIP] CSS 源缺失：{CSS_SRC}（跳过 CSS 处理；继续部署 HTML 即可）")
+def process_asset(src_path, kind, prefix, ref_re, tag_fmt):
+    """通用资产渲染：把 src_path 复制为 site-dist/{prefix}.{hash12}.ext，
+    清理旧产物，并同步更新 site-src 各 HTML 的引用标签。
+
+    kind: 人类可读类型（CSS/JS），用于日志。
+    prefix: 文件名前缀，如 style / script。
+    ref_re: 匹配旧引用的正则（含一个捕获组）。
+    tag_fmt: 新标签模板，如 '<link rel="stylesheet" href="{new_name}">'。
+    返回 new_name；若源文件缺失返回 None。
+    """
+    if not os.path.isfile(src_path):
+        print(f"[SKIP] {kind} 源缺失：{src_path}")
         return None
-    # 读 CSS
-    with open(CSS_SRC, "rb") as f:
-        css_bytes = f.read()
-    h = hashlib.sha256(css_bytes).hexdigest()[:12]
-    new_name = f"style.{h}.css"
+    with open(src_path, "rb") as f:
+        data = f.read()
+    h = hashlib.sha256(data).hexdigest()[:12]
+    ext = os.path.splitext(src_path)[1].lstrip(".")
+    new_name = f"{prefix}.{h}.{ext}"
     dst = os.path.join(SITE_DIST, new_name)
-    # 写 site-dist/style.{hash}.css
     with open(dst, "wb") as f:
-        f.write(css_bytes)
-    # 清理 site-dist 下旧的 style.*.css（hash 变了就删；.bak/.bak2 后缀不匹配 .endswith(".css")，不受影响）
+        f.write(data)
+    # 清理旧产物（保留 _worker.js 等非 {prefix}.{hash}.{ext} 文件）
     for fname in os.listdir(SITE_DIST):
-        if fname.startswith("style.") and fname.endswith(".css") and fname != new_name:
+        if fname.startswith(f"{prefix}.") and fname.endswith(f".{ext}") and fname != new_name:
             old = os.path.join(SITE_DIST, fname)
             os.remove(old)
-            print(f"[CLEANUP] 删除旧 CSS: {fname}")
-    # 同步更新 site-src 5 个 HTML 中的 <link href>（写回 site-src，保持模板引用与产物一致）
-    href_re = re.compile(r'<link\s+rel="stylesheet"\s+href="(style\.[0-9a-f]{12}\.css)">')
+            print(f"[CLEANUP] 删除旧 {kind}: {fname}")
+    # 同步更新 site-src HTML 引用
+    ref_re = re.compile(ref_re)
     for name in TEMPLATE_FILES:
         src = os.path.join(SITE_SRC, name)
         if not os.path.isfile(src):
-            continue  # 缺失检查交给 render()
+            continue
         with open(src, encoding="utf-8") as f:
             html = f.read()
-        m = href_re.search(html)
+        m = ref_re.search(html)
         if m:
             old_ref = m.group(1)
-            html_new = href_re.sub(f'<link rel="stylesheet" href="{new_name}">', html)
+            html_new = ref_re.sub(tag_fmt.format(new_name=new_name), html)
             with open(src, "w", encoding="utf-8") as f:
                 f.write(html_new)
-            print(f"[UPDATE-CSS-REF] {name}: {old_ref} -> {new_name}")
-    print(f"[RENDER-CSS] {CSS_SRC} -> {dst} ({len(css_bytes)} bytes, hash={h[:12]})")
+            print(f"[UPDATE-{kind}-REF] {name}: {old_ref} -> {new_name}")
+    print(f"[RENDER-{kind}] {src_path} -> {dst} ({len(data)} bytes, hash={h[:12]})")
     return new_name
+
+
+def process_css():
+    return process_asset(
+        CSS_SRC, "CSS", "style",
+        r'<link\s+rel="stylesheet"\s+href="(style\.[0-9a-f]{12}\.css)">',
+        '<link rel="stylesheet" href="{new_name}">',
+    )
+
+
+def process_js():
+    return process_asset(
+        JS_SRC, "JS", "script",
+        r'<script\s+src="(script\.[0-9a-f]{12}\.js)"></script>',
+        '<script src="{new_name}"></script>',
+    )
 
 
 def main():
@@ -152,7 +174,8 @@ def main():
     print(f"[INFO] 模板源: {SITE_SRC}")
     print(f"[INFO] 产物目录: {SITE_DIST}")
     print(f"[INFO] version={data['version']}  date={data['date']}  name={data['name']}  size={data['size']} ({data['size_mb']} MB)")
-    process_css()  # 先处理 CSS（写 site-dist/style.{hash}.css + 同步 site-src HTML href），再渲染 HTML
+    process_css()  # 先处理 CSS（写 site-dist/style.{hash}.css + 同步 site-src HTML href）
+    process_js()   # 再处理 JS（写 site-dist/script.{hash}.js + 同步 site-src HTML src）
     render(data)
     print("[DONE] 模板渲染完成，site-dist 五个 HTML 已无占位符。")
 
