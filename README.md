@@ -4,7 +4,7 @@
 >
 > **技术栈**: WPF (C# / .NET Framework 4.8) · 单文件 exe · 零安装 · 双击即跑 · 管理员权限自动提权
 >
-> **版本**: v1.15
+> **版本**: v1.16
 >
 > **项目主页**: [https://github.com/dandelion80231/System-Cleanup-Optimizer](https://github.com/dandelion80231/System-Cleanup-Optimizer)
 >
@@ -85,7 +85,7 @@
 
 ### 下载与运行
 
-1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cpq-system-tool.pages.dev/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.15.exe`）。
+1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cpq-system-tool.pages.dev/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.16.exe`）。
 2. 双击运行即可，**无需安装**。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入单文件 exe。
 3. 首次使用建议：先创建系统还原点，再进行优化配置。
 
@@ -268,17 +268,18 @@
 
 ### 8. Edge 管理
 
-**核心能力**: 支持 5 个频道（Stable/Beta/Dev/Canary/SxS）的版本检测、安装、卸载、禁用自动更新、关闭启动增强。
+**核心能力**: 支持 5 个频道（Stable/Beta/Dev/Canary/SxS）的版本检测、安装、卸载、禁用自动更新、关闭启动增强；**实验性功能 flags（edge://flags）批量管理**（11 项推荐配置 + 一键优化/恢复 + 强制重启生效）。
 
 **实现原理**:
 - 版本检测读各频道 `WOW6432Node\...\Uninstall` 键；安装从官方在线安装器静默安装；卸载读 `UninstallString` 或强清目录+注册表；禁自动更新删除 `edgeupdate` 服务与计划任务并写组策略；关启动增强写 `StartupBoostEnabled=0`。
+- **flags 管理**：读写 `HKCU\Software\Microsoft\Edge\EdgeFlags`（值名=flag 名、值=flag 值；删除值=恢复默认），每项含推荐值 ⭐；「一键优化」把 11 项设为推荐值，「一键恢复默认」清除全部——两者都强制 `taskkill /F /IM msedge.exe /T` 后重启 Edge 立即生效。
 
 **代码实现方法**:
-- `Modules/EdgeCore.cs` — `public static class EdgeCore`(:10)；版本检测用 Uninstall 键（stable/beta/dev/canary/sxs :18-22）；`InstallEdge`(:72) 下载 `c2rsetup.officeapps.live.com` 后 `MicrosoftEdgeSetup.exe /silent /install`(:80)；`UninstallEdge`(:85)；`BlockEdgeUpdate`(:179) 调 `sc stop`/`sc delete edgeupdate`(:186-187) 与 `schtasks /delete`(:191-192)；`StartupBoostEnabled=0` 经 `RegistryHelper.SetDword`(:201/:234)，`IsStartupBoostEnabled`(:216)；`RestoreEdgeUpdate`(:208)。
+- `Modules/EdgeCore.cs` — `public static class EdgeCore`(:10)；版本检测用 Uninstall 键（stable/beta/dev/canary/sxs :18-22）；`InstallEdge`(:72) 下载 `c2rsetup.officeapps.live.com` 后 `MicrosoftEdgeSetup.exe /silent /install`(:80)；`UninstallEdge`(:85)；`BlockEdgeUpdate`(:179) 调 `sc stop`/`sc delete edgeupdate`(:186-187) 与 `schtasks /delete`(:191-192)；`StartupBoostEnabled=0` 经 `RegistryHelper.SetDword`(:201/:234)，`IsStartupBoostEnabled`(:216)；`RestoreEdgeUpdate`(:208)；flags 相关：`EdgeFlagDefs`(:476，11 项元数据) `GetEdgeFlag`(:443) `SetEdgeFlag`(:454) `ClearEdgeFlag`(:465) `ApplyEdgeFlag`(:492) `ApplyAllRecommendedFlags`(:501) `ClearAllEdgeFlags`(:514) `ForceRestartEdge`(:527)。
 
-**使用方法**: 选择频道 → 安装/卸载；「禁用自动更新」「关闭启动增强」为独立开关。
+**使用方法**: 选择频道 → 安装/卸载；「禁用自动更新」「关闭启动增强」为独立开关；「⚙ Edge 实验性功能」区逐项设置 flags 或点「⚡ 一键优化 / ↩ 一键恢复默认」批量操作（会强制重启 Edge）。
 
-**权限/风险**: 卸载与禁更新需管理员权限。
+**权限/风险**: 卸载与禁更新需管理员权限；flags 为实验性功能，修改需重启 Edge 生效，选「默认」可随时恢复出厂。
 
 ---
 
@@ -627,7 +628,7 @@ dotnet build -c Release
 
 ### 分发
 
-只需分发单个 `系统清理与优化工具_v1.15.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
+只需分发单个 `系统清理与优化工具_v1.16.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
 
 ---
 

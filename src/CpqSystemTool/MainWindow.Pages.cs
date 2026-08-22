@@ -300,10 +300,19 @@ namespace CpqSystemTool
         //  Module: Edge / WebView2 管理（参考 Win11EasyConfig Form3 设计，独立实现，两列布局）
         // =====================================================================
 
+        // flags 行 ComboBox 引用（一键优化/恢复后据此刷新 SelectedItem，使 UI 反映新值）
+        private readonly List<ComboBox> _edgeFlagCombos = new List<ComboBox>();
+
+        /// <summary>RefreshEdgeFlagCombos 设置 ComboBox.SelectedItem 时临时为 true，防止 SelectionChanged 事件误清注册表（因为 ApplyEdgeFlag 把 Recommend==Values[0] 的值误判为默认）。</summary>
+        private bool _suppressFlagEvents;
+
         private UIElement BuildEdge()
         {
+            // 重置 flag 组合框引用列表（每次 BuildEdge 重建时刷新）
+            _edgeFlagCombos.Clear();
+
             var root = new StackPanel();
-            root.Children.Add(Header("Edge / WebView2", "Microsoft Edge 浏览器（含 Stable/Beta/Dev/Canary/SxS）和 WebView2 Runtime 的安装、卸载、自动更新、启动增强控制。"));
+            root.Children.Add(Header("Edge / WebView2", "Edge 浏览器（含 Stable/Beta/Dev/Canary/SxS）和 WebView2 Runtime 的安装、卸载、自动更新、启动增强控制，及 flags（edge://flags）一键修改与重启生效。"));
 
             var pb = MakeProgress();
             var log = MakeLogBox();
@@ -405,6 +414,51 @@ namespace CpqSystemTool
             };
             leftInner.Children.Add(sbChk);
 
+            // 顶部留间距
+            leftInner.Children.Add(new TextBlock { Height = 6 });
+
+            // 一键优化 / 一键恢复按钮（2 列等宽 Grid）
+            var flagBatchBar = new Grid();
+            flagBatchBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            flagBatchBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
+            flagBatchBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var applyAllBtn = Btn("⚡ 一键优化", true, () => {
+                if (MessageBox.Show(
+                    "一键把 11 项 Edge 实验性 flags 设为推荐值（性能类 9 项启用 + Copilot 禁用 + ANGLE 默认），\n并强制重启 Edge 浏览器使 flags 立即生效。\n\n⚠ Edge 浏览器将自动重启，未保存的标签页/表单会丢失。\n\n确认执行？",
+                    "一键优化 Edge flags", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+                pb.Visibility = Visibility.Visible;
+                RunInBg(log, l => {
+                    EdgeCore.ApplyAllRecommendedFlags(l);
+                    EdgeCore.ForceRestartEdge(l);
+                }, "⚡ Edge flags 一键优化完成 + 已重启 Edge", () => { RefreshEdgeFlagCombos(); pb.Visibility = Visibility.Collapsed; });
+            }, 0);
+            Grid.SetColumn(applyAllBtn, 0);
+            flagBatchBar.Children.Add(applyAllBtn);
+
+            var clearAllBtn = Btn("↩ 一键恢复默认", false, () => {
+                if (MessageBox.Show(
+                    "清除本程序管理的 11 项 flags 注册表值，恢复 Edge 出厂默认。\n并强制重启 Edge 浏览器使 flags 立即生效。\n\n⚠ Edge 浏览器将自动重启，未保存的标签页/表单会丢失。\n\n确认执行？",
+                    "一键恢复 Edge flags", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+                pb.Visibility = Visibility.Visible;
+                RunInBg(log, l => {
+                    EdgeCore.ClearAllEdgeFlags(l);
+                    EdgeCore.ForceRestartEdge(l);
+                }, "↩ Edge flags 已恢复默认 + 已重启 Edge", () => { RefreshEdgeFlagCombos(); pb.Visibility = Visibility.Collapsed; });
+            }, 0);
+            Grid.SetColumn(clearAllBtn, 2);
+            flagBatchBar.Children.Add(clearAllBtn);
+
+            leftInner.Children.Add(flagBatchBar);
+            leftInner.Children.Add(new TextBlock 
+            { 
+                Text = "⚡ 应用 11 项 flags 推荐值（性能类启用、Copilot 禁用、ANGLE 默认）；↩ 清除所有 flags 注册表值恢复出厂。两项都会强制重启 Edge 让 flags 立即生效。", 
+                Foreground = _textDim, 
+                FontSize = 11.5, 
+                Margin = new Thickness(0, 6, 0, 0),
+                TextWrapping = TextWrapping.Wrap 
+            });
+
             Grid.SetColumn(leftCard, 0);
             mainGrid.Children.Add(leftCard);
 
@@ -473,6 +527,90 @@ namespace CpqSystemTool
             updateBar.Children.Add(restoreBtn);
             rightInner.Children.Add(updateBar);
 
+            // ===== 实验性功能 (edge://flags) =====
+            rightInner.Children.Add(new TextBlock { Text = "⚙ Edge 实验性功能 (edge://flags)", FontWeight = FontWeights.SemiBold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 8, 0, 4) });
+
+            // flag 值 → 用户可读显示名映射（use-angle / edge-copilot-mode 枚举 + 开关类 "1"/"0"）
+            var flagDisplayNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["default"] = "默认",
+                ["gl"] = "GL (OpenGL)",
+                ["d3d11"] = "D3D11",
+                ["d3d11on12"] = "D3D11on12",
+                ["vulkan"] = "Vulkan",
+                ["swiftshader"] = "SwiftShader",
+                ["disabled"] = "禁用",
+                ["enabled"] = "启用",
+                ["optin"] = "Opt-in",
+                ["1"] = "启用",
+                ["0"] = "禁用"
+            };
+
+            // 按元数据动态生成行（不硬编码 flag 名）；def.Recommend 命中的枚举项追加 " ⭐"
+            for (int f = 0; f < EdgeCore.EdgeFlagDefs.Length; f++)
+            {
+                var def = EdgeCore.EdgeFlagDefs[f];
+                bool isLast = f == EdgeCore.EdgeFlagDefs.Length - 1;
+
+                var row = new Grid();
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var label = new TextBlock
+                {
+                    Text = def.Label,
+                    Foreground = _textMain,
+                    FontSize = 12.5,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                if (!isLast) label.Margin = new Thickness(0, 4, 0, 0);
+                Grid.SetColumn(label, 0);
+                row.Children.Add(label);
+
+                var cb = new ComboBox
+                {
+                    Width = 150,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    FontSize = 12.5,
+                    Tag = def.Key
+                };
+                // 首个固定项「默认 (Default)」：Tag=null 代表 Edge 出厂默认（写入时删除恢复）
+                // 推荐值为 default（或空）时，「默认 (Default)」项加 ⭐（推荐 = 不写注册表、保持 Edge 出厂默认）
+                bool recIsDefault = string.IsNullOrEmpty(def.Recommend) || def.Recommend == "default";
+                cb.Items.Add(new ComboBoxItem { Content = "默认 (Default)" + (recIsDefault ? " ⭐" : ""), Tag = null });
+                foreach (var v in def.Values)
+                {
+                    string display = flagDisplayNames.TryGetValue(v, out var dn) ? dn : v;
+                    cb.Items.Add(new ComboBoxItem { Content = display + (def.Recommend == v ? " ⭐" : ""), Tag = v });
+                }
+                Grid.SetColumn(cb, 1);
+                row.Children.Add(cb);
+
+                // 初始选中当前注册表状态；未设置(null)或旧值不匹配时回退「默认 (Default)」
+                var isInit = true;
+                cb.SelectionChanged += (s, e) =>
+                {
+                    if (cb.SelectedItem is ComboBoxItem it && !isInit && !_suppressFlagEvents)
+                    {
+                        EdgeCore.ApplyEdgeFlag((string)cb.Tag, it.Tag as string);
+                    }
+                };
+                string cur = EdgeCore.GetEdgeFlag(def.Key);
+                ComboBoxItem hit = null;
+                foreach (ComboBoxItem it in cb.Items)
+                {
+                    if ((cur == null && it.Tag == null) || (cur != null && cur.Equals(it.Tag))) { hit = it; break; }
+                }
+                cb.SelectedItem = hit ?? (ComboBoxItem)cb.Items[0];
+                isInit = false;
+
+                _edgeFlagCombos.Add(cb);
+
+                rightInner.Children.Add(row);
+            }
+
+            rightInner.Children.Add(new TextBlock { Text = "⚠ 修改需重启 Edge 才生效；选「默认」即恢复出厂设置；⭐ 为推荐值", Foreground = _textDim, FontSize = 11.5, Margin = new Thickness(0, 6, 0, 0) });
+
             Grid.SetColumn(rightCard, 2);
             mainGrid.Children.Add(rightCard);
 
@@ -480,6 +618,61 @@ namespace CpqSystemTool
             root.Children.Add(pb);
             root.Children.Add(logBorder);
             return root;
+        }
+
+        /// <summary>根据当前注册表值刷新 flags ComboBox 的 SelectedItem，确保 UI 反映新值。
+        /// 三重保险：① Dispatcher 强制 UI 线程 ② 用 SelectedIndex 而非 SelectedItem（引用更稳） ③ 设完调 InvalidateVisual 强制重绘。
+        /// 调试：写 Debug 输出每次的实际值，便于诊断。</summary>
+        private void RefreshEdgeFlagCombos()
+        {
+            // 1. 强制 UI 线程（防御性：onDone 通常已在 UI 线程，但 Dispatcher 包裹无副作用）
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(RefreshEdgeFlagCombos));
+                return;
+            }
+
+            _suppressFlagEvents = true;
+            try
+            {
+                for (int i = 0; i < EdgeCore.EdgeFlagDefs.Length && i < _edgeFlagCombos.Count; i++)
+                {
+                    var def = EdgeCore.EdgeFlagDefs[i];
+                    var cb = _edgeFlagCombos[i];
+                    if (cb == null) continue;
+
+                    string current = EdgeCore.GetEdgeFlag(def.Key);
+
+                    // 找 idx（按 ComboBoxItem.Tag 严格匹配；找不到回退 0）
+                    int idx = 0;
+                    for (int k = 0; k < cb.Items.Count; k++)
+                    {
+                        if (cb.Items[k] is System.Windows.Controls.ComboBoxItem item)
+                        {
+                            bool match = (current == null && item.Tag == null)
+                                         || (current != null && item.Tag != null && current.Equals(item.Tag));
+                            if (match) { idx = k; break; }
+                        }
+                    }
+
+                    // 强重置：先清空再设索引（防止旧 SelectedItem 缓存/事件订阅导致视觉不更新）
+                    cb.SelectedItem = null;
+                    cb.SelectedIndex = -1;
+                    cb.SelectedIndex = idx;
+                    cb.UpdateLayout();
+                    cb.InvalidateVisual();
+
+                    // 诊断 ToolTip：鼠标悬停就能看到 Refresh 读到的 cur 和设的 idx
+                    cb.ToolTip = $"cur={(current ?? "<null>"),-12} → idx={idx} / {cb.Items.Count}";
+
+                    // Debug 输出（VS 输出窗口可见）
+                    System.Diagnostics.Debug.WriteLine($"[Flag] {def.Key,-40} cur={(current ?? "<null>"),-12} idx={idx} items={cb.Items.Count}");
+                }
+            }
+            finally
+            {
+                _suppressFlagEvents = false;
+            }
         }
 
         // 辅助：构建 Edge 状态行（名称 + 版本号），返回 (StackPanel, versionText)

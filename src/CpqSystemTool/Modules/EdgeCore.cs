@@ -435,5 +435,132 @@ namespace CpqSystemTool
                 RegistryHelper.SetEdgePolicy("BackgroundModeEnabled", 0, log);
             }
         }
+
+        // === Edge 实验性 Flags（edge://flags，注册表 HKCU\Software\Microsoft\Edge\EdgeFlags）===
+        public const string EdgeFlagsRegPath = @"Software\Microsoft\Edge\EdgeFlags";
+
+        /// <summary>读取指定 flag 当前值；未设置（Default）返回 null。</summary>
+        public static string GetEdgeFlag(string flagName)
+        {
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(EdgeFlagsRegPath))
+                    return key?.GetValue(flagName) as string;
+            }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); return null; }
+        }
+
+        /// <summary>设置 flag 值（"1"/"0"/枚举字符串）。</summary>
+        public static void SetEdgeFlag(string flagName, string value)
+        {
+            try
+            {
+                using (var key = Registry.CurrentUser.CreateSubKey(EdgeFlagsRegPath))
+                    key?.SetValue(flagName, value ?? "", Microsoft.Win32.RegistryValueKind.String);
+            }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+        }
+
+        /// <summary>删除 flag（= 恢复 Edge 默认 Default）。</summary>
+        public static void ClearEdgeFlag(string flagName)
+        {
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(EdgeFlagsRegPath, true))
+                    key?.DeleteValue(flagName, false);
+            }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+        }
+
+        /// <summary>供 UI 展示的 flag 元数据：Key=注册表值名，Label=界面中文名，Values=可选值（首元素为默认值），Recommend=推荐值（对应 Values 元素，UI 上标 ⭐）。</summary>
+        public static readonly (string Key, string Label, string[] Values, string Recommend)[] EdgeFlagDefs =
+        {
+            ("use-angle", "ANGLE 图形后端", new[] { "gl", "d3d11", "d3d11on12", "vulkan", "swiftshader" }, "default"),
+            ("edge-copilot-mode", "Edge Copilot 模式", new[] { "disabled", "enabled", "optin" }, "disabled"),
+            ("enable-parallel-downloading", "并行下载", new[] { "1", "0" }, "1"),
+            ("enable-gpu-rasterization", "GPU 栅格化", new[] { "1", "0" }, "1"),
+            ("enable-accelerated-video-decode", "硬件加速视频解码", new[] { "1", "0" }, "1"),
+            ("enable-quic", "QUIC / HTTP/3 协议", new[] { "1", "0" }, "1"),
+            ("back-forward-cache", "前进/后退缓存", new[] { "1", "0" }, "1"),
+            ("smooth-scrolling", "平滑滚动", new[] { "1", "0" }, "1"),
+            ("enable-tls13-early-data", "TLS 1.3 Early Data", new[] { "1", "0" }, "1"),
+            ("enable-force-dark", "强制深色模式", new[] { "1", "0" }, "0"),
+            ("edge-overlay-scrollbars-win-style", "Fluent 悬浮滚动条", new[] { "1", "0" }, "1"),
+        };
+
+        /// <summary>按元数据写 flag：value 为 null/空串/字面量 "default"（=Edge 出厂默认语义）时删除注册表值，否则显式写入。
+        /// ⚠ 不得用 value==Values[0] 判断默认：Values[0] 只是 Edge 出厂值（如开关类 "1"），显式写 "1" 仍是「启用」而非「默认」——
+        /// 否则一键优化推荐值 =Values[0] 的 9 项会被误清（曾致注册表只写入 enable-force-dark 一项）。</summary>
+        public static void ApplyEdgeFlag(string key, string value)
+        {
+            bool isDefault = string.IsNullOrEmpty(value) || value == "default";
+            if (isDefault) ClearEdgeFlag(key);
+            else SetEdgeFlag(key, value);
+        }
+
+        /// <summary>把所有 flags 一次性设为 EdgeFlagDefs 中的推荐值。返回应用成功的项数；逐一记日志。</summary>
+        public static int ApplyAllRecommendedFlags(Action<string> log)
+        {
+            int ok = 0;
+            foreach (var def in EdgeFlagDefs)
+            {
+                ApplyEdgeFlag(def.Key, def.Recommend);
+                log?.Invoke("⚡ 已设推荐值：" + def.Label + " = " + def.Recommend);
+                ok++;
+            }
+            return ok;
+        }
+
+        /// <summary>清除 EdgeFlags 注册表下本程序管理的所有 11 项（恢复 Edge 默认）。</summary>
+        public static int ClearAllEdgeFlags(Action<string> log)
+        {
+            int ok = 0;
+            foreach (var def in EdgeFlagDefs)
+            {
+                ClearEdgeFlag(def.Key);
+                log?.Invoke("↩ 已恢复默认：" + def.Label);
+                ok++;
+            }
+            return ok;
+        }
+
+        /// <summary>强制结束所有 msedge.exe 进程并重新启动（让 flags 立即生效）。返回是否成功重启。
+        /// 注意：会丢失 Edge 未保存的标签页/表单——UI 端必须先弹确认。</summary>
+        public static bool ForceRestartEdge(Action<string> log)
+        {
+            try
+            {
+                // 1. 结束所有 msedge.exe（包括 helper 进程）
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "taskkill",
+                    Arguments = "/F /IM msedge.exe /T",
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true
+                };
+                using (var p = Process.Start(psi))
+                {
+                    p?.WaitForExit(5000); // 最多等 5 秒
+                }
+                System.Threading.Thread.Sleep(800); // 缓冲：等进程彻底退出
+                log?.Invoke("✓ 已结束所有 Edge 进程");
+
+                // 2. 重新启动 Edge（PATH 解析 msedge.exe；无参 = 默认用户 profile）
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "msedge.exe",
+                    UseShellExecute = true
+                });
+                log?.Invoke("→ 已启动新 Edge 进程（flags 生效）");
+                return true;
+            }
+            catch (Exception caughtEx)
+            {
+                DebugLog.Ignore(caughtEx);
+                log?.Invoke("✗ 重启 Edge 失败：" + caughtEx.Message);
+                return false;
+            }
+        }
     }
 }
