@@ -119,3 +119,51 @@
   .dl-panel.active { grid-template-columns: 1fr; gap: 18px; }
 }
 
+/* v1.16 同步：官网 changelog 富文本（与 CHANGELOG.md 完整内容一致） */
+/* 基础排版（行内 + 块级），颜色由容器主题覆盖 */
+.chg-body { font-size: 14px; line-height: 1.72; }
+.chg-body p { margin: 6px 0; }
+.chg-body h4 { font-size: 15px; font-weight: 800; margin: 14px 0 7px; }
+.chg-body ul { margin: 6px 0 10px; padding-left: 20px; }
+.chg-body li { margin-bottom: 7px; list-style: disc; }
+.chg-body strong { font-weight: 800; }
+.chg-body code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12.5px; padding: 1px 5px; border-radius: 5px;
+  background: rgba(8,145,130,.10); color: #0a6b5e;
+  word-break: break-all;
+}
+.chg-body blockquote {
+  margin: 10px 0; padding: 8px 14px;
+  border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+  font-size: 13px; line-height: 1.6;
+}
+
+/* 浅色主题（changelog 时间线白底卡片） */
+.tl-item .chg-body { color: var(--text-soft); }
+.tl-item .chg-body h4 { color: var(--text); }
+.tl-item .chg-body strong { color: var(--accent-dark); }
+.tl-item .chg-body li::marker { color: var(--accent); }
+.tl-item .chg-body blockquote {
+  background: var(--accent-soft); color: var(--text-soft);
+}
+.tl-item .chg-body code {
+  background: rgba(8,145,130,.10); color: #0a6b5e;
+}
+
+/* 深色主题（下载页右栏半透明卡片） */
+.dl-panel-right .chg-body { color: rgba(255,255,255,.90); font-size: 13.5px; }
+.dl-panel-right .chg-body h4 { color: #fff; }
+.dl-panel-right .chg-body strong { color: var(--accent-light); }
+.dl-panel-right .chg-body li::marker { color: var(--accent-light); }
+.dl-panel-right .chg-body blockquote {
+  background: rgba(255,255,255,.07); color: rgba(255,255,255,.80);
+  border-left-color: var(--accent-light);
+}
+.dl-panel-right .chg-body code {
+  background: rgba(255,255,255,.14); color: var(--accent-light);
+}
+/* 右栏内容可能较高，限制高度并滚动，避免 panel 过长 */
+.dl-panel-right { max-height: 560px; overflow-y: auto; }
+
+
