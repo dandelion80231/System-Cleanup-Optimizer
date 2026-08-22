@@ -41,13 +41,12 @@ export default {
     if (immutable) {
       out.headers.set("Cache-Control", "public, max-age=31556952, immutable");
     } else {
-      // HTML and everything else: keep a 5-minute long cache with
-      // must-revalidate so the browser reuses the cached copy within the
-      // window but rechecks with the origin on expiry. This is the correct
-      // balance — the earlier "didn't take effect" reports were NOT caused
-      // by this header (they were missing content sync + stale browser
-      // caches); no-store was an over-correction and is reverted.
-      out.headers.set("Cache-Control", "public, max-age=300, must-revalidate");
+      // HTML and everything else: short 60s cache with must-revalidate.
+      // During active UI iteration a 5-minute HTML cache makes the user see
+      // stale <link> references to old hashed CSS/JS. 60s is short enough to
+      // pick up new asset hashes quickly while still saving origin requests
+      // for repeat views within a minute.
+      out.headers.set("Cache-Control", "public, max-age=60, must-revalidate");
     }
 
     // Security / privacy headers.
