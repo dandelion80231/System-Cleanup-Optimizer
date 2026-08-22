@@ -67,3 +67,34 @@
 }
 .dl-chlog-list > li { display: list-item; margin-bottom: 6px; padding: 0; color: #fff; }
 .dl-chlog-cb:checked ~ .dl-chlog-list { display: block; }
+/* v1.16 补丁：dl-chlog 默认展开模式（彻底覆盖旧 checkbox+label 折叠样式） */
+.dl-chlog-title {
+  display: block;
+  margin: 14px 0 8px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(255,255,255,.95);
+  background: transparent !important;
+  border: none;
+  border-radius: 0;
+  cursor: default;
+}
+.dl-chlog-title::before { content: "" !important; }
+.dl-chlog-list,
+.dl-chlog-list[style] {
+  display: block !important;
+  margin: 4px 0 6px;
+  padding: 0 0 0 26px;
+  list-style: disc;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.dl-chlog-list > li {
+  display: list-item;
+  margin-bottom: 4px;
+  padding: 0;
+  color: #fff;
+}
+
