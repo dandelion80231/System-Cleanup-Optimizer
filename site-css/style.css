@@ -98,3 +98,24 @@
   color: #fff;
 }
 
+/* v1.16 补丁：下载页两栏布局（左下载信息 + 右完整 changelog） */
+.dl-panel { display: none; }
+.dl-panel.active { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.35fr); gap: 30px; align-items: start; }
+.dl-panel-left { min-width: 0; }
+.dl-panel-left h2 { font-size: 22px; font-weight: 800; margin-bottom: 10px; color: #fff; }
+.dl-panel-left h2 span { font-size: 14px; opacity: .75; font-weight: 500; }
+.dl-panel-left .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.dl-panel-left .meta span { font-size: 13px; color: rgba(255,255,255,.85); background: rgba(255,255,255,.10); padding: 4px 10px; border-radius: 999px; }
+.dl-panel-left .btn { margin-bottom: 14px; }
+.dl-panel-left .hash { font-size: 12px; color: rgba(255,255,255,.65); word-break: break-all; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; }
+.dl-panel-right { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 16px 20px; min-width: 0; }
+.dl-panel-right .dl-chlog-title { display: block; margin: 0 0 10px; padding: 0; font-size: 14px; font-weight: 700; color: #fff; background: transparent !important; border: none; border-radius: 0; cursor: default; }
+.dl-panel-right .dl-chlog-title::before { content: "" !important; }
+.dl-panel-right .dl-chlog-list,
+.dl-panel-right .dl-chlog-list[style] { display: block !important; margin: 0; padding: 0 0 0 22px; list-style: disc; color: rgba(255,255,255,.92); font-size: 13.5px; line-height: 1.65; }
+.dl-panel-right .dl-chlog-list > li { display: list-item; margin-bottom: 7px; padding: 0; color: rgba(255,255,255,.92); }
+.dl-panel-right .dl-chlog-list > li::marker { color: var(--accent-light); }
+@media (max-width: 900px) {
+  .dl-panel.active { grid-template-columns: 1fr; gap: 18px; }
+}
+
