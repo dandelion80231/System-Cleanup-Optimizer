@@ -6,7 +6,7 @@
 
 ## [v1.17] - 2026-08-30
 
-> 相对 v1.16.1 的源码变更（15 个提交，73 个文件，+8163 / −1913 行）：背景编辑器大规模迭代（HSV 色轮性能优化、颜色格式显示、对比度检查、网格光斑拖拽）、配置管理页重构（导出源码功能）、探针工程重构（独立 HttpClient、TLS 1.2/1.3、UA 池轮换）、App.xaml 异常处理前置、src.zip 防呆机制。
+> 相对 v1.16 的源码变更（15 个提交，73 个文件，+8163 / −1913 行）：背景编辑器大规模迭代（HSV 色轮性能优化、颜色格式显示、对比度检查、网格光斑拖拽）、配置管理页重构（导出源码功能）、探针工程重构（独立 HttpClient、TLS 1.2/1.3、UA 池轮换）、App.xaml 异常处理前置、src.zip 防呆机制。
 
 ### ✨ 新增
 - **背景编辑器功能扩展（v1.17）**：
@@ -33,10 +33,6 @@
 - **BackgroundSettings 颜色解析修复**：修复 `#RGBA` 4 位格式展开顺序错误（原注释说 ARGB 但实际展开为 RRGGBBAA，与 CSS `#RRGGBBAA` 8 位分支的读取顺序不一致）；Offset 越界钳制到 `[0,1]`，避免 `new GradientStop(...)` 抛 `ArgumentException`。
 - **背景设置 JSON 反序列化健壮性提升**：原 `catch { }` 静默吞掉一切异常，脏 JSON 只表现为「设置莫名回到默认值」且无从排查；改为 `Debug.WriteLine` 输出带上下文的诊断信息。
 
-### 🔧 变更 / 策略
-- **配置管理页重构（v1.17）**：
-  - **导出源码功能**：新增「📦 导出源码」按钮，点击后弹出 FolderBrowserDialog 选择保存目录，从程序集嵌入资源读取 `src.zip`，解压到 `系统清理与优化工具_源码` 文件夹。
-  - **背景图设置优化**：路径输入框+浏览按钮+应用按钮同一行；恢复默认背景按钮移至右上角；提示文字缩短。
   - **预览区裁剪优化**：`bgCard` 和 `logClip` 都加 `ClipToBounds = true`，防止最大化时子内容溢出 + 缩小时残留大尺寸渲染缓存。
   - **日志框固定高度**：改为 60px 固定高度贴底，不再占用 Star 行，避免透明空白区。
 - **src.zip 防呆机制（v1.17）**：在 `CpqSystemTool.csproj` 新增 MSBuild 任务 `CheckSrcZipFreshness`，构建前比对 src.zip 与最新源文件的时间戳；过期则报 warning，借本项目「交付构建必须 0 warning」的门禁，强制在构建前先重生成 `src.zip`。
@@ -75,14 +71,6 @@
 
 ---
 
-## [v1.16.1] - 2026-08-30
-
-### 🐛 软件安装下载修复
-- **Geek Uninstaller 等便携软件下载卡住**：`DownloadAsync` 改用 `Downloader.DownloadAsync`，开启 `useProxyFallback: true`（系统代理 → 直连 → Watt Toolkit 本地代理依次尝试），最多重试 3 次、间隔 5 秒，解决代理环境下直连失败导致永久挂起的问题。
-- **便携版支持自定义安装目录**：`IsPortable` 单文件分支（如 Geek Uninstaller）优先使用用户指定的 `customDir`，不再硬编码 `%LOCALAPPDATA%\CpqSystemTool\Portable\<id>\`。
-- **保留 Referer 支持**：`Downloader.DownloadAsync` 新增可选 `referer` 参数，`SoftwareInstall.DownloadAsync` 透传 `SoftwareDef.Referer`，确保哔哩哔哩等需要 Referer 头的软件仍可正常下载。
-
----
 
 ## [v1.16] - 2026-08-22
 

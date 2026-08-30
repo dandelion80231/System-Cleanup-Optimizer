@@ -4,7 +4,7 @@
 >
 > **技术栈**: WPF (C# / .NET Framework 4.8) · 单文件 exe · 零安装 · 双击即跑 · 管理员权限自动提权
 >
-> **版本**: v1.16
+> **版本**: v1.17
 >
 > **项目主页**: [https://github.com/dandelion80231/System-Cleanup-Optimizer](https://github.com/dandelion80231/System-Cleanup-Optimizer)
 >
@@ -32,7 +32,8 @@
     - [13. 系统信息](#13-系统信息)
     - [14. 维护工具](#14-维护工具)
     - [15. 驱动清理](#15-驱动清理)
-    - [16. 配置管理](#16-配置管理)
+    - [16. 自定义背景](#16-自定义背景)
+    - [17. 配置管理](#17-配置管理)
 - [技术架构](#技术架构)
 - [界面与交互实现](#界面与交互实现)
 - [构建与部署](#构建与部署)
@@ -64,6 +65,7 @@
 | 系统信息 | 硬件/软件信息汇总与导出 | WMI + 注册表 + P/Invoke |
 | 维护工具 | 官网 exe 直链探针 + 探针环境管理 | WebView2 Runtime / Node+Playwright 双驱动 |
 | 驱动清理 | 驱动枚举/在役保护/旧版清理/备份导出/添加安装 | pnputil + DISM 双后端 |
+| 自定义背景 | HSV 色轮 + 纯色/线性/径向/网格渐变编辑器 | 背景设置持久化 |
 | 配置管理 | 配置导出/导入/自动保存/源码导出 | 零依赖 JSON 序列化 |
 
 > 本章节所有数字、类名、方法名均对照 `src/CpqSystemTool` 实际源码核实。
@@ -85,7 +87,7 @@
 
 ### 下载与运行
 
-1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cpq-system-tool.pages.dev/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.16.exe`）。
+1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cpq-system-tool.pages.dev/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.17.exe`）。
 2. 双击运行即可，**无需安装**。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入单文件 exe。
 3. 首次使用建议：先创建系统还原点，再进行优化配置。
 
@@ -447,7 +449,18 @@
 
 ---
 
-### 16. 配置管理
+### 16. 自定义背景
+
+**核心能力**: HSV 色轮 + 纯色/线性/径向/网格渐变编辑器，支持颜色格式显示（RGB/HSL/HSV/CMYK）、对比度检查、光斑拖拽交互。
+
+- `MainWindow.Theme.cs` — 背景设置持久化（`Configackground.json`），主题笔刷构建（`BuildBrushFrom`）。
+- `BackgroundSettings.cs` — 背景设置数据模型（纯色/线性/径向/网格渐变），JSON 序列化。
+- `BackgroundSettingsDialog.cs` — 背景编辑器 UI（色轮、渐变参数、光斑拖拽）。
+- `Configackground.json` — 背景设置持久化文件。
+
+> 用户可在「配置管理」页面设置自定义背景，支持 5 种渐变模式，背景设置自动保存并在下次启动时恢复。
+
+### 17. 配置管理
 
 **核心能力**: 全局配置导出/导入、自动保存、源码包导出、背景图设置。
 
@@ -628,7 +641,7 @@ dotnet build -c Release
 
 ### 分发
 
-只需分发单个 `系统清理与优化工具_v1.16.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
+只需分发单个 `系统清理与优化工具_v1.17.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
 
 ---
 
