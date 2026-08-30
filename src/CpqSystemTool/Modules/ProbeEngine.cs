@@ -312,7 +312,7 @@ namespace CpqSystemTool
             UseProxy = false,
         })
         {
-            Timeout = TimeSpan.FromMilliseconds(ProbeData.VerifyTimeout)
+            Timeout = TimeSpan.FromSeconds(60)  // 探针请求给足 60 秒超时，避免网络慢时误判
         };
 
         // 初始化 TLS 安全协议：确保使用 TLS 1.2+，兼容现代 HTTPS 服务器
@@ -541,7 +541,8 @@ namespace CpqSystemTool
             try
             {
                 logf("   [DIAG] ProbeSiteFastAsync: entryUrl=" + entryUrl);
-                var got = await HttpGetAsync(entryUrl, MAX_REDIRECTS, 0, 8000, logf);
+                // 使用较长超时：国外站点可能需要较长时间建立连接
+                var got = await HttpGetAsync(entryUrl, MAX_REDIRECTS, 0, 60000, logf);
                 logf("   [DIAG] HttpGetAsync 返回: ok=" + got.ok + ", status=" + got.status + ", isBinary=" + got.isBinary + ", bodyLen=" + (got.body?.Length ?? 0));
                 if (!got.ok)
                 {
