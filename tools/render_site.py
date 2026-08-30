@@ -42,8 +42,8 @@ CSS_SRC = os.path.join(PROJECT_ROOT, "site-css", "style.css")
 # JS 唯一源（受 git 跟踪）→ 渲染产物 site-dist/script.{sha256前12}.js
 JS_SRC = os.path.join(PROJECT_ROOT, "site-js", "script.js")
 
-TEMPLATE_FILES = ["index.html", "changelog.html", "features.html", "about.html"]
-# download.html 由 render_download_pages() 单独处理（需 versions.json 数据）
+TEMPLATE_FILES = ["index.html", "changelog.html", "features.html", "about.html", "download.html"]
+# download.html 也由本脚本统一处理（与其他模板相同）
 
 REQUIRED_FIELDS = ["version", "date", "name", "url", "size", "sha256"]
 
@@ -98,8 +98,8 @@ def render(data):
         with open(dst, "w", encoding="utf-8") as f:
             f.write(html)
 
-        applied = sum(before.values())
-        print(f"[RENDER] {name}: VER={data['version']}  DATE={data['date']}  SIZE_MB={data['size_mb']}  (替换占位符 {applied} 处)")
+    applied = sum(before.values())
+    print(f"[RENDER] {name}: VER={data['version']}  DATE={data['date']}  SIZE_MB={data['size_mb']}  (替换占位符 {applied} 处)")
 
     # 把唯一真源 version.json 原样复制到 site-dist/（部署用）
     src_ver = os.path.join(SITE_SRC, "version.json")
