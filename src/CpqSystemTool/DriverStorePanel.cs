@@ -194,7 +194,7 @@ namespace CpqSystemTool
                 _forceBtn.BorderThickness = new Thickness(1.5);
                 _forceBtn.BorderBrush = _owner?._dangerDark ?? _danger;   // 主题危急描边，避免硬编码魔法色
             }
-            var toolRow = MakeBtnRow(selOldBtn, selVerBtn, _exportBtn, addBtn, _installBtn, _delBtn, _forceBtn);
+            var toolRow = MainWindow.MakeBtnRow(selOldBtn, selVerBtn, _exportBtn, addBtn, _installBtn, _delBtn, _forceBtn);
             toolRow.Margin = new Thickness(0, 0, 0, 8);
             topPanel.Children.Add(toolRow);
 
@@ -292,24 +292,43 @@ namespace CpqSystemTool
             rowStyle.Setters.Add(new Setter(DataGridRow.BackgroundProperty, Brushes.Transparent));
             rowStyle.Setters.Add(new Setter(DataGridRow.ForegroundProperty, _fg));
             rowStyle.Setters.Add(new Setter(DataGridRow.BorderBrushProperty, Brushes.Transparent));
+            // 整行鼠标悬停高亮：用样式触发器实现，不再用 MouseEnter/MouseLeave 事件。
+            //
+            // 为什么放弃事件方案（这是修一个"看起来对、实际无效"的 bug）：
+            // 原实现在 DataGrid.LoadingRow 里用具名局部函数 + 先 -= 再 +=，注释声称"保证只挂一份"——
+            // 但这个保证不成立。局部函数 RowMouseEnter/RowMouseLeave 捕获了外层的 e / e.Row，
+            // 编译器会为它们生成一个**闭包类**，每次 LoadingRow 触发都 new 出一个新的闭包实例；
+            // 把局部函数转换为委托时也就得到一个新的委托实例。而委托的 -= 走 Delegate.Remove，
+            // 判等依据是「目标对象引用 + 方法」——两次的闭包实例不是同一个对象，判等失败，
+            // 于是旧的 handler 根本没被移除。DataGrid 行容器在枚举刷新/排序/分组切换/虚拟化回收时
+            // 会反复触发 LoadingRow，handler 越挂越多，一次悬停触发 N 次、后一次覆盖前一次，
+            // 表现为高亮闪烁/异常。
+            //
+            // 改成 IsMouseOver 触发器后：零事件、零 handler、零 -=，天然不存在累积问题；
+            // 条件不满足时 WPF 会自动回落到上面的 Setter 值（Transparent），与原来的
+            // "MouseLeave 时设回 Transparent" 行为一致。
+            // 注意：必须在把 Style 赋给 RowStyle 之前添加 Trigger —— Style 一旦被应用就会被密封
+            // （IsSealed=true），之后再 Add 触发器会抛 InvalidOperationException。
+            var hoverTrigger = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+            hoverTrigger.Setters.Add(new Setter(DataGridRow.BackgroundProperty, _rowHover));
+            rowStyle.Triggers.Add(hoverTrigger);
             _dg.RowStyle = rowStyle;
+            // 注意：这里只做「按行内容设置前景色 + Tooltip」这类**幂等**的事。
+            // 悬停高亮已改由上面 rowStyle 的 IsMouseOver 触发器负责，不再在此挂任何行级事件
+            // （详见上面样式处的注释：事件方案在此处根本无法正确解绑）。
             _dg.LoadingRow += (s, e) =>
             {
-                var di = e.Row.Item as DriverStore.DriverInfo;
-                if (di == null) return;
-                e.Row.Foreground = di.InUse ? _danger : (di.BootCritical ? _warn : (di.IsOld ? _warn : _fg));
-                // 移除状态/原始名显示列后，用 Tooltip 保留关键信息
-                e.Row.ToolTip = $"状态：{di.StatusText}\n原始 INF：{di.OriginalName}\n签名：{di.Signer}";
-                // 整行鼠标悬停高亮：与其他页面（常用软件、清理优化等）统一，直接用 MouseEnter/MouseLeave 事件
-                e.Row.MouseEnter += (rs, re) =>
+                // 兜底：LoadingRow 是 WPF 事件处理器，net48 下异常逸出会直接终止进程。
+                try
                 {
-                    if (e.Row.Background == Brushes.Transparent)
-                        e.Row.Background = _rowHover;
-                };
-                e.Row.MouseLeave += (rs, re) =>
-                {
-                    e.Row.Background = Brushes.Transparent;
-                };
+                    if (e == null || e.Row == null) return;
+                    var di = e.Row.Item as DriverStore.DriverInfo;
+                    if (di == null) return;
+                    e.Row.Foreground = di.InUse ? _danger : (di.BootCritical ? _warn : (di.IsOld ? _warn : _fg));
+                    // 移除状态/原始名显示列后，用 Tooltip 保留关键信息
+                    e.Row.ToolTip = $"状态：{di.StatusText}\n原始 INF：{di.OriginalName}\n签名：{di.Signer}";
+                }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
             };
             // 圆角数据网格外框：统一与其他页面的卡片风格（移除 DataGrid 自身方形边框，改由此外框提供圆角边框）
             var dgBorder = new Border
@@ -711,43 +730,76 @@ namespace CpqSystemTool
         }
 
         // ---- 后台任务编排 ----
+
+        /// <summary>当前后台任务的取消源：发起新任务前先取消上一个仍在运行的任务。</summary>
+        private CancellationTokenSource _bgCts;
+
+        /// <summary>
+        /// 取消仍在运行的后台任务。修复：原实现 new Thread(...) 后无任何取消手段，
+        /// 刷新/切换引擎/删除等并发触发时，旧线程仍会跑完并把过期结果写回 UI 与状态栏。
+        /// </summary>
+        private void CancelBgWork()
+        {
+            var cts = _bgCts;
+            if (cts == null) return;
+            _bgCts = null;
+            try { cts.Cancel(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
+        }
+
         private void RunInBg(Action<Action<string>> work, string done)
         {
+            // 新任务开始前先取消上一个任务，避免旧任务结果覆盖新结果
+            CancelBgWork();
+            var cts = new CancellationTokenSource();
+            _bgCts = cts;
+            var token = cts.Token;
+
             var disp = Dispatcher;
             // 窗口关闭后 Dispatcher 关停，BeginInvoke/Invoke 均抛 InvalidOperationException；
             // 后台线程未处理异常在 net48 会直接终止进程。safeUi 统一兜底：UI 更新静默忽略。
             Action<Action> safeUi = a => { try { disp.BeginInvoke(a); } catch { /* 窗口已关闭，忽略 */ } };
-            Action<string> logf = s => safeUi(() =>
+            Action<string> logf = s =>
             {
-                if (_externalLog != null)
+                if (token.IsCancellationRequested) return;  // 任务已被新任务取代，不再回写过期日志
+                safeUi(() =>
                 {
-                    _externalLog.Visibility = Visibility.Visible;
-                    _externalLog.AppendText(s + "\r\n");
-                    _externalLog.ScrollToEnd();
-                }
-                else if (_log != null)
-                {
-                    _log.Visibility = Visibility.Visible;
-                    _log.AppendText(s + "\r\n");
-                    _log.ScrollToEnd();
-                }
-            });
+                    if (_externalLog != null)
+                    {
+                        _externalLog.Visibility = Visibility.Visible;
+                        _externalLog.AppendText(s + "\r\n");
+                        _externalLog.ScrollToEnd();
+                    }
+                    else if (_log != null)
+                    {
+                        _log.Visibility = Visibility.Visible;
+                        _log.AppendText(s + "\r\n");
+                        _log.ScrollToEnd();
+                    }
+                });
+            };
             new Thread(() =>
             {
                 try
                 {
                     work(logf);
+                    if (token.IsCancellationRequested) return;  // 已被新任务取代，不再回写状态
                     safeUi(() => { _owner?.SetStatus(done); });
                 }
                 catch (Exception ex)
                 {
+                    if (token.IsCancellationRequested) return;  // 取消导致的异常无需提示
                     safeUi(() =>
                     {
                         logf("[!] 异常: " + ex.Message);
                         _owner?.SetStatus("执行出错");
                     });
                 }
-            }).Start();
+                finally
+                {
+                    // 只清理自己那份取消源，避免误清新任务的
+                    if (_bgCts == cts) _bgCts = null;
+                }
+            }) { IsBackground = true }.Start();   // IsBackground=true：窗口关闭后不再因前台线程未结束而拖住进程退出
         }
 
         // ---- 主题样式复用：表头/单元格透明底样式统一由 MainWindow.MakeDataGridStyles 提供（见修复 #4） ----
@@ -780,19 +832,7 @@ namespace CpqSystemTool
             _dg.Columns.Add(col);
         }
 
-        /// <summary>将多个按钮排成一行、等宽均分整行宽度；每个按钮在所属列内居中、保持原始大小。</summary>
-        private Grid MakeBtnRow(params Button[] btns)
-        {
-            var g = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
-            for (int i = 0; i < btns.Length; i++)
-            {
-                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                btns[i].HorizontalAlignment = HorizontalAlignment.Center;
-                btns[i].Margin = new Thickness(0);
-                Grid.SetColumn(btns[i], i);
-                g.Children.Add(btns[i]);
-            }
-            return g;
-        }
+        // 去重：本类原有的 MakeBtnRow 与 MainWindow.Helpers.cs 中的实现逐行重复，
+        // 已删除本类拷贝，统一调用 MainWindow 的 internal static 版本（唯一真源）。
     }
 }

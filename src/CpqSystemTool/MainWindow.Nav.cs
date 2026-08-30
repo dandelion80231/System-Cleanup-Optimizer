@@ -18,6 +18,10 @@ namespace CpqSystemTool
         // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.16.0 ↔ v1.16），两处保持一致。
         private const string APP_VERSION = "v1.16";
 
+        // 导航按钮最小高度：16 个按钮平分视口高度（Star 行），窗口变矮或高 DPI 下高度会小于文字行高，
+        // 导致文字被压扁/截断。给行与按钮同时设该下限，空间不足时由外层 ScrollViewer 滚动兜底。
+        private const double NAV_BUTTON_MIN_HEIGHT = 32;
+
         private void BuildSidebar()
         {
             _nav = new List<NavItem>
@@ -77,7 +81,10 @@ namespace CpqSystemTool
             // 左下角版本+关于入口：文字颜色随主题切换，统一由 UpdateSidebarTitleColors 刷新
             var verTb = new TextBlock
             {
-                Text = "关于 V" + APP_VERSION.Substring(1), // APP_VERSION = "v1.07" → "关于 V1.06"
+                // 修正：原注释写 APP_VERSION = "v1.07" → "关于 V1.06"（版本号既与实际常量不符，
+                // 箭头两侧也自相矛盾）。实际常量为 "v1.16"，Substring(1) 去掉前缀 'v' 后得 "关于 V1.16"；
+                // 常量升级时此处自动跟随，无需改注释里的具体数字。
+                Text = "关于 V" + APP_VERSION.Substring(1), // APP_VERSION = "v1.16" → "关于 V1.16"
                 FontSize = 12,
                 Foreground = _textMain,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -130,10 +137,20 @@ namespace CpqSystemTool
             foreach (var n in _nav)
             {
                 if (n.Hidden) continue;   // 隐藏页（关于）不占列表，由底部品牌区进入
-                sp.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                // 行也要设 MinHeight：Star 行只按可用空间均分，子控件的 MinHeight 不会反向撑开行，
+                // 只有 RowDefinition.MinHeight 才会被 Grid 的 Star 解析算法尊重（不足时整块溢出→滚动）。
+                sp.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = NAV_BUTTON_MIN_HEIGHT });
                 var b = new Button
                 {
-                    Content = n.Icon + "  " + n.Title,
+                    // 文字用 TextBlock 承载并开启省略号：窄侧边栏下图标+标题放不下时省略而非硬裁剪。
+                    // （Button 的 Foreground 由 Navigate 设置，TextBlock 走属性值继承，不受影响）
+                    Content = new TextBlock
+                    {
+                        Text = n.Icon + "  " + n.Title,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        VerticalAlignment = VerticalAlignment.Center
+                    },
+                    MinHeight = NAV_BUTTON_MIN_HEIGHT,   // 兜底：按钮自身不允许被压到文字行高以下
                     Background = Brushes.Transparent,
                     Foreground = _textDim,
                     HorizontalContentAlignment = HorizontalAlignment.Left,
@@ -182,7 +199,9 @@ namespace CpqSystemTool
             ContentArea.UpdateLayout();
 
             // 统一包装：响应式拉伸（最大化时撑满 + 超宽屏 MaxWidth=1400 居中）
-            SetPageContent(n.Build());
+            // 改为走 BuildPageSafe —— 页面构建（Build + SetPageContent）全程包异常兜底，
+            // 任一页出错都只在内容区显示错误卡片，不让异常逸出到 Dispatcher。
+            BuildPageSafe(n);
 
             // 驱动清理页采用"各自独立滚动"（DataGrid + 日志框自带滚动），关闭最外层纵向滚动。
             // 放在 Build() 之后设置，避免预加载 BuildDriverStore() 时影响当前显示的其它页面。
@@ -240,6 +259,156 @@ namespace CpqSystemTool
             // 注意：此处不再统一设置 MaxHeight——否则会给滚动型页面（系统优化/清理等）误加高度锁，
             // 导致窗口缩放后内容无法滚动被裁剪。
             ContentArea.Content = pageContent;
+        }
+
+        /// <summary>
+        /// 页面构建的统一异常兜底：只包「Build() + SetPageContent」这一环。
+        /// 为什么必须兜：Navigate 由侧边栏按钮 Click、底部品牌区 MouseUp、主题切换等事件处理器调用，
+        /// 而 net48 下事件处理器里未捕获的异常会一路逸出到 Dispatcher，直接终止进程
+        /// —— 用户看到的就是「点一下导航就闪退」或「页面一片空白」，既没有提示也没有日志，无从排查。
+        /// 兜住之后最坏情况只是这一页显示成一张错误卡片，导航高亮等其余逻辑照旧执行（不 return）。
+        /// 主题切换、导航切走再切回都会重建页面，所以本兜底对每一页都生效，不局限于维护工具页。
+        /// </summary>
+        private void BuildPageSafe(NavItem n)
+        {
+            try
+            {
+                SetPageContent(n.Build());
+            }
+            catch (Exception ex)
+            {
+                DebugLog.Ignore(ex);
+                // 兜底的兜底：构造错误卡片本身也依赖主题画刷（_bgCard/_accent/…），
+                // 极端时序下（如首次导航早于 ApplyTheme）这些字段可能还未初始化而再次抛异常。
+                // 这里必须再套一层，最差情况只记录后返回——绝不能让异常二次逃逸到 Dispatcher。
+                try
+                {
+                    SetPageContent(BuildPageErrorCard(n.Title, ex, n.Key));
+                }
+                catch (Exception ex2)
+                {
+                    DebugLog.Ignore(ex2);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 构造「页面加载失败」的错误展示卡片（配色跟随当前主题，与本程序其它卡片视觉一致）。
+        /// 内容：一句人话提示 + 异常类型与 Message + 可折叠/可横向滚动的完整调用栈 + 「重试」按钮。
+        /// 调用栈做成只读 TextBox 而不是 TextBlock，是为了让用户能整段选中复制给我们排查。
+        /// </summary>
+        private UIElement BuildPageErrorCard(string pageTitle, Exception ex, string navKey)
+        {
+            var root = new StackPanel { Margin = new Thickness(0) };
+
+            var card = new Border
+            {
+                Background = _isDarkMode ? Brushes.Transparent : _bgCard,
+                BorderBrush = _panelBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(16),
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            var inner = new StackPanel();
+            card.Child = inner;
+
+            inner.Children.Add(new TextBlock
+            {
+                Text = "加载「" + (pageTitle ?? "当前") + "」页面时出错",
+                FontWeight = FontWeights.Bold,
+                Foreground = _accent,
+                FontSize = 14,
+                Margin = new Thickness(0, 0, 0, 8)
+            });
+
+            inner.Children.Add(new TextBlock
+            {
+                Text = "程序仍在正常运行，其它功能不受影响。可点「重试」重新加载本页；若反复出现，请把下面的错误信息复制给我们排查。",
+                Foreground = _textDim,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 10)
+            });
+
+            // 异常类型 + Message：可能很长，允许换行以保证完整可见
+            var msgText = (ex?.GetType().FullName ?? "未知异常类型") + "：" + (ex?.Message ?? "(无异常消息)");
+            inner.Children.Add(new TextBlock
+            {
+                Text = msgText,
+                Foreground = _warnOrange,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 8)
+            });
+
+            // 调用栈：默认收起（Expander），展开后是只读 TextBox。
+            // TextWrapping=NoWrap + 横向滚动条，保证堆栈的每行缩进不被折行打乱、便于整段复制。
+            var stackBox = new TextBox
+            {
+                IsReadOnly = true,
+                Text = ex?.ToString() ?? "",
+                FontFamily = new FontFamily("Consolas, 'Courier New'"),
+                FontSize = 11,
+                MaxHeight = 260,
+                Padding = new Thickness(6, 4, 6, 4),
+                Background = _isDarkMode ? Brushes.Transparent : _bgDeep,
+                Foreground = _textMain,
+                BorderBrush = _panelBorder,
+                BorderThickness = new Thickness(1),
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.NoWrap,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+            };
+            inner.Children.Add(new Expander
+            {
+                Header = "查看详细调用栈（可复制）",
+                Content = stackBox,
+                Foreground = _textMain,
+                FontSize = 12,
+                Margin = new Thickness(0, 0, 0, 10)
+            });
+
+            var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+
+            // 「重试」：重新走一次完整的 Navigate（会重建本页），而不是重试单个 Build。
+            var retryBtn = Btn("重试", true, null, 100);
+            retryBtn.Click += (s, e) =>
+            {
+                try { Navigate(navKey); }
+                catch (Exception ex3) { DebugLog.Ignore(ex3); }
+            };
+            btnRow.Children.Add(retryBtn);
+
+            // 「复制错误信息」：省去用户手动选中长堆栈的麻烦，一眼可粘贴给开发者。
+            // async void 处理器内的异常不会抛给调用方而是直达 Dispatcher（net48 会终止进程），故整体包 try/catch。
+            var copyBtn = Btn("复制错误信息", false, null, 120);
+            copyBtn.Click += async (s, e) =>
+            {
+                try
+                {
+                    copyBtn.IsEnabled = false;
+                    try
+                    {
+                        SetStatus(await TrySetClipboardTextAsync(msgText + Environment.NewLine + (ex?.ToString() ?? ""))
+                            ? "错误信息已复制到剪贴板"
+                            : "复制失败: 剪贴板被占用，请稍后重试");
+                    }
+                    finally { copyBtn.IsEnabled = true; }
+                }
+                catch (Exception ex4)
+                {
+                    DebugLog.Ignore(ex4);
+                    try { copyBtn.IsEnabled = true; SetStatus("复制失败: " + ex4.Message); }
+                    catch { /* 窗口已关闭，忽略 */ }
+                }
+            };
+            btnRow.Children.Add(copyBtn);
+
+            inner.Children.Add(btnRow);
+            root.Children.Add(card);
+            return root;
         }
 
         /// <summary>递归收集侧边栏视觉树中的所有 Button（DockPanel 嵌套 StackPanel 结构）</summary>

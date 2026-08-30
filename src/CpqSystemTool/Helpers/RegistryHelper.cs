@@ -9,65 +9,229 @@ namespace CpqSystemTool
     /// </summary>
     internal static class RegistryHelper
     {
+        // ============================================================
+        //  注册表视图（RegistryView）处理
+        //  背景：本程序是 x64 原生进程（Windows 10/11 无 32 位版本）。
+        //  Registry.LocalMachine 默认打开 64 位视图，无需特殊处理。
+        //  保留双视图读写是为了兼容旧版（AnyCPU 时代）遗留写入 Wow6432Node 的残留数据。
+        //  策略：
+        //    · 写入 → 64 位视图（Edge/Defender 组策略目标）
+        //    · 删除 → 64 位与 32 位视图都清
+        //    · 读取 → 先查 64 位视图，查不到再回退 32 位视图
+        // ============================================================
+
+        /// <summary>把 RegistryKey 映射回 RegistryHive 枚举，用于 OpenBaseKey。</summary>
+        private static RegistryHive ToHive(RegistryKey key)
+        {
+            var n = key == null ? "" : (key.Name ?? "");
+            if (n.StartsWith("HKEY_LOCAL_MACHINE", StringComparison.OrdinalIgnoreCase)) return RegistryHive.LocalMachine;
+            if (n.StartsWith("HKEY_CURRENT_USER", StringComparison.OrdinalIgnoreCase)) return RegistryHive.CurrentUser;
+            if (n.StartsWith("HKEY_CLASSES_ROOT", StringComparison.OrdinalIgnoreCase)) return RegistryHive.ClassesRoot;
+            if (n.StartsWith("HKEY_CURRENT_CONFIG", StringComparison.OrdinalIgnoreCase)) return RegistryHive.CurrentConfig;
+            if (n.StartsWith("HKEY_USERS", StringComparison.OrdinalIgnoreCase)) return RegistryHive.Users;
+            return RegistryHive.LocalMachine;
+        }
+
+        /// <summary>
+        /// 按指定视图打开 hive 根。
+        /// 注意：本方法**总是**返回一个新建的 RegistryKey（绝不会返回传入的静态 hive 单例），
+        /// 因此调用方可以安全地使用 using 释放；但也绝不能去 dispose 传入的 hive 参数本身。
+        /// </summary>
+        private static RegistryKey OpenView(RegistryKey hive, RegistryView view)
+        {
+            // 32 位系统只有单一视图，指定 Registry32/Registry64 都无意义，用 Default。
+            var actual = Environment.Is64BitOperatingSystem ? view : RegistryView.Default;
+            return RegistryKey.OpenBaseKey(ToHive(hive), actual);
+        }
+
+        private static readonly RegistryView[] WriteViews = { RegistryView.Registry64 };
+        private static readonly RegistryView[] BothViews = { RegistryView.Registry64, RegistryView.Registry32 };
+
         public static bool SetDword(RegistryKey hive, string path, string name, int value, Action<string> log, bool create = true)
         {
             try
             {
-                using (var k = create ? hive.CreateSubKey(path, true) : hive.OpenSubKey(path, true))
+                // 显式写 64 位视图，避免被 WOW64 重定向到 Wow6432Node 而策略不生效
+                using (var root = OpenView(hive, RegistryView.Registry64))
+                using (var k = create ? root.CreateSubKey(path, true) : root.OpenSubKey(path, true))
                 {
-                    if (k == null) { log("  [!] 无法打开(写) " + path); return false; }
+                    if (k == null) { log?.Invoke("  [!] 无法打开(写) " + path); return false; }
                     k.SetValue(name, value, RegistryValueKind.DWord);
                 }
                 return true;
             }
-            catch (Exception ex) { log("  [!] 写 " + path + "\\" + name + " 失败: " + ex.Message); return false; }
+            catch (Exception ex) { log?.Invoke("  [!] 写 " + path + "\\" + name + " 失败: " + ex.Message); return false; }
         }
 
         public static bool SetSz(RegistryKey hive, string path, string name, string value, Action<string> log)
         {
             try
             {
-                using (var k = hive.CreateSubKey(path, true))
+                using (var root = OpenView(hive, RegistryView.Registry64))
+                using (var k = root.CreateSubKey(path, true))
+                {
+                    if (k == null) { log?.Invoke("  [!] 无法打开(写) " + path); return false; }
                     k.SetValue(name, value, RegistryValueKind.String);
+                }
                 return true;
             }
-            catch (Exception ex) { log("  [!] 写 " + path + "\\" + name + " 失败: " + ex.Message); return false; }
+            catch (Exception ex) { log?.Invoke("  [!] 写 " + path + "\\" + name + " 失败: " + ex.Message); return false; }
         }
 
         public static void DeleteValue(RegistryKey hive, string path, string name, Action<string> log)
         {
-            try
+            // 两个视图都删：旧版本写入 Wow6432Node 的值也要一并清除，否则策略残留
+            foreach (var view in BothViews)
             {
-                using (var k = hive.OpenSubKey(path, true))
+                try
                 {
-                    if (k == null) return;
-                    k.DeleteValue(name, false);
+                    using (var root = OpenView(hive, view))
+                    using (var k = root.OpenSubKey(path, true))
+                    {
+                        if (k == null) continue;
+                        k.DeleteValue(name, false);
+                    }
                 }
+                catch (Exception ex) { log?.Invoke("  [!] 删 " + path + "\\" + name + " 失败: " + ex.Message); }
             }
-            catch (Exception ex) { log("  [!] 删 " + path + "\\" + name + " 失败: " + ex.Message); }
         }
 
-        /// <summary>删键。返回是否真的成功（Win11 24H2+ Policies 路径 DACL 可能拒绝 DELETE，admin 删不动）。</summary>
-        public static bool DeleteKeyTree(RegistryKey hive, string path, Action<string> log)
+        /// <summary>在指定视图内删键。返回是否真的成功（Win11 24H2+ Policies 路径 DACL 可能拒绝 DELETE，admin 删不动）。</summary>
+        private static bool DeleteKeyTreeInView(RegistryKey hive, string path, RegistryView view, Action<string> log)
         {
             try
             {
-                // 键不存在 = 无需删除（常见于 HKCU 下没有 Edge 组策略键）。直接返回成功，避免误报"[!] 删键失败"。
-                using (var probe = hive.OpenSubKey(path, false))
-                    if (probe == null) return true;
-                hive.DeleteSubKeyTree(path, false);
-                // 二次验证：检查 key 是否真没了
-                using (var k = hive.OpenSubKey(path, false))
+                using (var root = OpenView(hive, view))
                 {
-                    if (k != null)
+                    // 键不存在 = 无需删除（常见于 HKCU 下没有 Edge 组策略键）。直接返回成功，避免误报"[!] 删键失败"。
+                    using (var probe = root.OpenSubKey(path, false))
+                        if (probe == null) return true;
+                    root.DeleteSubKeyTree(path, false);
+                    // 二次验证：检查 key 是否真没了
+                    using (var k = root.OpenSubKey(path, false))
                     {
-                        log("  [!] 删键 " + path + " 调用成功但键仍在（可能被 DACL/所有者拒绝）");
-                        return false;
+                        if (k != null)
+                        {
+                            log?.Invoke("  [!] 删键 " + path + " 调用成功但键仍在（可能被 DACL/所有者拒绝）");
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+            }
+            catch (Exception ex) { log?.Invoke("  [!] 删键 " + path + " 失败: " + ex.Message); return false; }
+        }
+
+        public static bool DeleteKeyTree(RegistryKey hive, string path, Action<string> log)
+        {
+            // 同时清理 64 位与 32 位视图，避免旧版残留
+            bool ok64 = DeleteKeyTreeInView(hive, path, RegistryView.Registry64, log);
+            bool ok32 = DeleteKeyTreeInView(hive, path, RegistryView.Registry32, log);
+            return ok64 && ok32;
+        }
+
+        /// <summary>读取 Dword；键或值不存在返回 null（视图：先 64 位再回退 32 位）。</summary>
+        public static int? GetDwordOrNull(RegistryKey hive, string path, string name)
+        {
+            foreach (var view in BothViews)
+            {
+                try
+                {
+                    using (var root = OpenView(hive, view))
+                    using (var k = root.OpenSubKey(path, false))
+                    {
+                        if (k == null) continue;
+                        var v = k.GetValue(name);
+                        if (v == null) continue;
+                        return Convert.ToInt32(v);
                     }
                 }
-                return true;
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine("RegistryHelper.GetDwordOrNull 失败: " + ex.Message); }
             }
-            catch (Exception ex) { log("  [!] 删键 " + path + " 失败: " + ex.Message); return false; }
+            return null;
+        }
+
+        /// <summary>判断键是否存在（64/32 任一视图存在即视为存在）。</summary>
+        public static bool KeyExists(RegistryKey hive, string path)
+        {
+            foreach (var view in BothViews)
+            {
+                try
+                {
+                    using (var root = OpenView(hive, view))
+                    using (var k = root.OpenSubKey(path, false))
+                        if (k != null) return true;
+                }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine("RegistryHelper.KeyExists 失败: " + ex.Message); }
+            }
+            return false;
+        }
+
+        /// <summary>删除指定值（64/32 双视图）。返回是否成功；键或值不存在视为无需清理，返回 true。</summary>
+        public static bool DeleteValueChecked(RegistryKey hive, string path, string name, Action<string> log)
+        {
+            bool ok = true;
+            foreach (var view in BothViews)
+            {
+                try
+                {
+                    using (var root = OpenView(hive, view))
+                    using (var k = root.OpenSubKey(path, true))
+                    {
+                        if (k == null) continue;                 // 键不存在 = 没有残留
+                        if (k.GetValue(name) == null) continue;  // 值不存在 = 没有残留
+                        k.DeleteValue(name, false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ok = false;
+                    log?.Invoke("  [!] 删 " + path + "\\" + name + " 失败: " + ex.Message);
+                }
+            }
+            return ok;
+        }
+
+        /// <summary>仅当值已存在时才改写（在存在该值的每个视图中更新），返回是否至少更新了一处。</summary>
+        public static bool SetDwordIfExists(RegistryKey hive, string path, string name, int value, Action<string> log)
+        {
+            bool updated = false, ok = true;
+            foreach (var view in BothViews)
+            {
+                try
+                {
+                    using (var root = OpenView(hive, view))
+                    using (var k = root.OpenSubKey(path, true))
+                    {
+                        if (k == null) continue;
+                        if (k.GetValue(name) == null) continue;  // 不存在则不新建
+                        k.SetValue(name, value, RegistryValueKind.DWord);
+                        updated = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ok = false;
+                    log?.Invoke("  [!] 改 " + path + "\\" + name + " 失败: " + ex.Message);
+                }
+            }
+            return updated && ok;
+        }
+
+        /// <summary>判断指定值是否存在（64/32 任一视图存在即 true）。</summary>
+        public static bool ValueExists(RegistryKey hive, string path, string name)
+        {
+            foreach (var view in BothViews)
+            {
+                try
+                {
+                    using (var root = OpenView(hive, view))
+                    using (var k = root.OpenSubKey(path, false))
+                        if (k != null && k.GetValue(name) != null) return true;
+                }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine("RegistryHelper.ValueExists 失败: " + ex.Message); }
+            }
+            return false;
         }
 
         // ============================================================
@@ -129,84 +293,124 @@ namespace CpqSystemTool
             return false;
         }
 
+        // 读取统一策略：先查 64 位视图，未找到再回退 32 位视图。
+        // 这样既新增了 64 位可见性（修复软件枚举漏项），又保证原本能从 32 位视图读到的条目依然能读到（不回归）。
+
         public static int GetDword(RegistryKey hive, string path, string name, int def = 0)
         {
-            try
+            foreach (var view in BothViews)
             {
-                using (var k = hive.OpenSubKey(path, false))
+                try
                 {
-                    if (k == null) return def;
-                    var v = k.GetValue(name);
-                    if (v == null) return def;
-                    return Convert.ToInt32(v);
+                    using (var root = OpenView(hive, view))
+                    using (var k = root.OpenSubKey(path, false))
+                    {
+                        if (k == null) continue;
+                        var v = k.GetValue(name);
+                        if (v == null) continue;
+                        return Convert.ToInt32(v);
+                    }
                 }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine("RegistryHelper 读取失败: " + ex.Message); }
             }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("RegistryHelper 读取失败: " + ex.Message); return def; }
+            return def;
         }
 
         /// <summary>读取注册表 Dword 并判断是否等于 onValue（用于 Tweaks 等开关状态查询）。键/值不存在或读取异常均返回 false。</summary>
         public static bool GetDwordState(RegistryKey hive, string subPath, string name, int onValue)
         {
-            try
+            foreach (var view in BothViews)
             {
-                using (var k = hive.OpenSubKey(subPath))
+                try
                 {
-                    if (k != null && k.GetValue(name) is int v) return v == onValue;
+                    using (var root = OpenView(hive, view))
+                    using (var k = root.OpenSubKey(subPath))
+                    {
+                        if (k == null) continue;
+                        var v = k.GetValue(name);
+                        if (v == null) continue;
+                        // 统一用 Convert.ToInt32：原实现 `is int` 对 REG_SZ "1" 判不出，与 GetDword 行为不一致
+                        return Convert.ToInt32(v) == onValue;
+                    }
                 }
+                catch { }
             }
-            catch { }
             return false;
         }
 
         public static string GetSz(RegistryKey hive, string path, string name, string def = "")
         {
-            try
+            foreach (var view in BothViews)
             {
-                using (var k = hive.OpenSubKey(path, false))
+                try
                 {
-                    if (k == null) return def;
-                    var v = k.GetValue(name);
-                    return v == null ? def : v.ToString();
+                    using (var root = OpenView(hive, view))
+                    using (var k = root.OpenSubKey(path, false))
+                    {
+                        if (k == null) continue;
+                        var v = k.GetValue(name);
+                        if (v == null) continue;
+                        return v.ToString();
+                    }
                 }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine("RegistryHelper 读取失败: " + ex.Message); }
             }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("RegistryHelper 读取失败: " + ex.Message); return def; }
+            return def;
         }
 
         public static bool ClsIdDefaultEmpty(RegistryKey hive, string path)
         {
-            try
+            foreach (var view in BothViews)
             {
-                using (var k = hive.OpenSubKey(path, false))
+                try
                 {
-                    if (k == null) return false;
-                    var v = k.GetValue("");
-                    return v is string && ((string)v) == "";
+                    using (var root = OpenView(hive, view))
+                    using (var k = root.OpenSubKey(path, false))
+                    {
+                        if (k == null) continue;
+                        var v = k.GetValue("");
+                        if (v == null) continue;
+                        return v is string && ((string)v) == "";
+                    }
                 }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine("RegistryHelper.ClsIdDefaultEmpty 失败: " + ex.Message); }
             }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("RegistryHelper.ClsIdDefaultEmpty 失败: " + ex.Message); return false; }
+            return false;
         }
 
         public static byte[] GetBinary(RegistryKey hive, string path, string name)
         {
-            try
+            foreach (var view in BothViews)
             {
-                using (var k = hive.OpenSubKey(path, false))
+                try
                 {
-                    if (k == null) return null;
-                    return k.GetValue(name) as byte[];
+                    using (var root = OpenView(hive, view))
+                    using (var k = root.OpenSubKey(path, false))
+                    {
+                        if (k == null) continue;
+                        var v = k.GetValue(name);
+                        if (v == null) continue;
+                        return v as byte[];
+                    }
                 }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine("RegistryHelper 读取失败: " + ex.Message); }
             }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("RegistryHelper 读取失败: " + ex.Message); return null; }
+            return null;
         }
 
         public static void SetBinary(RegistryKey hive, string path, string name, byte[] data, Action<string> log)
         {
             try
             {
-                using (var k = hive.CreateSubKey(path, true))
+                // 显式写 64 位视图，避免被 WOW64 重定向
+                using (var root = OpenView(hive, RegistryView.Registry64))
+                using (var k = root.CreateSubKey(path, true))
+                {
+                    if (k == null) { log?.Invoke("  [!] 无法打开(写) " + path); return; }
                     k.SetValue(name, data, RegistryValueKind.Binary);
+                }
             }
-            catch (Exception ex) { log("  [!] 写 " + path + "\\" + name + " 失败: " + ex.Message); }
+            catch (Exception ex) { log?.Invoke("  [!] 写 " + path + "\\" + name + " 失败: " + ex.Message); }
         }
 
         /// <summary>重启 Windows 资源管理器使 Explorer 相关设置生效（对应 restart_explorer）。</summary>

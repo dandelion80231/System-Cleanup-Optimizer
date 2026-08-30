@@ -14,43 +14,112 @@ namespace CpqSystemTool
         public static string GetEdgeVersion(string channel)
         {
             string subKey;
+            string displayName;
             switch (channel)
             {
-                case "stable": subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge"; break;
-                case "beta":   subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Beta"; break;
-                case "dev":    subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Dev"; break;
-                case "canary": subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Canary"; break;
-                case "sxs":    subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge SxS"; break;
+                case "stable": subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge";       displayName = "Microsoft Edge";       break;
+                case "beta":   subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Beta";  displayName = "Microsoft Edge Beta";  break;
+                case "dev":    subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Dev";   displayName = "Microsoft Edge Dev";   break;
+                case "canary": subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Canary"; displayName = "Microsoft Edge Canary"; break;
+                case "sxs":    subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge SxS";  displayName = "Microsoft Edge SxS";   break;
                 default: return "未知";
             }
             try
             {
                 using (var key = Registry.LocalMachine.OpenSubKey(subKey))
                 {
-                    if (key == null) return "未安装";
-                    return key.GetValue("Version")?.ToString() ?? "未安装";
+                    // 注：注册表视图本身没有"二次重定向"问题——用 32 位 reg.exe 实测
+                    // HKLM\SOFTWARE\WOW6432Node\... 能正常读到值（重定向器不会拼出 WOW6432Node\WOW6432Node），
+                    // 所以这里保留原路径不变；真正的失效点是下面这个"固定键名"。
+                    var v = key?.GetValue("Version")?.ToString();
+                    // 只采信点分版本号形态；Edge 的 Version 值也可能是 EdgeUpdate 内部序号（如 2533363745），
+                    // 这种情况继续走下面的 DisplayName 兜底去取 DisplayVersion。
+                    if (IsDottedVersion(v)) return v;
                 }
             }
-            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return "未安装"; }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+
+            // 兜底：现代 Edge（Stable）的卸载键名已不是 "Microsoft Edge"，而是安装程序生成的 GUID
+            // （本机实测为 {C5DA3FA9-BB21-33F6-AC6E-73839ACE9E08}，其 DisplayName 才是 "Microsoft Edge"），
+            // 所以按固定键名读会恒定返回"未安装"。这里退化为按 DisplayName 在 Uninstall 下搜索。
+            return FindVersionByDisplayName(displayName) ?? "未安装";
+        }
+
+        /// <summary>
+        /// 在 HKLM\...\Uninstall 下按 DisplayName 精确匹配查找已安装版本（先 64 位视图，再回退 32 位视图）。
+        /// 用于 Edge 这类"卸载键名是 GUID、只有 DisplayName 稳定"的场景；找不到返回 null。
+        /// </summary>
+        private static string FindVersionByDisplayName(string displayName)
+        {
+            if (string.IsNullOrWhiteSpace(displayName)) return null;
+            const string uninstallPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+            var views = Environment.Is64BitOperatingSystem
+                ? new[] { RegistryView.Registry64, RegistryView.Registry32 }
+                : new[] { RegistryView.Default };
+            foreach (var view in views)
+            {
+                try
+                {
+                    using (var root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view))
+                    using (var uninstall = root.OpenSubKey(uninstallPath))
+                    {
+                        if (uninstall == null) continue;
+                        foreach (var name in uninstall.GetSubKeyNames())
+                        {
+                            using (var key = uninstall.OpenSubKey(name))
+                            {
+                                if (key == null) continue;
+                                var dn = key.GetValue("DisplayName")?.ToString();
+                                if (!string.Equals(dn, displayName, StringComparison.OrdinalIgnoreCase)) continue;
+                                // 不能无脑取 Version：本机实测 Edge 的 GUID 卸载键里 Version="2533363745"
+                                // （EdgeUpdate 的内部序号），真正的四段版本在 DisplayVersion="152.0.4191.53"。
+                                // 故这里只在值确实是"数字.数字[.数字...]"形态时才采信，优先采信形似版本号的那个。
+                                var vVersion = key.GetValue("Version")?.ToString();
+                                var vDisplay = key.GetValue("DisplayVersion")?.ToString();
+                                if (IsDottedVersion(vDisplay)) return vDisplay;
+                                if (IsDottedVersion(vVersion)) return vVersion;
+                                if (!string.IsNullOrWhiteSpace(vVersion)) return vVersion;
+                                if (!string.IsNullOrWhiteSpace(vDisplay)) return vDisplay;
+                            }
+                        }
+                    }
+                }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+            }
+            return null;
         }
 
         public static string GetWebView2Version()
         {
-            try
+            // 与 GetEdgeVersion 采用同一套策略：
+            //   1) 先按固定键名读，且**值必须是点分版本号才采信** —— Version 值可能被写成
+            //      EdgeUpdate 的内部序号（如 2533363745），直接展示会让人误以为是版本号；
+            //   2) 固定键名读不到（或值不可信）时，退化为按 DisplayName 在 Uninstall 下搜索。
+            // 原实现只要读不到就立刻返回"未安装"，既不校验值形态、也没有兜底，
+            // 在键名变化或 Version 被写成内部序号的机器上会误报"未安装"或显示错误数字。
+            var probes = new[]
             {
-                using (var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft EdgeWebView"))
+                new { Hive = Registry.LocalMachine, Sub = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft EdgeWebView" },
+                new { Hive = Registry.CurrentUser,  Sub = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft EdgeWebView" },
+            };
+            foreach (var probe in probes)
+            {
+                try
                 {
-                    if (key == null)
+                    using (var key = probe.Hive.OpenSubKey(probe.Sub))
                     {
-                        using (var key2 = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft EdgeWebView"))
-                        {
-                            return key2?.GetValue("Version")?.ToString() ?? "未安装";
-                        }
+                        if (key == null) continue;
+                        var vDisplay = key.GetValue("DisplayVersion")?.ToString();
+                        if (IsDottedVersion(vDisplay)) return vDisplay;
+                        var vVersion = key.GetValue("Version")?.ToString();
+                        if (IsDottedVersion(vVersion)) return vVersion;
+                        if (!string.IsNullOrWhiteSpace(vDisplay)) return vDisplay;
+                        if (!string.IsNullOrWhiteSpace(vVersion)) return vVersion;
                     }
-                    return key.GetValue("Version")?.ToString() ?? "未安装";
                 }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
             }
-            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return "未安装"; }
+            return FindVersionByDisplayName("Microsoft Edge WebView2 Runtime") ?? "未安装";
         }
 
         // Issue 6: 当前用户级别 WebView2（分开显示在 UI 上）
@@ -59,9 +128,147 @@ namespace CpqSystemTool
             try
             {
                 using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft EdgeWebView"))
-                    return key?.GetValue("Version")?.ToString() ?? "未安装";
+                {
+                    if (key == null) return "未安装";
+                    // 与 GetWebView2Version 一致：优先 DisplayVersion，且只采信点分版本号形态，
+                    // 避免把 EdgeUpdate 的内部序号（如 2533363745）当版本号显示给用户。
+                    var vDisplay = key.GetValue("DisplayVersion")?.ToString();
+                    if (IsDottedVersion(vDisplay)) return vDisplay;
+                    var vVersion = key.GetValue("Version")?.ToString();
+                    if (IsDottedVersion(vVersion)) return vVersion;
+                    return !string.IsNullOrWhiteSpace(vDisplay) ? vDisplay
+                         : !string.IsNullOrWhiteSpace(vVersion) ? vVersion
+                         : "未安装";
+                }
             }
             catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return "未安装"; }
+        }
+
+        // === 运行时版本目录挑选（关键：先过滤非版本目录，再按版本号自然排序） ===
+        // 背景：Edge/EdgeWebView 的 Application 目录下除了 "152.0.4191.53" 这类版本目录，
+        // 还会有 SetupMetrics（引导程序自己写的指标目录）、Installer、Dictionaries 等非版本目录。
+        // 旧实现用 Directory.GetDirectories(root).OrderByDescending(d => d).FirstOrDefault() 取"最新版本"，
+        // 但 .NET 默认字符串比较里字母排在数字之后，"...\SetupMetrics" > "...\152.0.4191.53"，
+        // 于是 FirstOrDefault 永远选中 SetupMetrics（里面只有 .pma 文件），进而误报
+        // "运行时文件仍不完整（msedgewebview2.exe 或 msedge.dll 缺失）"——且跑一次修复就会生成
+        // SetupMetrics，之后每次修复都误报。故这里统一走下面这套"过滤 + 版本号自然排序"。
+
+        /// <summary>
+        /// 是否为"点分版本号"形态：只允许数字与 '.'，且至少两段（如 152.0.4191.53）。
+        /// 既用于判断版本目录名（排除 SetupMetrics / Installer / Dictionaries 等非版本目录），
+        /// 也用于判断注册表里的版本值是否可信（Edge 的 Version 值可能是 2533363745 这类内部序号）。
+        /// </summary>
+        private static bool IsDottedVersion(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            int segments = 0, digitsInSegment = 0;
+            foreach (var c in name)
+            {
+                if (c == '.')
+                {
+                    if (digitsInSegment == 0) return false;  // 空段（"152..1" / ".152"）
+                    segments++;
+                    digitsInSegment = 0;
+                }
+                else if (c >= '0' && c <= '9') digitsInSegment++;
+                else return false;                           // 含字母/符号 → 非版本目录（SetupMetrics 等）
+            }
+            return segments >= 1 && digitsInSegment > 0;
+        }
+
+        /// <summary>版本号自然比较：a 比 b 新返回正数，相等返回 0，a 比 b 旧返回负数。
+        /// 逐段按整数比较（不能按字符串，否则 "99..." 会大于 "152..."），缺失段视作 0。</summary>
+        private static int CompareVersionDir(string a, string b)
+        {
+            var pa = (a ?? "").Split('.');
+            var pb = (b ?? "").Split('.');
+            int len = Math.Max(pa.Length, pb.Length);
+            for (int i = 0; i < len; i++)
+            {
+                int na = (i < pa.Length && int.TryParse(pa[i], out int x)) ? x : 0;
+                int nb = (i < pb.Length && int.TryParse(pb[i], out int y)) ? y : 0;
+                if (na != nb) return na - nb;
+            }
+            return 0;
+        }
+
+        /// <summary>列出根目录下所有版本目录，按版本号从新到旧排序；非版本目录一律排除。
+        /// 任何异常都吞掉并返回空列表，绝不上抛到 UI 线程。</summary>
+        private static List<string> GetVersionDirsNewestFirst(string root)
+        {
+            var list = new List<string>();
+            try
+            {
+                if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) return list;
+                foreach (var dir in Directory.GetDirectories(root))
+                {
+                    var name = Path.GetFileName(dir);
+                    if (IsDottedVersion(name)) list.Add(dir);
+                }
+                // 新→旧：比较时把参数反过来实现降序
+                list.Sort((x, y) => CompareVersionDir(Path.GetFileName(y), Path.GetFileName(x)));
+            }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+            return list;
+        }
+
+        /// <summary>取根目录下最新的版本目录（已过滤非版本目录）；不存在或异常返回 null。</summary>
+        private static string GetLatestVersionDir(string root)
+        {
+            try
+            {
+                var dirs = GetVersionDirsNewestFirst(root);
+                return dirs.Count > 0 ? dirs[0] : null;
+            }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); return null; }
+        }
+
+        /// <summary>
+        /// 运行时根目录候选：同时覆盖 Program Files 与 Program Files (x86)（已去重、保持 x86 优先）。
+        /// 本机 Edge/EdgeWebView 是 x86 装在 Program Files (x86)，但部分机器是 x64 装在 Program Files，
+        /// 只查前者会漏掉后者的安装；32 位进程下两者可能同值，故必须去重。
+        /// </summary>
+        /// <param name="relative">相对 Program Files 的子路径，如 Microsoft\EdgeWebView\Application</param>
+        private static List<string> GetRuntimeRootCandidates(string relative)
+        {
+            var roots = new List<string>();
+            var bases = new List<string>();
+            try
+            {
+                Action<string> addBase = p =>
+                {
+                    // 未展开的环境变量（32 位系统上 %ProgramFiles(x86)% 未定义，会原样返回带 % 的字串）
+                    // 直接拼路径会得到一个不存在的目录，这里一律丢弃。
+                    if (string.IsNullOrEmpty(p) || p.IndexOf('%') >= 0) return;
+                    if (!bases.Any(b => string.Equals(b, p, StringComparison.OrdinalIgnoreCase)))
+                        bases.Add(p);
+                };
+                // x86 优先：本机 Edge/EdgeWebView 就是 x86 装在 Program Files (x86) 下。
+                addBase(Environment.ExpandEnvironmentVariables(@"%ProgramFiles(x86)%"));
+                // 关键：本程序是 32 位进程，%ProgramFiles% 会被 WOW64 虚拟化成 "... (x86)"，
+                // 想拿到真正的 64 位 Program Files 只能读 ProgramW6432（32 位系统上不存在 → 自动跳过）。
+                try { addBase(Environment.GetEnvironmentVariable("ProgramW6432")); }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                addBase(Environment.ExpandEnvironmentVariables(@"%ProgramFiles%"));
+                // 环境变量理论上可能被用户改坏，再补一层 SpecialFolder 作为兜底
+                try { addBase(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)); }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                try { addBase(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)); }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+            }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+
+            foreach (var b in bases)
+            {
+                try
+                {
+                    var full = Path.Combine(b, relative);
+                    if (!roots.Any(r => string.Equals(r, full, StringComparison.OrdinalIgnoreCase)))
+                        roots.Add(full);
+                }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+            }
+            return roots;
         }
 
         // === WebView2 安装/卸载 ===
@@ -74,7 +281,16 @@ namespace CpqSystemTool
             log("WebView2 Runtime 安装/升级完成");
 
             // 同步就地补上单文件分发所需的 WebView2 探针托管依赖（NuGet 运行时拉取）。
-            WebView2ProbeDeps.EnsureWebView2ProbeDeps(log, p => log(WebView2ProbeDeps.ProgressLine(p)));
+            // 兜底：这一步要联网 + 解压 + 写 exe 同目录，失败绝不能让异常逸出到 UI 线程（net48 下会直接崩进程）。
+            try
+            {
+                WebView2ProbeDeps.EnsureWebView2ProbeDeps(log, p => log(WebView2ProbeDeps.ProgressLine(p)));
+            }
+            catch (Exception caughtEx)
+            {
+                DebugLog.Ignore(caughtEx);
+                log("[!] 补齐 WebView2 探针依赖失败: " + caughtEx.Message);
+            }
         }
 
         public static void UninstallWebView2(Action<string> log)
@@ -82,21 +298,31 @@ namespace CpqSystemTool
             log("正在卸载 WebView2 Runtime...");
             // cmd 不会解析路径中间的 *.* 通配符（%ProgramFiles(x86)%\...\Application\*.*\Installer\setup.exe），
             // 改为在 C# 枚举真实存在的 setup.exe 逐个调用，避免静默 no-op。
-            string baseDir = Environment.ExpandEnvironmentVariables(@"%ProgramFiles(x86)%\Microsoft\EdgeWebView\Application");
+            // 根目录候选覆盖 Program Files / Program Files (x86) 两者；只遍历版本目录，
+            // 避免把 SetupMetrics 之类非版本目录当成待卸载版本（其下没有 Installer\setup.exe，虽无实际危害但会污染日志判断）。
+            var candidates = GetRuntimeRootCandidates(@"Microsoft\EdgeWebView\Application");
             bool found = false;
-            if (Directory.Exists(baseDir))
+            try
             {
-                foreach (var verDir in Directory.GetDirectories(baseDir))
+                foreach (var baseDir in candidates)
                 {
-                    string setup = Path.Combine(verDir, "Installer", "setup.exe");
-                    if (File.Exists(setup))
+                    foreach (var verDir in GetVersionDirsNewestFirst(baseDir))
                     {
-                        found = true;
-                        Exec.RunCmd(new[] { setup, "--uninstall", "--force-uninstall", "--system-level" }, log);
+                        string setup = Path.Combine(verDir, "Installer", "setup.exe");
+                        if (File.Exists(setup))
+                        {
+                            found = true;
+                            Exec.RunCmd(new[] { setup, "--uninstall", "--force-uninstall", "--system-level" }, log);
+                        }
                     }
                 }
             }
-            if (!found) log("  [!] 未找到 WebView2 Runtime 安装目录（可能已卸载）");
+            catch (Exception caughtEx)
+            {
+                DebugLog.Ignore(caughtEx);
+                log("  [!] 枚举 WebView2 安装目录时出错: " + caughtEx.Message);
+            }
+            if (!found) log("  [!] 未找到 WebView2 Runtime 安装目录（可能已卸载）；已查: " + string.Join("; ", candidates));
             else log("WebView2 Runtime 卸载完成");
         }
 
@@ -108,6 +334,26 @@ namespace CpqSystemTool
         public static void RepairWebView2(Action<string> log)
         {
             log("=== 修复 / 重装 WebView2 Runtime ===");
+            // 最外层兜底：本方法由 UI 后台线程直接调用，net48 下任何逸出的异常都会直接终止进程，
+            // 因此全流程任何一步都不允许把异常抛回调用方（每一步的 try/catch 见下）。
+            try
+            {
+                RepairWebView2Internal(log);
+            }
+            catch (Exception caughtEx)
+            {
+                DebugLog.Ignore(caughtEx);
+                log("[!] 修复过程发生未预期错误: " + caughtEx.Message);
+            }
+            finally
+            {
+                log("=== 修复流程结束 ===");
+            }
+        }
+
+        /// <summary>RepairWebView2 的实际实现（外层包装只负责异常兜底与结束日志）。</summary>
+        private static void RepairWebView2Internal(Action<string> log)
+        {
             string bootstrapper = Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
                 "MicrosoftEdgeWebViewModelInstaller.exe");
@@ -136,35 +382,87 @@ namespace CpqSystemTool
             }
 
             log("正在运行引导程序（/silent /install）…");
-            int exitCode = Exec.RunCmd(new[] { "cmd", "/c", $"\"{bootstrapper}\"", "/silent", "/install" }, log);
+            int exitCode = -1;
+            try
+            {
+                exitCode = Exec.RunCmd(new[] { "cmd", "/c", $"\"{bootstrapper}\"", "/silent", "/install" }, log);
+            }
+            catch (Exception caughtEx)
+            {
+                // 兜底：引导程序启动失败只影响"重装"这一步，后续的文件终验仍要照常执行，
+                // 否则用户会看不到"其实已经装好了"的结论，直接被误导去重装 Edge。
+                DebugLog.Ignore(caughtEx);
+                log("[!] 运行引导程序异常: " + caughtEx.Message);
+            }
             log($"[*] 引导程序退出码: {exitCode}");
 
             // 注册表指针修复（应对“二进制完好但注册键缺失”的场景）。
-            if (!IsWebView2RegistryHealthy())
+            try
             {
-                log("[!] 引导程序未恢复注册表（可能判定已安装而跳过），尝试扫描磁盘并修复注册表指针…");
-                RepairWebView2RegistryFromDisk(log);
+                if (!IsWebView2RegistryHealthy())
+                {
+                    log("[!] 引导程序未恢复注册表（可能判定已安装而跳过），尝试扫描磁盘并修复注册表指针…");
+                    RepairWebView2RegistryFromDisk(log);
+                }
+            }
+            catch (Exception caughtEx)
+            {
+                DebugLog.Ignore(caughtEx);
+                log("[!] 注册表检测/修复步骤异常: " + caughtEx.Message);
             }
 
             // 终验：不仅看注册表，更要看运行时实际文件是否完整。
             // 注意：现代 Edge 主二进制名为 msedge.dll（旧版才叫 chrome.dll），目录里本来就没有 chrome.dll。
             // 真正决定 WebView2 能否初始化的核心文件是 msedgewebview2.exe + msedge.dll。
-            var runtimeRoot = Environment.ExpandEnvironmentVariables(@"%ProgramFiles(x86)%\Microsoft\EdgeWebView\Application");
-            bool filesComplete = false;
-            if (Directory.Exists(runtimeRoot))
+            // 关键：版本目录必须"先过滤再按版本号自然排序"。旧的
+            // Directory.GetDirectories(root).OrderByDescending(d => d).FirstOrDefault()
+            // 会选中 SetupMetrics（字符串比较里字母 > 数字）——那正是引导程序自己生成的指标目录，
+            // 里面只有 .pma 文件，于是把"本来完好的运行时"误报成"文件仍不完整"。
+            var coreFiles = new[] { "msedgewebview2.exe", "msedge.dll" };
+            // 根目录候选同时覆盖 Program Files 与 Program Files (x86)：本机是 x86 装在 (x86) 下，
+            // 但部分机器是 x64 装在 Program Files 下，只查前者会漏判。
+            var runtimeRoots = GetRuntimeRootCandidates(@"Microsoft\EdgeWebView\Application");
+            string checkedDir = null;
+            var missingFiles = new List<string>();
+            foreach (var root in runtimeRoots)
             {
-                var vd = Directory.GetDirectories(runtimeRoot).OrderByDescending(d => d).FirstOrDefault();
-                if (vd != null)
-                    filesComplete = File.Exists(Path.Combine(vd, "msedgewebview2.exe"))
-                        && File.Exists(Path.Combine(vd, "msedge.dll"));
+                var vd = GetLatestVersionDir(root);
+                if (vd == null) continue;   // 该候选目录下没有版本目录 → 换下一个候选
+                checkedDir = vd;
+                foreach (var f in coreFiles)
+                    if (!File.Exists(Path.Combine(vd, f))) missingFiles.Add(f);
+                break;
             }
-            if (filesComplete)
-                log("[✓] WebView2 Runtime 文件已恢复完整，建议重启本程序后重试 WebView2 探针。");
+
+            // 分情况输出：三种结论的处置方式完全不同，混成一句"文件不完整"会误导用户去无谓重装 Edge。
+            if (checkedDir == null)
+            {
+                log("[!] 未在任何候选目录中找到 WebView2 版本目录（已查: " + string.Join("; ", runtimeRoots)
+                    + "）。本机似乎尚未安装 WebView2 Runtime，请先安装 WebView2 Runtime（或 Microsoft Edge）后重试。");
+            }
+            else if (missingFiles.Count == 0)
+            {
+                log("[✓] WebView2 Runtime 文件已完整（版本目录: " + checkedDir
+                    + "），建议重启本程序后重试 WebView2 探针。");
+            }
             else
-                log("[!] WebView2 运行时文件仍不完整（msedgewebview2.exe 或 msedge.dll 缺失）。本机 WebView2 由 Microsoft Edge 提供，且微软载荷 CDN 不可达 / 同版本不修复，自动修复无效。请手动从微软官网下载并重新安装 Microsoft Edge（或运行 Windows 修复），再重试。");
+            {
+                log("[!] WebView2 运行时文件不完整：版本目录 " + checkedDir + " 下缺失 "
+                    + string.Join("、", missingFiles) + "。本机 WebView2 由 Microsoft Edge 提供，"
+                    + "若微软载荷 CDN 不可达 / 同版本不修复，自动修复可能无效，"
+                    + "请手动从微软官网下载并重新安装 Microsoft Edge（或运行 Windows 修复），再重试。");
+            }
 
             // 同步就地补上单文件分发所需的 WebView2 探针托管依赖（NuGet 运行时拉取）。
-            WebView2ProbeDeps.EnsureWebView2ProbeDeps(log, p => log(WebView2ProbeDeps.ProgressLine(p)));
+            try
+            {
+                WebView2ProbeDeps.EnsureWebView2ProbeDeps(log, p => log(WebView2ProbeDeps.ProgressLine(p)));
+            }
+            catch (Exception caughtEx)
+            {
+                DebugLog.Ignore(caughtEx);
+                log("[!] 补齐 WebView2 探针依赖失败: " + caughtEx.Message);
+            }
         }
 
         /// <summary>检测 WebView2 运行时注册表根键是否健康（EdgeWebView\Applications 存在且有子键）。</summary>
@@ -184,15 +482,18 @@ namespace CpqSystemTool
         /// </summary>
         private static void RepairWebView2RegistryFromDisk(Action<string> log)
         {
-            string runtimeRoot = Environment.ExpandEnvironmentVariables(@"%ProgramFiles(x86)%\Microsoft\EdgeWebView\Application");
-            string edgeRoot = Environment.ExpandEnvironmentVariables(@"%ProgramFiles(x86)%\Microsoft\Edge\Application");
+            // 两个 Program Files 都作为候选根（本机 x86 装在 (x86) 下，部分机器 x64 装在 Program Files 下）
+            var runtimeRoots = GetRuntimeRootCandidates(@"Microsoft\EdgeWebView\Application");
+            var edgeRoots = GetRuntimeRootCandidates(@"Microsoft\Edge\Application");
             string foundVer = null;
             string foundDir = null;
 
-            // 优先扫描 WebView2 Runtime 目录下的版本子目录
-            if (Directory.Exists(runtimeRoot))
+            // 优先扫描 WebView2 Runtime 目录下的版本子目录。
+            // 只遍历版本目录并按版本号从新到旧：既排除 SetupMetrics 等非版本目录，
+            // 也保证"取到的一定是存在 msedgewebview2.exe 的最新版本"而不是字符串序最大的那个。
+            foreach (var runtimeRoot in runtimeRoots)
             {
-                foreach (var d in Directory.GetDirectories(runtimeRoot).OrderByDescending(d => d))
+                foreach (var d in GetVersionDirsNewestFirst(runtimeRoot))
                 {
                     if (File.Exists(Path.Combine(d, "msedgewebview2.exe")))
                     {
@@ -201,25 +502,31 @@ namespace CpqSystemTool
                         break;
                     }
                 }
+                if (foundDir != null) break;
             }
 
-            // 兜底：扫描完整 Edge 目录
-            if (foundDir == null && Directory.Exists(edgeRoot))
+            // 兜底：扫描完整 Edge 目录（Edge 浏览器自带 msedgewebview2.exe，可作为运行时来源）
+            if (foundDir == null)
             {
-                foreach (var d in Directory.GetDirectories(edgeRoot).OrderByDescending(d => d))
+                foreach (var edgeRoot in edgeRoots)
                 {
-                    if (File.Exists(Path.Combine(d, "msedge.exe")) && File.Exists(Path.Combine(d, "msedgewebview2.exe")))
+                    foreach (var d in GetVersionDirsNewestFirst(edgeRoot))
                     {
-                        foundDir = d;
-                        foundVer = Path.GetFileName(d);
-                        break;
+                        if (File.Exists(Path.Combine(d, "msedge.exe")) && File.Exists(Path.Combine(d, "msedgewebview2.exe")))
+                        {
+                            foundDir = d;
+                            foundVer = Path.GetFileName(d);
+                            break;
+                        }
                     }
+                    if (foundDir != null) break;
                 }
             }
 
             if (foundDir == null)
             {
-                log("[!] 未在磁盘上找到可用的 WebView2 Runtime 目录，无法修复注册表。");
+                log("[!] 未在磁盘上找到可用的 WebView2 Runtime 目录，无法修复注册表。已查: "
+                    + string.Join("; ", runtimeRoots) + " / " + string.Join("; ", edgeRoots));
                 return;
             }
 
@@ -344,13 +651,50 @@ namespace CpqSystemTool
             log($"Edge {channel} 卸载完成");
         }
 
+        /// <summary>
+        /// 待删目录是否为明确的 Edge 目录：展开环境变量并规范化后，路径必须包含
+        /// Microsoft\Edge 或 Microsoft\EdgeWebView（分隔符统一为 '\'，大小写不敏感）。
+        /// 强制清理用的是 rd /S /Q 递归删除，一旦环境变量展开失败或路径拼接异常就会删错目录，
+        /// 因此这里先做身份校验，缺少 Edge 标识的路径一律不删（防止误删用户数据）。
+        /// </summary>
+        private static bool IsEdgeInstallPath(string fullPath)
+        {
+            if (string.IsNullOrWhiteSpace(fullPath)) return false;
+            if (fullPath.IndexOf('%') >= 0) return false;   // 环境变量未展开（路径不可信），视为无效
+            string norm;
+            try { norm = Path.GetFullPath(fullPath).Replace('/', '\\'); }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); return false; }
+            return norm.IndexOf(@"\microsoft\edge", StringComparison.OrdinalIgnoreCase) >= 0
+                || norm.IndexOf(@"\microsoft\edgewebview", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private static void ForceCleanupEdge(string displayName, Action<string> log)
         {
+            // 防误删校验：删除前先把待删目录展开成真实路径并逐个校验 Edge 标识。
+            // 必需的 Edge 安装目录校验不过 → 整体中止并记录日志；附属缓存目录校验不过 → 仅跳过该项。
+            var targets = new[]
+            {
+                new { Path = @"%ProgramFiles(x86)%\Microsoft\Edge",     Required = true  },
+                new { Path = @"%ProgramFiles(x86)%\Microsoft\EdgeCore", Required = true  },
+                new { Path = @"%LocalAppData%\Microsoft\Edge",          Required = true  },
+                new { Path = @"%ProgramFiles(x86)%\Microsoft\Temp",     Required = false }
+            };
+            var dirs = new List<string>();
+            foreach (var t in targets)
+            {
+                string full = Exec.ExpandEnv(t.Path);
+                if (IsEdgeInstallPath(full)) { dirs.Add(full); continue; }
+                if (t.Required)
+                {
+                    log("  [!] 强制清理已中止：待删路径缺少 Edge 标识（防止误删用户数据）: " + (string.IsNullOrEmpty(full) ? t.Path : full));
+                    return;
+                }
+                log("  [SKIP] 非 Edge 目录，跳过删除（防止误删用户数据）: " + (string.IsNullOrEmpty(full) ? t.Path : full));
+            }
+
             // 清理安装目录
-            Exec.RunCmd(new[] { "cmd", "/c", $"rd /S /Q \"%ProgramFiles(x86)%\\Microsoft\\Edge\\\"" }, log);
-            Exec.RunCmd(new[] { "cmd", "/c", $"rd /S /Q \"%ProgramFiles(x86)%\\Microsoft\\Temp\\\"" }, log);
-            Exec.RunCmd(new[] { "cmd", "/c", $"rd /S /Q \"%ProgramFiles(x86)%\\Microsoft\\EdgeCore\\\"" }, log);
-            Exec.RunCmd(new[] { "cmd", "/c", $"rd /S /Q \"%LocalAppData%\\Microsoft\\Edge\\\"" }, log);
+            foreach (var d in dirs)
+                Exec.RunCmd(new[] { "cmd", "/c", "rd /S /Q \"" + d + "\"" }, log);
 
             // 清理注册表
             using (var k1 = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Clients\StartMenuInternet", true)) k1?.DeleteSubKeyTree(displayName, false);

@@ -309,11 +309,19 @@ namespace CpqSystemTool
         private static readonly HttpClient Http = new HttpClient(new HttpClientHandler
         {
             AllowAutoRedirect = false,
-            UseProxy = false,  // 显式禁用代理：探针目标多为国外站点，系统代理往往无法访问，默认 UseProxy=true 会导致静默超时
+            UseProxy = false,
         })
         {
             Timeout = TimeSpan.FromMilliseconds(ProbeData.VerifyTimeout)
         };
+
+        // 初始化 TLS 安全协议：确保使用 TLS 1.2+，兼容现代 HTTPS 服务器
+        static ProbeEngine()
+        {
+            System.Net.ServicePointManager.SecurityProtocol |=
+                System.Net.SecurityProtocolType.Tls12 |
+                System.Net.SecurityProtocolType.Tls13;
+        }
 
         // UA 池：近期 Chrome/Edge 桌面 UA（Win11 x64），按静态计数器轮换，避免固定单一 UA 被目标站按指纹识别。
         // 不再在 DefaultRequestHeaders 写死 UA，改为每个请求自行带一个池内 UA。

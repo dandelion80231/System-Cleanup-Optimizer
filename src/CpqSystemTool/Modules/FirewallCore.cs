@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -84,17 +84,22 @@ namespace CpqSystemTool
                 return;
             }
             var addr = string.Join(",", validAddrs);
-            Exec.RunPowerShell(
+            // 修正：原先丢弃 RunPowerShell 的退出码，命令失败（无管理员权限、参数被拒等）也照样打印 [OK]。
+            // 改为接收返回值，非零时打印 [FAIL] 并附上退出码。
+            int rc = Exec.RunPowerShell(
                 $"Remove-NetFirewallRule -DisplayName '{EscapeLiteral(displayName)}' -ErrorAction SilentlyContinue;" +
                 $"New-NetFirewallRule -DisplayName '{Escape(displayName)}' -Direction Outbound -RemoteAddress {addr} -Action Block", log);
-            log?.Invoke("[OK] 防火墙规则已添加");
+            if (rc == 0) log?.Invoke("[OK] 防火墙规则已添加");
+            else log?.Invoke("[FAIL] 防火墙规则添加失败（退出码 " + rc + "）: " + displayName);
         }
 
         public static void RemoveRule(string displayName, Action<string> log)
         {
             log?.Invoke("移除防火墙规则: " + displayName);
-            Exec.RunPowerShell($"Remove-NetFirewallRule -DisplayName '{EscapeLiteral(displayName)}' -ErrorAction SilentlyContinue", log);
-            log?.Invoke("[OK] 防火墙规则已移除");
+            // 修正：同 AddBlockAddressRule，原先丢弃退出码，Remove-NetFirewallRule 失败也打印 [OK]
+            int rc = Exec.RunPowerShell($"Remove-NetFirewallRule -DisplayName '{EscapeLiteral(displayName)}' -ErrorAction SilentlyContinue", log);
+            if (rc == 0) log?.Invoke("[OK] 防火墙规则已移除");
+            else log?.Invoke("[FAIL] 防火墙规则移除失败（退出码 " + rc + "）: " + displayName);
         }
 
         public static void OpenAdvanced()

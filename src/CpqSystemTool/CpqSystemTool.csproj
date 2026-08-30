@@ -21,6 +21,9 @@
     <AssemblyVersion>1.0.16.0</AssemblyVersion>
     <FileVersion>1.0.16.0</FileVersion>
     <InformationalVersion>1.0.16.0</InformationalVersion>
+    <!-- 显式 x64：Windows 10/11 无 32 位版本，且 64 位进程可加载 64 位 WebView2 Runtime -->
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
 
   <ItemGroup>
@@ -49,5 +52,83 @@
     <!-- About 页更新日志单一事实来源：嵌入仓库根 CHANGELOG.md，运行时解析渲染，避免与硬编码文本脱节 -->
     <EmbeddedResource Include="..\..\CHANGELOG.md" LogicalName="CHANGELOG.md" />
   </ItemGroup>
+
+  <!--
+    ===========================================================================
+    src.zip 防呆（2026-08-30 新增）
+    ===========================================================================
+    背景：src.zip 是「导出源码」功能用的内嵌资源（见 MainWindow.Config.cs 的导出源码按钮）。
+    它和 .cs 源文件之间**没有任何 MSBuild 依赖关系** —— MSBuild 只负责把磁盘上现成的
+    src.zip 字节嵌进程序集，既不感知源文件变化、也不会自动重打包。所以改了源码之后
+    dotnet build / 重新生成都不会刷新它，exe 里的一直是某个历史快照。
+
+    实际踩到的坑：2026-08-30 发现 src.zip 停在 v1.16 发布时（130 vs 128 条目），
+    整个「自定义背景编辑器」子系统（BackgroundSettings.cs / BackgroundSettingsDialog.cs）
+    以及 Modules/AtomicFile.cs 都不在里面，而 StoreSearchWindow.cs（早已删除）反而还在。
+    —— 即：用户点「导出源码」拿到的是一个月前的代码。
+
+    对策：每次构建前比对 src.zip 与最新源文件的时间戳，过期就报 warning。
+    借本项目「交付构建必须 0 warning」的门禁，强制在构建前先重生成，杜绝再次静默过期。
+
+    重生成命令（tools/ 下，需先做，再做交付构建）：
+        python tools/regen_src_zip.py
+    该脚本会排除 bin/obj/.vs/packages/.git、src.zip 自身，以及 *.bak* / *.tmp / *.log
+    等编辑器与脚本留下的备份文件；并额外纳入仓库根 README.md。
+    ===========================================================================
+  -->
+  <UsingTask TaskName="CheckSrcZipFreshness"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <SrcZipPath ParameterType="System.String" Required="true" />
+      <SourceFiles ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+        if (!File.Exists(SrcZipPath))
+        {
+            Log.LogError("src.zip 不存在，无法嵌入源码披露包：" + SrcZipPath);
+            return false;
+        }
+
+        var zipTime = File.GetLastWriteTimeUtc(SrcZipPath);
+        string newestPath = null;
+        var newestTime = DateTime.MinValue;
+
+        foreach (var item in SourceFiles)
+        {
+            var p = item.GetMetadata("FullPath");
+            if (string.IsNullOrEmpty(p) || !File.Exists(p)) continue;
+            var t = File.GetLastWriteTimeUtc(p);
+            if (t > newestTime) { newestTime = t; newestPath = p; }
+        }
+
+        if (newestPath != null && newestTime > zipTime)
+        {
+            Log.LogWarning(
+                "src.zip 已过期：内嵌的「导出源码」包停留在 " + zipTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                + "，但源文件 " + Path.GetFileName(newestPath)
+                + " 已于 " + newestTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + " 修改。"
+                + " MSBuild 不会自动重打包 src.zip，请先执行：python tools/regen_src_zip.py");
+        }
+        // 不要写结尾的 return true：RoslynCodeTaskFactory 会自行追加，
+        // 这里再写一次会被判定为不可达代码（CS0162），白白污染「0 warning」门禁。
+        ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="CheckSrcZipFreshness" BeforeTargets="BeforeBuild">
+    <ItemGroup>
+      <!-- 与 tools/regen_src_zip.py 的收录范围保持一致：源码 + 根 README.md，排除构建产物与备份文件 -->
+      <_SrcZipInputs Include="**\*.cs;**\*.xaml;$(MSBuildProjectDirectory)\..\..\README.md"
+                     Exclude="bin\**;obj\**;.vs\**;packages\**;**\*.bak.*;**\*.bak;**\*.tmp;**\*.log;**\*.orig" />
+    </ItemGroup>
+    <CheckSrcZipFreshness SrcZipPath="$(MSBuildProjectDirectory)\src.zip"
+                          SourceFiles="@(_SrcZipInputs)" />
+  </Target>
 
 </Project>

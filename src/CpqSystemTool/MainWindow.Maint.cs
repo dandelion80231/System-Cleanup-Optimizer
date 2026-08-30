@@ -156,12 +156,23 @@ namespace CpqSystemTool
 
             var manageBtn = Btn("管理软件", false, null, 150);
             manageBtn.HorizontalAlignment = HorizontalAlignment.Center;
+            // 同步事件处理器：异常会直接抛到 Dispatcher，net48 下即进程终止（表现为"点一下就闪退"）。
+            // 构造对话框（XAML 解析 / 读取持久化列表）与 ShowDialog 都有可能失败，故整体包 try/catch，
+            // 失败只落状态栏提示，绝不让异常逸出。
             manageBtn.Click += (s, e) =>
             {
-                var dlg = new CustomSoftwareManagerDialog(this);
-                dlg.Owner = this;
-                dlg.ShowDialog();
-                SetStatus("增补软件列表已更新；请到「常用软件」页点刷新查看（重启后依然保留）");
+                try
+                {
+                    var dlg = new CustomSoftwareManagerDialog(this);
+                    dlg.Owner = this;
+                    dlg.ShowDialog();
+                    SetStatus("增补软件列表已更新；请到「常用软件」页点刷新查看（重启后依然保留）");
+                }
+                catch (Exception ex)
+                {
+                    DebugLog.Ignore(ex);
+                    SetStatus("打开「管理软件」失败: " + ex.Message);
+                }
             };
             Grid.SetColumn(manageBtn, 3);
             optRow.Children.Add(manageBtn);
@@ -347,19 +358,63 @@ namespace CpqSystemTool
 
             // 手动管理"点击弹窗外部关闭"：StaysOpen=true 后不再自动关闭，需自行处理。
             // 点在按钮本身或弹窗内容内 → 不关闭（按钮 Click 负责切换；弹窗内点击由各项自关）。
-            this.PreviewMouseDown += (s, e) =>
+            // 修复：这是窗口级事件，此前只 += 从不 -= —— 每次重建维护页都会在窗口上多挂一个闭包，
+            // 旧闭包连同整页控件一起常驻（事件泄漏），且多个处理器会重复执行同一逻辑。
+            // 改为具名处理器 + 页面根 root 卸载时（导航切走 / 主题重建页面）自动解绑。
+            MouseButtonEventHandler closeDepsOnOutsideClick = (s, e) =>
             {
-                if (!depsPopup.IsOpen) return;
-                var cur = e.OriginalSource as DependencyObject;
-                while (cur != null)
+                // 这是窗口级处理器，一旦抛异常就是 net48 的进程级崩溃，故整体兜底；
+                // 兜底失败也只当作"这次点击没关掉弹窗"，不影响其它交互。
+                try
                 {
-                    if (ReferenceEquals(cur, manageDepsBtn) || ReferenceEquals(cur, menuBorder) || ReferenceEquals(cur, menuPanel))
-                        return;
-                    cur = VisualTreeHelper.GetParent(cur) as DependencyObject
-                          ?? LogicalTreeHelper.GetParent(cur) as DependencyObject;
+                    if (!depsPopup.IsOpen) return;
+                    var cur = e.OriginalSource as DependencyObject;
+                    while (cur != null)
+                    {
+                        if (ReferenceEquals(cur, manageDepsBtn) || ReferenceEquals(cur, menuBorder) || ReferenceEquals(cur, menuPanel))
+                            return;
+                        // ↑ VisualTreeHelper.GetParent 遇到 Inline（Run / Hyperlink 等非 Visual）会抛异常，
+                        //   所以整段必须包在 try 里——点中 TextBlock 内嵌的 Run 时 OriginalSource 可能就是它。
+                        cur = VisualTreeHelper.GetParent(cur) as DependencyObject
+                              ?? LogicalTreeHelper.GetParent(cur) as DependencyObject;
+                    }
+                    depsPopup.IsOpen = false;
                 }
-                depsPopup.IsOpen = false;
+                catch (Exception ex) { DebugLog.Ignore(ex); }
             };
+
+            // 挂/解绑与页面生命周期对齐：只在页面真正卸载（导航切走 / 主题重建页面 / 窗口关闭）时解绑，
+            // 杜绝旧写法"只 += 从不 -="造成的闭包与整页控件常驻泄漏。
+            //
+            // ★ 为什么不只靠 Unloaded 解绑：FrameworkElement.Unloaded 并不等价于"这个页面被丢弃了"。
+            //   除了元素被移出可视化树，它还会因为「元素所属子树与 PresentationSource 断开」而触发，
+            //   典型场景包括：控件模板被重新应用、元素被临时摘下又挂回（TabControl 换页、
+            //   VirtualizingStackPanel 回收、父容器 Content 被置空再设回）等。若发生这种"误触发"，
+            //   只解绑不重绑的写法会把处理器永久摘掉 —— 而本弹窗 StaysOpen=true 且已不再有
+            //   Light-Dismiss 兜底，结果就是"点外部再也关不掉弹窗"，正是此前反复修的那类问题。
+            //   本页 root 目前是 ScrollViewer 的直接 Content（无虚拟化、无 TabControl），
+            //   实际不会误触发；但 Loaded 重绑成本为零，且让这段逻辑将来被搬到任何容器里都成立。
+            //
+            // 两处都先 -= 再 +=（幂等）：即使 Loaded 被多次触发也不会在窗口上累积重复处理器，
+            // 因此反复切换主题（页面反复重建）不会让 this.PreviewMouseDown 越挂越多。
+            RoutedEventHandler attachOutsideClickHook = null;
+            RoutedEventHandler detachOutsideClickHook = null;
+            attachOutsideClickHook = (s, e) =>
+            {
+                this.PreviewMouseDown -= closeDepsOnOutsideClick;
+                this.PreviewMouseDown += closeDepsOnOutsideClick;
+            };
+            detachOutsideClickHook = (s, e) =>
+            {
+                this.PreviewMouseDown -= closeDepsOnOutsideClick;
+                // 页面已被卸载（导航切走/主题重建/窗口关闭），弹窗也一并收起，避免留下无主的浮层
+                try { depsPopup.IsOpen = false; }
+                catch (Exception ex) { DebugLog.Ignore(ex); }
+            };
+            // 先立即挂上：即使 Loaded 因故未触发，也退化为旧行为（始终挂着），比"永不生效"更稳。
+            attachOutsideClickHook(null, null);
+            root.Loaded += attachOutsideClickHook;
+            root.Unloaded += detachOutsideClickHook;
 
             // 推荐直链区
             probeInner.Children.Add(new TextBlock
@@ -434,18 +489,13 @@ namespace CpqSystemTool
                 GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
                 HorizontalGridLinesBrush = _panelBorder
             };
-            // 列头透明底 + 主题文字色，避免默认系统色在深色模式下发灰/发白
-            var headerStyle = new Style(typeof(DataGridColumnHeader));
-            headerStyle.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
-            headerStyle.Setters.Add(new Setter(Control.ForegroundProperty, _textMain));
-            headerStyle.Setters.Add(new Setter(Control.BorderBrushProperty, _panelBorder));
-            dg.ColumnHeaderStyle = headerStyle;
-            // 单元格透明底 + 主题文字色
-            var cellStyle = new Style(typeof(DataGridCell));
-            cellStyle.Setters.Add(new Setter(DataGridCell.BackgroundProperty, Brushes.Transparent));
-            cellStyle.Setters.Add(new Setter(DataGridCell.ForegroundProperty, _textMain));
-            cellStyle.Setters.Add(new Setter(DataGridCell.BorderBrushProperty, Brushes.Transparent));
-            dg.CellStyle = cellStyle;
+            // 列头透明底 + 主题文字色，避免默认系统色在深色模式下发灰/发白。
+            // 去重：原先此处内联造样式，与同文件 MakeDataGridStyles 重复且少 2 个属性
+            // （列头缺 HorizontalContentAlignment/Padding、单元格缺 Padding），
+            // 导致本页网格与驱动管理页外观不一致；改为复用 MakeDataGridStyles 统一外观。
+            var dgStyles = MakeDataGridStyles(_textMain, _panelBorder);
+            dg.ColumnHeaderStyle = dgStyles.Header;
+            dg.CellStyle = dgStyles.Cell;
             dg.Columns.Add(new DataGridTextColumn { Header = "来源", Binding = new Binding("Source"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
             dg.Columns.Add(new DataGridTextColumn { Header = "URL", Binding = new Binding("Url"), Width = new DataGridLength(3, DataGridLengthUnitType.Star) });
             dg.Columns.Add(new DataGridTextColumn { Header = "策略", Binding = new Binding("Strategy"), Width = new DataGridLength(90) });
@@ -463,28 +513,43 @@ namespace CpqSystemTool
             factory.SetValue(Button.WidthProperty, 46.0);
             factory.SetValue(Button.FontSizeProperty, 11.0);
             factory.SetValue(Button.CursorProperty, Cursors.Hand);
+            // 修复：async void 处理器里未被捕获的异常会直接抛到 Dispatcher，net48 下触发进程级崩溃。
+            // 故把全部异步逻辑包进 try/catch，失败只落状态栏提示，绝不逃逸。
             factory.AddHandler(Button.ClickEvent, new RoutedEventHandler(async (s, ev) =>
             {
                 var btn = s as Button;
-                var row = btn?.DataContext as ProbeCandidateRow;
-                if (row == null || string.IsNullOrEmpty(row.Url)) return;
-                // 低信任（搜索来源且非官方域名）候选：复制前强制二次确认，防仿冒安装包
-                if (row.LowTrust)
-                {
-                    var confirm = MessageBox.Show(
-                        "该直链由搜索引擎定位，且不在官网域名下，可能为仿冒安装包。\n\n" + row.Url + "\n\n确认仍要复制此链接吗？",
-                        "域名待核对 · 安全风险", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-                    if (confirm != MessageBoxResult.Yes) return;
-                }
-                btn.IsEnabled = false;
                 try
                 {
-                    if (await TrySetClipboardTextAsync(row.Url))
-                        SetStatus("已复制: " + row.Url);
-                    else
-                        SetStatus("复制失败: 剪贴板被占用，请稍后重试");
+                    var row = btn?.DataContext as ProbeCandidateRow;
+                    if (row == null || string.IsNullOrEmpty(row.Url)) return;
+                    // 低信任（搜索来源且非官方域名）候选：复制前强制二次确认，防仿冒安装包
+                    if (row.LowTrust)
+                    {
+                        var confirm = MessageBox.Show(
+                            "该直链由搜索引擎定位，且不在官网域名下，可能为仿冒安装包。\n\n" + row.Url + "\n\n确认仍要复制此链接吗？",
+                            "域名待核对 · 安全风险", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                        if (confirm != MessageBoxResult.Yes) return;
+                    }
+                    btn.IsEnabled = false;
+                    try
+                    {
+                        if (await TrySetClipboardTextAsync(row.Url))
+                            SetStatus("已复制: " + row.Url);
+                        else
+                            SetStatus("复制失败: 剪贴板被占用，请稍后重试");
+                    }
+                    finally { btn.IsEnabled = true; }
                 }
-                finally { btn.IsEnabled = true; }
+                catch (Exception ex)
+                {
+                    DebugLog.Ignore(ex);
+                    try
+                    {
+                        if (btn != null) btn.IsEnabled = true;
+                        SetStatus("复制失败: " + ex.Message);
+                    }
+                    catch { /* 窗口已关闭，忽略 */ }
+                }
             }));
             copyCol.CellTemplate = new DataTemplate { VisualTree = factory };
             dg.Columns.Add(copyCol);
@@ -501,29 +566,45 @@ namespace CpqSystemTool
             addFactory.SetValue(Button.ForegroundProperty, _btnSecondaryFg);
             addFactory.SetValue(Button.BorderThicknessProperty, new Thickness(1));
             addFactory.SetValue(Button.BorderBrushProperty, _panelBorder);
+            // 同步事件处理器：MessageBox.Show / 对话框构造（XAML 解析）/ ShowDialog 都可能抛，
+            // 未捕获会直接抛到 Dispatcher —— net48 下即进程终止。故整体包 try/catch，
+            // 失败只落状态栏提示（原先只有最内层 AddOrUpdate 有保护，前面的弹窗环节是裸奔的）。
             addFactory.AddHandler(Button.ClickEvent, new RoutedEventHandler((s, ev) =>
             {
-                var btn = s as Button;
-                var row = btn?.DataContext as ProbeCandidateRow;
-                if (row == null || string.IsNullOrEmpty(row.Url)) { SetStatus("该行无可用直链，无法加入常用软件"); return; }
-                // 低信任候选：加入常用软件前强制二次确认，避免把仿冒直链固化进常用列表
-                if (row.LowTrust)
+                try
                 {
-                    var confirm = MessageBox.Show(
-                        "该直链由搜索引擎定位，且不在官网域名下，可能为仿冒安装包。\n\n" + row.Url + "\n\n确认仍要将其加入常用软件吗？",
-                        "域名待核对 · 安全风险", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-                    if (confirm != MessageBoxResult.Yes) return;
-                }
-                var dlg = new CustomSoftwareEditDialog(this, null, row.Url, row.Source);
-                dlg.Owner = this;
-                if (dlg.ShowDialog() == true && dlg.Entry != null)
-                {
-                    try
+                    var btn = s as Button;
+                    var row = btn?.DataContext as ProbeCandidateRow;
+                    if (row == null || string.IsNullOrEmpty(row.Url)) { SetStatus("该行无可用直链，无法加入常用软件"); return; }
+                    // 低信任候选：加入常用软件前强制二次确认，避免把仿冒直链固化进常用列表
+                    if (row.LowTrust)
                     {
-                        SoftwareDefPersistence.AddOrUpdate(dlg.Entry);
-                        SetStatus("已加入增补软件: " + (dlg.Entry.name ?? dlg.Entry.id));
+                        var confirm = MessageBox.Show(
+                            "该直链由搜索引擎定位，且不在官网域名下，可能为仿冒安装包。\n\n" + row.Url + "\n\n确认仍要将其加入常用软件吗？",
+                            "域名待核对 · 安全风险", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                        if (confirm != MessageBoxResult.Yes) return;
                     }
-                    catch (Exception ex) { SetStatus("保存失败: " + ex.Message); }
+                    var dlg = new CustomSoftwareEditDialog(this, null, row.Url, row.Source);
+                    dlg.Owner = this;
+                    if (dlg.ShowDialog() == true && dlg.Entry != null)
+                    {
+                        try
+                        {
+                            SoftwareDefPersistence.AddOrUpdate(dlg.Entry);
+                            SetStatus("已加入增补软件: " + (dlg.Entry.name ?? dlg.Entry.id));
+                        }
+                        catch (Exception ex)
+                        {
+                            DebugLog.Ignore(ex);
+                            SetStatus("保存失败: " + ex.Message);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugLog.Ignore(ex);
+                    try { SetStatus("加入常用软件失败: " + ex.Message); }
+                    catch { /* 窗口已关闭，忽略 */ }
                 }
             }));
             addCol.CellTemplate = new DataTemplate { VisualTree = addFactory };
@@ -560,62 +641,97 @@ namespace CpqSystemTool
             // 「抓取直链」：后台运行探针，UI 不卡死
             fetchBtn.Click += (s, e) =>
             {
-                var input = inputBox.Text.Trim();
-                if (!inputTouched || input == placeholder)
+                // 同步处理器：一旦在进入后台任务前抛异常（例如 RunInBg 首次 Dispatcher.Invoke 时窗口已关停），
+                // 按钮会永久卡在"抓取中..."且 IsEnabled=false。故整体包 try/catch，
+                // catch 里保证把按钮恢复成可点状态，避免"点了一次之后再也点不动"。
+                try
                 {
-                    SetStatus("请输入入口 URL 或厂商名");
-                    return;
-                }
-                fetchBtn.IsEnabled = false;
-                fetchBtn.Content = "抓取中...";
-                bool skip = skipDlCheck.IsChecked == true;
+                    var input = inputBox.Text.Trim();
+                    if (!inputTouched || input == placeholder)
+                    {
+                        SetStatus("请输入入口 URL 或厂商名");
+                        return;
+                    }
+                    fetchBtn.IsEnabled = false;
+                    fetchBtn.Content = "抓取中...";
+                    bool skip = skipDlCheck.IsChecked == true;
 
-                bool searchLocated = false;
-                RunInBg(logBox, logf =>
+                    bool searchLocated = false;
+                    RunInBg(logBox, logf =>
+                    {
+                        try
+                        {
+                            RunProbeInternal(input, skip, logf, out var rows, out var rec, out searchLocated);
+                            _probeRows = rows;
+                            _probeRecommendedUrl = rec;
+                        }
+                        catch (Exception ex)
+                        {
+                            logf("[!] 运行异常: " + ex.Message);
+                        }
+                    }, "抓取完成", () =>
+                    {
+                        // 后台任务无论成功失败都会回到这里（RunInBg 的两条路径都会调 onDoneUi）,
+                        // 先无条件恢复按钮，再做结果填充——避免结果填充报错时按钮卡在"抓取中..."。
+                        fetchBtn.IsEnabled = true;
+                        fetchBtn.Content = "抓取直链";
+                        try
+                        {
+                            recommendedTb.Text = _probeRecommendedUrl ?? "";
+                            copyRecBtn.IsEnabled = !string.IsNullOrEmpty(_probeRecommendedUrl);
+                            dg.ItemsSource = null;
+                            dg.ItemsSource = _probeRows;
+                            searchWarnTb.Visibility = searchLocated ? Visibility.Visible : Visibility.Collapsed;
+                            SetStatus("抓取完成：共 " + (_probeRows?.Count ?? 0) + " 个候选" + (string.IsNullOrEmpty(_probeRecommendedUrl) ? "" : "，已推荐直链"));
+                        }
+                        catch (Exception ex)
+                        {
+                            DebugLog.Ignore(ex);
+                            SetStatus("结果填充失败: " + ex.Message);
+                        }
+                    });
+                }
+                catch (Exception ex)
                 {
+                    DebugLog.Ignore(ex);
+                    // 关键：进入后台任务失败时也必须把按钮放回可点状态，否则用户再也点不动。
                     try
                     {
-                        RunProbeInternal(input, skip, logf, out var rows, out var rec, out searchLocated);
-                        _probeRows = rows;
-                        _probeRecommendedUrl = rec;
+                        fetchBtn.IsEnabled = true;
+                        fetchBtn.Content = "抓取直链";
+                        SetStatus("启动抓取失败: " + ex.Message);
                     }
-                    catch (Exception ex)
-                    {
-                        logf("[!] 运行异常: " + ex.Message);
-                    }
-                }, "抓取完成", () =>
-                {
-                    fetchBtn.IsEnabled = true;
-                    fetchBtn.Content = "抓取直链";
-                    try
-                    {
-                        recommendedTb.Text = _probeRecommendedUrl ?? "";
-                        copyRecBtn.IsEnabled = !string.IsNullOrEmpty(_probeRecommendedUrl);
-                        dg.ItemsSource = null;
-                        dg.ItemsSource = _probeRows;
-                        searchWarnTb.Visibility = searchLocated ? Visibility.Visible : Visibility.Collapsed;
-                        SetStatus("抓取完成：共 " + (_probeRows?.Count ?? 0) + " 个候选" + (string.IsNullOrEmpty(_probeRecommendedUrl) ? "" : "，已推荐直链"));
-                    }
-                    catch (Exception ex)
-                    {
-                        SetStatus("结果填充失败: " + ex.Message);
-                    }
-                });
+                    catch { /* 窗口已关闭，忽略 */ }
+                }
             };
 
             // 「复制推荐链接」
+            // 同上的 async void 崩溃防护：补 catch，异常不逃逸到 Dispatcher。
             copyRecBtn.Click += async (s, e) =>
             {
-                if (string.IsNullOrEmpty(recommendedTb.Text)) return;
-                copyRecBtn.IsEnabled = false;
                 try
                 {
-                    if (await TrySetClipboardTextAsync(recommendedTb.Text))
-                        SetStatus("已复制推荐直链");
-                    else
-                        SetStatus("复制失败: 剪贴板被占用，请稍后重试");
+                    if (string.IsNullOrEmpty(recommendedTb.Text)) return;
+                    copyRecBtn.IsEnabled = false;
+                    try
+                    {
+                        if (await TrySetClipboardTextAsync(recommendedTb.Text))
+                            SetStatus("已复制推荐直链");
+                        else
+                            SetStatus("复制失败: 剪贴板被占用，请稍后重试");
+                    }
+                    finally { copyRecBtn.IsEnabled = true; }
                 }
-                finally { copyRecBtn.IsEnabled = true; }
+                catch (Exception ex)
+                {
+                    DebugLog.Ignore(ex);
+                    try
+                    {
+                        copyRecBtn.IsEnabled = true;
+                        SetStatus("复制失败: " + ex.Message);
+                    }
+                    catch { /* 窗口已关闭，忽略 */ }
+                }
             };
 
             return root;
@@ -684,11 +800,23 @@ namespace CpqSystemTool
             };
             border.MouseEnter += (s, e) => border.Background = _rowHover;
             border.MouseLeave += (s, e) => border.Background = Brushes.Transparent;
+            // 共 8 个菜单项共用此入口。同步处理器 → 异常直达 Dispatcher（net48 会终止进程）。
+            // click 里的动作并不都在 RunInBg 内部（例如「卸载本地依赖」「卸载 WebView2」会先弹 MessageBox，
+            // 然后才进后台线程），因此必须在这里整体兜底：先关弹窗保证 UI 状态收敛，再执行动作。
             border.MouseLeftButtonDown += (s, e) =>
             {
-                e.Handled = true;
-                popup.IsOpen = false;
-                click?.Invoke();
+                try
+                {
+                    e.Handled = true;
+                    popup.IsOpen = false;
+                    click?.Invoke();
+                }
+                catch (Exception ex)
+                {
+                    DebugLog.Ignore(ex);
+                    try { SetStatus("操作失败: " + ex.Message); }
+                    catch { /* 窗口已关闭，忽略 */ }
+                }
             };
             return border;
         }
@@ -753,6 +881,16 @@ namespace CpqSystemTool
             catch (System.Exception ex)
             {
                 DebugLog.Ignore(ex);
+                // 这里唯一需要补的是"展示层"：CheckWebView2ReadyAsync 是被 await 在 try 内的，
+                // 异常确实会被本 catch 吞掉，_depRefreshing 也会由 finally 复位（不会永久卡 true）。
+                // 但若不处理，两个分组标题会永远停在"检测中…"，给用户一个与事实不符的假状态。
+                // 故异常时把标题改写成明确的失败态，用户再点一次「管理依赖」即可重新检测。
+                try
+                {
+                    if (nodeHeader != null) nodeHeader.Text = "Node + Playwright + Chromium\n（检测未完成，点击重试）";
+                    if (wvHeader != null) wvHeader.Text = "WebView2 Runtime（系统 Edge）\n（检测未完成，点击重试）";
+                }
+                catch { /* 页面已被导航切走，标题控件已脱离视觉树，忽略 */ }
             }
             finally
             {

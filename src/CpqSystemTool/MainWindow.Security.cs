@@ -25,25 +25,15 @@ namespace CpqSystemTool
         // 再次进入复用外壳并仅后台重刷动态状态（Defender 状态/开关/按钮、防火墙、更新）。
         // 动态状态全部落在可重建/可复位的容器与属性上（defStatusHost/defWp/defToggles/fwStatusHost/ruleList/updateBtnHost、
         // ApplyPolicyMode 高亮、_lastDefAction、日志），故操作完成后无需失效，仅靠 _securityRefresh 重刷。
-        private UIElement _cachedSecurityPage;
-        private string _securityCacheKey;
-        private bool _securityCacheDark;
-        private Action _securityRefresh;
+        private readonly PageCache<UIElement> _securityCache = new PageCache<UIElement>();
 
         private UIElement BuildSecurity()
         {
             // 记录本次构建时主题：缓存仅在主题一致时命中（主题切换会重建当前页，避免复用旧主题刷子的页面）
             bool buildDark = _isDarkMode;
             // 缓存命中且主题一致 → 复用已构建页面，仅后台重刷动态状态
-            if (_cachedSecurityPage != null && _securityCacheDark == buildDark && _securityCacheKey != null)
-            {
-                _securityRefresh?.Invoke();
-                return _cachedSecurityPage;
-            }
-            // 主题变化/未缓存 → 丢弃旧缓存，走完整重建
-            _cachedSecurityPage = null;
-            _securityRefresh = null;
-            _securityCacheKey = null;
+            var cached = _securityCache.TryGet(buildDark);
+            if (cached != null) return cached;
 
             var root = new StackPanel();
             root.Children.Add(Header("安全防护", "Windows Defender 防病毒与 Windows Update 更新管控。均为高风险操作，谨慎使用。"));
@@ -80,9 +70,8 @@ namespace CpqSystemTool
 
                 // 极简版：只显示一行总状态。详细 5 项由下方 toggle 区实时反映（避免视觉重复）。
                 bool policyOff = Defender.IsDisabled();
-                bool allOn = !policyOff;
                 bool allOff = policyOff;
-                bool fullyOk = (allOn || allOff) && Defender.LastOperationFullSuccess;
+                bool fullyOk = Defender.LastOperationFullSuccess;
                 var overallStatus = new TextBlock
                 {
                     Text = allOff
@@ -172,11 +161,30 @@ namespace CpqSystemTool
             // 用 PowerShell Set-MpPreference 官方 API，立即生效、不需要重启、不需要 TI 提权。
             // TP 开启时部分选项（云保护/样本提交/TP 本身）会被拦，UI 会在异步回调时回滚到 Get* 当前值。
             // 注：defToggles 已在上面声明（bDisable/bEnable 闭包需要）
-            // mkTog 放在 SyncDefToggles 函数体内（避免 click lambda 与 SyncDefToggles 互相引用的位置依赖）
+            // 修复：refreshCache=true 时原实现在 UI 线程同步跑 PowerShell（Get-MpPreference），
+            // 每次切换开关 / 一键禁用恢复 / 清理策略后都会冻结 UI 数秒。
+            // 改为与本页初始加载（DefenderInitLoader）同款的后台刷新：后台线程刷缓存 → 回 UI 线程重建开关。
+            // 不用 RunInBg 是因为它会先 log.Clear() 清掉刚写入的操作日志。
             void SyncDefToggles(bool refreshCache = true)
             {
                 // 重建前刷一次缓存（Set 后值变了，缓存可能过期）；初始加载时已在后台刷好，传 false 避免重复阻塞 UI
-                if (refreshCache) Defender.RefreshStatusCache();
+                if (refreshCache)
+                {
+                    var syncDisp = Dispatcher;
+                    new Thread(() =>
+                    {
+                        try { Defender.RefreshStatusCache(); }
+                        catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                        try { syncDisp.Invoke(new Action(BuildToggleList)); } catch { /* 窗口已关闭，忽略 */ }
+                    }) { IsBackground = true, Name = "DefenderToggleSync" }.Start();
+                    return;
+                }
+                BuildToggleList();
+            }
+
+            // mkTog 放在 BuildToggleList 函数体内（避免 click lambda 与 SyncDefToggles 互相引用的位置依赖）
+            void BuildToggleList()
+            {
                 defToggles.Children.Clear();
                 System.Func<string, Func<bool>, Action<bool, Action<string>>, System.Windows.Controls.CheckBox> mkTog = (label, getState, setter) =>
                 {
@@ -223,6 +231,15 @@ namespace CpqSystemTool
                     () => Defender.GetSampleSubmit(), (b, l) => Defender.SetSampleSubmit(b, l)));
                 defToggles.Children.Add(mkTog("篡改防护（关后其它被锁开关才可改）",
                     () => Defender.GetTamper(), (b, l) => Defender.SetTamper(b, l)));
+
+                // 修复（异步化后的状态一致性）：SyncDefToggles(true) 改为后台刷新后，开关列表是在
+                // 后台线程刷完缓存、回到 UI 线程执行 BuildToggleList 时才重建的。像「清理策略残留」
+                // 这类 Defender.ClearAllPolicies 只改注册表、不更新内存缓存的操作，调用点紧跟其后的
+                // BuildDefenderStatus()/RebuildDefenderButtons() 仍会用清理前的旧缓存渲染，
+                // 导致状态行停留在旧值、必须重新进页才更新。这里在开关重建完成后一并刷新状态与按钮，
+                // 保证异步路径与原先同步路径的最终 UI 一致（同步路径下这两行会被多调一次，幂等无害）。
+                BuildDefenderStatus();
+                RebuildDefenderButtons();
             }
 
             // 清理策略 + 诊断 Runtime 按钮同一行
@@ -598,10 +615,8 @@ namespace CpqSystemTool
             // 仅在构建期间主题未变时写入缓存（避免把混入旧主题刷子的页面标记为可复用）
             if (buildDark == _isDarkMode)
             {
-                _cachedSecurityPage = root;
-                _securityCacheKey = "security";
-                _securityCacheDark = buildDark;
-                _securityRefresh = () =>
+                _securityCache.Set(root, buildDark);
+                _securityCache.SetRefresh(() =>
                 {
                     // 复位动态状态（与每次新建页面行为一致）：
                     // 清空日志、复位 Defender 按钮「最后点击」高亮与底部策略按钮高亮；
@@ -625,39 +640,11 @@ namespace CpqSystemTool
                     }) { IsBackground = true, Name = "SecurityRefreshLoader" }.Start();
                     LoadFirewallData();  // 重刷防火墙配置文件状态 + 规则列表（含空状态提示）
                     LoadUpdateState();   // 重刷 Windows 更新按钮高亮（保留 _lastUpdateAction 字段语义）
-                };
+                });
             }
 
             return root;
         }
 
-        private static bool CheckServiceExists(string name)
-        {
-            try { using (var k = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + name, false)) return k != null; }
-            catch { return false; }
-        }
-
-        /// <summary>查询服务进程是否真正在运行（使用 ServiceController，非注册表值）</summary>
-        private static bool CheckServiceRunning(string name)
-        {
-            try { return new ServiceController(name).Status == ServiceControllerStatus.Running; }
-            catch { return false; }
-        }
-
-        private static bool ServiceStartDisabled(string name)
-        {
-            try { using (var k = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + name, false)) { var v = k?.GetValue("Start"); return v != null && (int)v == 4; } }
-            catch { return false; }
-        }
-
-        private static bool CheckTamperProtection()
-        {
-            try
-            {
-                using (var k = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows Defender\Features", false))
-                { var v = k?.GetValue("TamperProtection"); return v != null && ((int)v == 1 || (int)v == 5); }
-            }
-            catch { return false; }
-        }
     }
 }

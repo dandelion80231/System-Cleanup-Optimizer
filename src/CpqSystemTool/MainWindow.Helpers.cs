@@ -12,6 +12,99 @@ using System.Threading;
 namespace CpqSystemTool
 {
     /// <summary>
+    /// 页面缓存：把「整页 UI + 构建时主题 + 可选内容键 + 动态状态刷新委托」这四件套收拢成一个对象。
+    ///
+    /// 背景：本项目有 9 个页面各自维护 _cachedXxxPage / _xxxCacheDark / _xxxCacheKey / _xxxRefresh
+    /// 四个字段，并在 Build 开头重复同一段「命中判断 + 失效清理」样板（合计约 200 行）。
+    /// 分散写法还埋过一次真实 bug：某些处置空缓存时只清了 _cachedXxxPage，漏清 _xxxRefresh /
+    /// _xxxCacheKey，导致页面虽已重建、却仍持有旧页面的刷新委托与旧缓存键。
+    /// 收拢成泛型类后，"失效"只有 Invalidate() 一个入口，不可能再漏清。
+    ///
+    /// 用法：
+    ///   private readonly PageCache&lt;UIElement&gt; _xxxCache = new PageCache&lt;UIElement&gt;();
+    ///   // Build 开头
+    ///   var cached = _xxxCache.TryGet(buildDark);            // 可选第二参：内容键
+    ///   if (cached != null) return cached;
+    ///   // 构建完成后
+    ///   _xxxCache.Set(root, buildDark);
+    ///   _xxxCache.SetRefresh(() => { /* 复位动态状态 */ });
+    ///   // 数据变化需要重建时
+    ///   _xxxCache.Invalidate();
+    /// </summary>
+    /// <typeparam name="T">页面根元素类型（一般为 UIElement）</typeparam>
+    internal sealed class PageCache<T> where T : UIElement
+    {
+        private T _page;
+        private string _key;      // 非 null 即表示"已构建过"；部分页面还会用它比对内容键
+        private bool _dark;       // 构建时的主题；主题变了必须重建，否则会复用旧主题画刷
+        private Action _refresh;  // 再次进页时复位动态状态（清空日志/进度条/勾选等）
+
+        /// <summary>
+        /// 尝试命中缓存。命中时先执行刷新委托再返回已构建页面；未命中（或主题变化/内容键变化）
+        /// 则自动失效并返回 null，调用方走完整重建。
+        /// </summary>
+        /// <param name="dark">本次构建时的主题（应与上次构建时一致才算命中）</param>
+        /// <param name="contentKey">
+        /// 可选的内容键：传入时要求与上次构建记录的内容键完全相同才命中。
+        /// 用于列表内容会变的页面（如 Appx 目录、常用软件清单），避免内容已变却复用旧页。
+        /// 不传则只校验主题。
+        /// </param>
+        public T TryGet(bool dark, string contentKey = null)
+        {
+            if (_page != null
+                && _dark == dark
+                && !string.IsNullOrEmpty(_key)
+                && (contentKey == null || string.Equals(_key, contentKey, StringComparison.Ordinal)))
+            {
+                var refresh = _refresh;
+                // 注意下面的 return 读的是**字段** _page，而不是先捕获到局部变量：
+                // 刷新委托内部有可能调用 Invalidate()（例如刷新时发现数据已失效需要重建），
+                // 那样 _page 会变成 null，此处便返回 null → 调用方走完整重建。
+                // 若改成"先捕获旧引用再执行刷新"，就会把本该丢弃的旧页又返回回去。
+                if (refresh != null)
+                {
+                    try { refresh(); }
+                    catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                }
+                return _page;
+            }
+            // 主题变化 / 内容键变化 / 无缓存 → 丢弃旧页走完整重建
+            Invalidate();
+            return null;
+        }
+
+        /// <summary>记录本次构建的页面。refresh 也可随后用 SetRefresh 单独设置（构建代码顺序更自然）。</summary>
+        public void Set(T page, bool dark, Action refresh = null)
+        {
+            _page = page;
+            _dark = dark;
+            _refresh = refresh;
+            // 内容键为空时用固定串标记"已构建"，保持 _key != null 这个命中前提
+            _key = "1";
+        }
+
+        /// <summary>单独设置内容键（用于 Appx / 常用软件这类"列表内容变了就要重建"的页面）。</summary>
+        public void SetContentKey(string contentKey)
+        {
+            _key = contentKey;
+        }
+
+        /// <summary>单独设置动态状态刷新委托（构建代码里 refresh 的定义往往晚于页面根构建）。</summary>
+        public void SetRefresh(Action refresh)
+        {
+            _refresh = refresh;
+        }
+
+        /// <summary>失效缓存：页面、内容键、刷新委托一并清空，下次进页完整重建。</summary>
+        public void Invalidate()
+        {
+            _page = null;
+            _key = null;
+            _refresh = null;
+        }
+    }
+
+    /// <summary>
     /// UI 辅助方法：按钮、卡片、标题、日志框、进度条、后台任务编排。
     /// </summary>
     public partial class MainWindow
@@ -145,8 +238,11 @@ namespace CpqSystemTool
         /// <summary>
         /// 将多个按钮排成一行、等宽均分整行宽度；每个按钮在所属列内居中、保持原始大小。
         /// 用于卡片内多按钮操作行（系统优化 / Defender / 隐私 / 安全防护更新），视觉一致。
+        /// 去重：原 DriverStorePanel 内有一份逐行相同的拷贝，已删除并改为调用本方法。
+        /// 实现不依赖任何实例状态，故提为 internal static，外部（如 DriverStorePanel）可直接静态调用，
+        /// 无需持有 MainWindow 实例，也不必把成员暴露为 public。
         /// </summary>
-        private Grid MakeBtnRow(params Button[] btns)
+        internal static Grid MakeBtnRow(params Button[] btns)
         {
             var g = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
             for (int i = 0; i < btns.Length; i++)
@@ -160,11 +256,6 @@ namespace CpqSystemTool
             return g;
         }
 
-        /// <summary>
-        /// 提示条：左侧 3px 强调竖条 + 图标 + 正文，用于声明 / 注意事项 / 免责等旁注信息。
-        /// 语义色由调用方传入（_accent=信息、_warnOrange=注意、_dangerRed=风险），
-        /// 不单靠颜色传达含义——图标与文案同时表意，满足无障碍要求。
-        /// </summary>
         /// <summary>
         /// 外部链接文本：下划线 + 手型光标 + hover 变色。
         /// 不只用颜色区分链接（WCAG 1.4.1 非仅凭颜色传达信息），故始终保留下划线。
@@ -294,6 +385,9 @@ namespace CpqSystemTool
             // 后台线程未处理异常在 net48 会直接终止进程。safeUi 统一兜底：UI 更新静默忽略。
             Action<Action> safeUi = a => { try { disp.BeginInvoke(a); } catch { /* 窗口已关闭，忽略 */ } };
             Action<string> logf = s => safeUi(() => AppendOrReplaceLog(log, s));
+            // 修复：前台线程（IsBackground=false）会阻止进程退出——任务跑完后窗口关闭，
+            // 只要有这种线程还活着，CLR 就不会结束进程（表现为"关窗后 exe 仍在后台驻留"）。
+            // 统一设为后台线程：随进程退出自动终止，与本项目其它后台加载线程（Defender/Firewall/Update）一致。
             new Thread(() =>
             {
                 try
@@ -310,7 +404,7 @@ namespace CpqSystemTool
                         try { onDoneUi?.Invoke(); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine("onDoneUi 失败: " + ex.Message); }
                     });
                 }
-            }).Start();
+            }) { IsBackground = true, Name = "RunInBgWorker" }.Start();
         }
 
         // 日志滚动降频参数：普通行在行数低于阈值时保持“每行 ScrollToEnd”（与旧行为一致）；
@@ -321,6 +415,27 @@ namespace CpqSystemTool
         // 留余量避免频繁触发），约束长任务（清理/探针/下载百分比）期间文本无限增长的内存与布局渲染开销。
         private const int LOG_MAX_LINES = 3000;
         private const int LOG_TRIM_KEEP_LINES = 2500;
+        // 批量裁剪阈值：行数超限后，每累计 LOG_TRIM_BATCH_LINES 行才真正裁剪一次。
+        // 原实现每次追加都做「读全量 tb.Text + O(n) 数换行 + Substring 回写」，追加 N 行即 O(N²)
+        // （3000 行后每追加一行都要扫 10 万+ 字符）。改成累计计数后，单次裁剪成本被 N 行摊薄。
+        // 裁剪回到 LOG_TRIM_KEEP_LINES=2500 行，批量上限 200 行 → 稳态峰值 2700 行，
+        // 始终低于 LOG_MAX_LINES=3000 上限；另保留 LineCount 硬上限兜底，绝不越界。
+        private const int LOG_TRIM_BATCH_LINES = 200;
+        // 各日志框「距上次裁剪已追加的行数」。用 ConditionalWeakTable 挂在 TextBox 实例上：
+        // 不占用已被进度行标记占用的 Tag，且日志框被回收时计数自动释放，不会泄漏。
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<TextBox, int[]> LogTrimCounters =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<TextBox, int[]>();
+
+        private static int[] GetTrimCounter(TextBox tb)
+        {
+            int[] box;
+            if (!LogTrimCounters.TryGetValue(tb, out box))
+            {
+                box = new int[1];
+                LogTrimCounters.Add(tb, box);
+            }
+            return box;
+        }
 
         /// <summary>
         /// 向日志框追加一行；若消息以 \r 开头，则原地替换最后一行（用于下载百分比等进度，避免刷屏）。
@@ -365,16 +480,17 @@ namespace CpqSystemTool
                 tb.Tag = content;
                 // 进度行原地替换后行数不变，ScrollToEnd 不触发重排；保持进度数字持续可见（与旧行为一致）。
                 // 行数上限：替换本身不增行数，但若此前普通行已把行数推超上限，仍需在此触发一次裁剪。
-                TrimLogHeadIfOverLimit(tb);
+                TrimLogHeadIfHardLimit(tb);
                 tb.ScrollToEnd();
                 return;
             }
 
             tb.AppendText(s + "\r\n");
             tb.Tag = null; // 普通行后，进度需重新起一行
-            // 行数上限：超 LOG_MAX_LINES 后裁剪头部旧行（低频 O(n)）。以 tb.LineCount 触发——
-            // 各框自身实时渲染行数，非 static 共享计数，天然按框隔离；进度行替换不增行数、log.Clear()
-            // 后归零，均自动与文本一致，无需额外维护计数。
+            // 行数上限：攒够 LOG_TRIM_BATCH_LINES 行（或触及硬性上限）才批量裁剪一次，
+            // 避免每次追加都做一次全量文本拷贝 + O(n) 扫描（原实现为 O(n²)）。
+            // 以 tb.LineCount 判定是否越界——各框自身实时渲染行数，非 static 共享计数，
+            // 天然按框隔离；log.Clear() 后归零，自动与文本一致。
             TrimLogHeadIfOverLimit(tb);
             // 滚动降频：短日志（行数 < 阈值）每行都滚到底（与旧行为一致，避免小日志滚动迟滞）；
             // 超阈值的长日志每 N 行滚一次。LineCount 是各日志框自身的行数（每追加一行 +1），
@@ -384,17 +500,36 @@ namespace CpqSystemTool
         }
 
         /// <summary>
-        /// 日志行数上限裁剪：本框渲染行数超过 LOG_MAX_LINES 时，从头部删除旧行，保留尾部
-        /// LOG_TRIM_KEEP_LINES 行（留余量避免频繁触发）。
-        /// 触发用 tb.LineCount（各框自身实时行数，无 static 共享计数，Clear/多框互不干扰）；
+        /// 日志行数上限裁剪（批量版）：从头部删除旧行，保留尾部 LOG_TRIM_KEEP_LINES 行。
+        /// 原实现每次追加都做「读全量 tb.Text + O(n) 数换行 + Substring 回写」，追加 N 行即 O(N²)。
+        /// 现改为：累计追加行数，攒够 LOG_TRIM_BATCH_LINES 行才真正裁剪一次（或 LineCount 触及
+        /// LOG_MAX_LINES 硬上限时立即裁剪，保证行数绝不越界）。单次 O(n) 成本被 200 行摊薄。
         /// 实际裁剪按文本中的 '\n' 精确定位（本方法所有写入均以 "\r\n" 结尾，'\n' 计数即行数），
         /// 故日志含长行折行（LineCount 计折行行）时也不会删过头——逻辑行不足保留量则跳过。
         /// 头部裁剪必然保留最后一行：Tag 标记的进度行始终在尾部，天然存活，无需清 Tag；
-        /// 裁剪后 ScrollToEnd() 保证用户仍看到底部最新日志。低频调用，O(n) 可接受。
+        /// 裁剪后 ScrollToEnd() 保证用户仍看到底部最新日志。
         /// </summary>
         private static void TrimLogHeadIfOverLimit(TextBox tb)
         {
-            if (tb.LineCount <= LOG_MAX_LINES) return;
+            int[] counter = GetTrimCounter(tb);
+            counter[0]++;
+            // 批量门槛：未攒够 LOG_TRIM_BATCH_LINES 行、且未触及硬上限时 O(1) 返回，不碰文本。
+            if (counter[0] < LOG_TRIM_BATCH_LINES && tb.LineCount < LOG_MAX_LINES) return;
+            counter[0] = 0;
+            if (tb.LineCount <= LOG_TRIM_KEEP_LINES) return;   // 如刚 Clear 过，无需裁剪
+            DoTrimLogHead(tb);
+        }
+
+        /// <summary>进度行（原地替换、不新增行）用的硬上限兜底：行数确实超限时才裁剪。</summary>
+        private static void TrimLogHeadIfHardLimit(TextBox tb)
+        {
+            if (tb.LineCount < LOG_MAX_LINES) return;
+            GetTrimCounter(tb)[0] = 0;
+            DoTrimLogHead(tb);
+        }
+
+        private static void DoTrimLogHead(TextBox tb)
+        {
             string text = tb.Text;
             // 统计当前总行数（按 '\n' 计）
             int totalLines = 0;

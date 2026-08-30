@@ -51,6 +51,8 @@ namespace CpqSystemTool
 
         // ---- Theme state ----
         private bool _isDarkMode = true;
+        /// <summary>当前是否深色主题（供背景设置弹窗选择 Dark/Light 图片路径预览）。</summary>
+        internal bool IsDarkMode => _isDarkMode;
         private bool _userOverrodeTheme = false; // 用户是否手动切换过（手动后不再跟随系统）
 
         // ---- 自定义背景设置（运行时实例，用于弹窗编辑与实时预览）----
@@ -86,6 +88,10 @@ namespace CpqSystemTool
                 // 加载自定义背景图设置（必须在 ApplyTheme/ApplyShellColors 之前）
                 LoadBackgroundSettings();
                 App.Trace("ctor.afterLoadBgSettings");
+
+                // Mesh 光斑层跟随窗口 resize 重画（ActualWidth/Height 变化 → 按新尺寸重算像素位置）。
+                // 改为 100ms 合并触发，避免拖窗口时每个 SizeChanged 都全量重建光斑导致卡顿。
+                HookBgBlobsResizeMerge();
 
                 // 启动时检测 Windows 系统主题（注册表 AppsUseLightTheme）
                 _isDarkMode = !DetectSystemLightTheme();
@@ -135,6 +141,24 @@ namespace CpqSystemTool
                         if (innerSv != null && innerSv != ContentArea && innerSv.ScrollableHeight > 0)
                             targetSv = innerSv;
                     }
+
+                    if (targetSv != null && targetSv != ContentArea)
+                    {
+                        // 鼠标在可滚动子控件内（更新日志 / DataGrid / 日志框 / 规则列表等）：
+                        // 只有它还能朝当前方向滚动时才在此处消费事件；已滚到尽头则【不设 Handled】，
+                        // 让事件沿内置冒泡链继续上抛——内层 ScrollViewer.OnMouseWheel 因无法滚动而不会置 Handled，
+                        // 外层 ContentArea 随即接手滚动。旧实现无条件 e.Handled = true 会吞掉这次冒泡，
+                        // 造成"子区域滚到底后整页卡死、再也滚不动"。
+                        const double EDGE_EPS = 0.5;   // 容差：避免亚像素抖动导致边界处来回传递
+                        bool atEnd = e.Delta > 0
+                            ? targetSv.VerticalOffset <= EDGE_EPS
+                            : targetSv.VerticalOffset >= targetSv.ScrollableHeight - EDGE_EPS;
+                        // Popup 等独立视觉树内的滚动区不在此冒泡链上（事件到不了 ContentArea），
+                        // 只有确实是 ContentArea 后代时才敢放行，否则仍由本处理器手动滚动外层。
+                        if (atEnd && IsDescendantOfContentArea(targetSv)) return;
+                    }
+                    if (targetSv == null) targetSv = ContentArea;
+
                     // 按目标 ScrollViewer 的滚动模式选择步进：
                     //  - 物理滚动（CanContentScroll=false，如 ContentArea/普通 ScrollViewer）：沿用 ~40px/格，平滑。
                     //  - 逻辑滚动（CanContentScroll=true，如 DataGrid 内部 ScrollViewer）：按"行"步进（默认 3 行/格），
@@ -156,9 +180,34 @@ namespace CpqSystemTool
                     element = Mouse.DirectlyOver as DependencyObject;
                 }
 
-                // ★ ContentArea 始终禁用横向滚动（H=Disabled）
-                //   - 传实际有限宽度 → WrapPanel 正确换行 + 内容自然适配视口
-                //   - 所有页面已修复 Star 行问题 + 内嵌 ScrollViewer 保留 MaxHeight，不再需要动态切换
+                // 判断元素是否位于 ContentArea 视觉树内（决定"子滚动区到底后能否交给外层继续滚"）：
+                // 只有在其内部，未处理的 MouseWheel 才会沿冒泡链到达 ContentArea；Popup 等独立 HWND 树到不了。
+                bool IsDescendantOfContentArea(DependencyObject node)
+                {
+                    for (var cur = node; cur != null; cur = VisualTreeHelper.GetParent(cur))
+                    {
+                        if (ReferenceEquals(cur, ContentArea)) return true;
+                    }
+                    return false;
+                }
+
+                // ★ ContentArea 横向滚动必须保持 Disabled（曾尝试改 Auto，已验证会引入严重回归，故回退）。
+                //
+                //   为什么不能用 Auto：
+                //   ScrollViewer 会把 CanHorizontallyScroll 设为 (H != Disabled)，于是
+                //   ScrollContentPresenter.MeasureOverride 以「无限宽」度量子内容；而 Grid.MeasureOverride
+                //   在无限宽下【不解析 Star 列】，Star 会退化成内容宽度，只有 Arrange 阶段才按最终宽度重分配。
+                //   结果：只要页面内有任一 TextWrapping 长文本（如「关于」页约 230 中字的简介，不换行约
+                //   2800px ≫ 视口 ~959px），整页就会按这个超宽尺寸排列 —— 长文本不换行、Star 列不再等分
+                //   视口、底部常驻横条。即项目长期记忆里那条铁律："ScrollViewer 内 Star 列居中须
+                //   HorizontalScrollBarVisibility=Disabled"，Disabled 正是"固定视口宽"的唯一保证。
+                //
+                //   窄窗 / 高 DPI 怎么处理的（2026-08-30 已从"已知取舍"变为"已修复"）：
+                //   不放开全局横滚，也不在页面外包横向 ScrollViewer —— 后者对任何一层 ScrollViewer
+                //   都会复现上面同一套 Star 退化。改为在**具体页面**做响应式重排：
+                //   「系统信息」的两列 TextBox（各 MinWidth=180）与「Edge 管理」的左右两张卡片，
+                //   在视口变窄时分别折叠为上下单列，见 MainWindow.Pages.cs 的
+                //   EnableTwoColumnResponsive（阈值各为 400 / 720，推导过程在调用点注释里）。
                 ContentArea.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
 
                 // 页面根高度跟随视口：改由各 Build* 通过 BindRootHeightToViewport 绑定 ContentArea.ActualHeight

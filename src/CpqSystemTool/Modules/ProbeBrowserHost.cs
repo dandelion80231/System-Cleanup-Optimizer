@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Reflection;
@@ -515,6 +516,10 @@ namespace CpqSystemTool
             return await tcs.Task;
         }
 
+        // ExecuteScriptAsync 等操作在渲染进程崩溃/挂起时可能永不完成；
+        // 若不加超时，调用方的 await 会永久卡死，连 Dispose() 都无法唤醒。这里统一设上限。
+        private const int BrowserThreadTimeoutMs = 30000;
+
         private Task<T> RunOnBrowserThread<T>(Func<Task<T>> func)
         {
             var tcs = new TaskCompletionSource<T>();
@@ -524,7 +529,21 @@ namespace CpqSystemTool
                 try { tcs.TrySetResult(await func()); }
                 catch (Exception ex) { tcs.TrySetException(ex); }
             }));
-            return tcs.Task;
+            return WithTimeout(tcs.Task, BrowserThreadTimeoutMs);
+        }
+
+        /// <summary>给可能永不完成的任务加超时上限，避免调用方永久 await（渲染进程挂起时连 Dispose 都唤不醒）。</summary>
+        private static async Task<T> WithTimeout<T>(Task<T> task, int timeoutMs)
+        {
+            using (var cts = new System.Threading.CancellationTokenSource())
+            {
+                var delay = Task.Delay(timeoutMs, cts.Token);
+                var finished = await Task.WhenAny(task, delay);
+                if (finished != task)
+                    throw new TimeoutException("WebView2 浏览器线程操作超时（" + timeoutMs + "ms），可能是渲染进程无响应。");
+                cts.Cancel(); // 取消定时器，避免 30s 计时器滞留
+                return await task;
+            }
         }
 
         // ===================== 注入 JS =====================
@@ -705,20 +724,46 @@ namespace CpqSystemTool
             // 优先：基目录下直接含 msedgewebview2.exe（健康机器常见布局）
             foreach (var baseDir in candidates)
             {
-                if (File.Exists(Path.Combine(baseDir, "msedgewebview2.exe")))
+                if (File.Exists(Path.Combine(baseDir, "msedgewebview2.exe"))
+                    && IsPeBinary(Path.Combine(baseDir, "msedgewebview2.exe")))
                     return baseDir;
             }
-            // 兜底：在基目录下找形如 151.0.4129.72 的版本子目录（本机即是此布局）
+            // 兜底：在基目录下找形如 151.0.4129.72 的版本子目录，
+            // 按版本号降序遍历（优先用最新稳定版），跳过 msedgewebview2.exe 为文本占位符/损坏的版本。
+            // 注：本机曾出现 151 版本该文件退化为路径字符串（"C:\Program Files (x86)\..."）而非 PE 二进制，
+            //     CreateAsync 加载后报 BadImageFormatException(0x8007000B)，故必须做 MZ 头校验。
             foreach (var baseDir in candidates)
             {
                 if (!Directory.Exists(baseDir)) continue;
-                foreach (var sub in Directory.GetDirectories(baseDir))
+                var subDirs = Directory.GetDirectories(baseDir)
+                    .Where(d => System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(d), @"^\d+\.\d+\.\d+\.\d+$"))
+                    .OrderByDescending(d => d) // 按版本号字符串降序，最新在前
+                    .ToArray();
+                foreach (var sub in subDirs)
                 {
-                    if (File.Exists(Path.Combine(sub, "msedgewebview2.exe")))
+                    var exe = Path.Combine(sub, "msedgewebview2.exe");
+                    if (File.Exists(exe) && IsPeBinary(exe))
                         return sub;
                 }
             }
             return null;
+        }
+
+        /// <summary>
+        /// 验证文件是否为有效的 PE 可执行文件（读取前 2 字节检查 MZ 签名 0x4D5A）。
+        /// 防止把损坏/退化为文本占位符的 msedgewebview2.exe 误当运行时。
+        /// </summary>
+        private static bool IsPeBinary(string path)
+        {
+            try
+            {
+                using var fs = File.OpenRead(path);
+                if (fs.Length < 2) return false;
+                var header = new byte[2];
+                fs.Read(header, 0, 2);
+                return header[0] == 0x4D && header[1] == 0x5A; // "MZ"
+            }
+            catch { return false; }
         }
 
         /// <summary>

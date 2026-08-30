@@ -21,26 +21,16 @@ namespace CpqSystemTool
 
         // 系统优化页缓存（降级方案：面板/页面实例缓存）：首次构建完成后缓存整页，
         // 再次进入复用已构建面板，仅复位动态状态（勾选/预设高亮/展开折叠/输出/计数），
-        // 避免每次导航重建 116 项 × 多控件。主题一致性由 _tweaksCacheDark 保证。
-        private UIElement _cachedTweaksPage;
-        private string _tweaksCacheKey;
-        private bool _tweaksCacheDark;
-        private Action _tweaksRefresh;
+        // 避免每次导航重建 116 项 × 多控件。主题一致性由 PageCache 内部记录的构建期主题保证。
+        private readonly PageCache<UIElement> _tweaksCache = new PageCache<UIElement>();
 
         private UIElement BuildTweaks()
         {
             // 记录本次构建时主题：缓存仅在主题一致时命中（主题切换会重建当前页，避免复用旧主题刷子的页面）
             bool buildDark = _isDarkMode;
             // 缓存命中且主题一致 → 复用已构建页面，仅复位动态状态
-            if (_cachedTweaksPage != null && _tweaksCacheDark == buildDark && _tweaksCacheKey != null)
-            {
-                _tweaksRefresh?.Invoke();
-                return _cachedTweaksPage;
-            }
-            // 主题/失效 → 丢弃旧缓存，走完整重建
-            _cachedTweaksPage = null;
-            _tweaksRefresh = null;
-            _tweaksCacheKey = null;
+            var cached = _tweaksCache.TryGet(buildDark);
+            if (cached != null) return cached;
 
             App.Trace("BuildTweaks.start");
             List<TweakEntry> allTweaks;
@@ -171,8 +161,6 @@ namespace CpqSystemTool
                 groupContents[g.Key] = content;
             }
 
-            // 提前赋值，让下方 lambda 能捕获字段（页面返回前即完成，避免空引用）
-            UpdateSelectedPanelRef = selectedPanel;
             TweaksCheckBoxes = checkBoxes;
             TweaksTextBlocks = textBlocks;
             UpdateSelectedPanel = delegate () { RefreshSelectedList(checkBoxes, selectedPanel); };
@@ -212,7 +200,14 @@ namespace CpqSystemTool
                     tb.MouseLeftButtonUp += (s, e) =>
                     {
                         TweaksTouched.Add(t.Id);
-                        chk.IsChecked = !chk.IsChecked;
+                        // 修复：原写法 chk.IsChecked = !chk.IsChecked，而 !null 仍是 null，
+                        // 三态项处于「系统默认」(null) 时点名字毫无反应，永远切不出去。
+                        // 三态循环顺序与 WPF CheckBox 原生点击保持一致（false → true → null → false），
+                        // 避免"点复选框"和"点名字"两种操作走出不同顺序让用户困惑。
+                        if (chk.IsThreeState)
+                            chk.IsChecked = chk.IsChecked == null ? false : (chk.IsChecked == true ? (bool?)null : true);
+                        else
+                            chk.IsChecked = chk.IsChecked != true;
                         SyncTweakTextColor(t.Id);
                         UpdateSelectedPanel();
                         RefreshTweaksStatus();
@@ -389,10 +384,8 @@ namespace CpqSystemTool
             // 仅在构建期间主题未变时写入缓存（避免把混入旧主题刷子的页面标记为可复用）
             if (buildDark == _isDarkMode)
             {
-                _cachedTweaksPage = root;
-                _tweaksCacheKey = "tweaks";   // 列表静态定义，常量键即可；主题一致性由 _tweaksCacheDark 保证
-                _tweaksCacheDark = buildDark;
-                _tweaksRefresh = () =>
+                _tweaksCache.Set(root, buildDark);
+                _tweaksCache.SetRefresh(() =>
                 {
                     // 复位动态状态（与旧版每次新建页面行为一致）：
                     // 勾选复位为默认（二态未勾选/三态系统默认）、文本配色复位、预设按钮高亮复位（仅「基本优化」保持高亮）、
@@ -411,14 +404,12 @@ namespace CpqSystemTool
                     _tweaksStatusBase = "";
                     RefreshTweaksStatus();
                     reloadTweaksStates();
-                };
+                });
             }
 
             return root;
         }
 
-        // 字段引用，供 BuildTweaks 内部 lambda 使用（避免闭包问题）
-        private StackPanel UpdateSelectedPanelRef;
         private Dictionary<string, System.Windows.Controls.CheckBox> TweaksCheckBoxes;
         private Dictionary<string, TextBlock> TweaksTextBlocks; // 优化项名称 TextBlock，用于同步选色
         private Action UpdateSelectedPanel;
@@ -691,9 +682,6 @@ namespace CpqSystemTool
                     cb.IsChecked = kv.Value == TweakState.On;
             UpdateSelectedPanel();
 
-            var pb = MakeProgress();
-            pb.Visibility = Visibility.Visible;
-
             // 进度日志收集（后台线程写本地缓冲，避免跨线程写 UI）
             var sb = new System.Text.StringBuilder();
             object lk = new object();
@@ -723,8 +711,7 @@ namespace CpqSystemTool
                     try { Dispatcher.Invoke(() =>
                     {
                         // 应用完成后 116 项勾选/实际状态可能已变化 → 整页缓存失效，下次进页重建以读取真实状态
-                        _cachedTweaksPage = null;
-                        pb.Visibility = Visibility.Collapsed;
+                        _tweaksCache.Invalidate();
                         if (TweaksOptimized == null)
                             TweaksOptimized = new HashSet<string>(StringComparer.Ordinal);
                         // 3) 在原页面就地刷新每个项的实际状态（三态项反映 On/Off/系统默认），同步维护「已优化」集合

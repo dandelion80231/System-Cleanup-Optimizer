@@ -29,28 +29,15 @@ namespace CpqSystemTool
         // DataTemplate 化风险过高 → 不引入虚拟化，改为首次构建完成后缓存整页；
         // 再次进入复用已构建面板，仅刷新版本号/状态/勾选/搜索等动态部分，避免每次导航重建 ~49 行 × 8 控件。
         // 软件目录变化（增删自定义软件）时缓存自动失效并重建。
-        private UIElement _cachedSoftwarePage;
-        private string _softwareCacheKey;
-        private bool _softwareCacheDark;
-        private Action _softwareRefresh;
+        private readonly PageCache<UIElement> _softwareCache = new PageCache<UIElement>();
 
         private UIElement BuildCommonSoftware()
         {
             // 记录本次构建时主题：缓存仅在主题一致时命中（主题切换会重建当前页，避免复用旧主题刷子的页面）
             bool buildDark = _isDarkMode;
             // 缓存命中且软件目录未变化且主题一致 → 复用已构建页面，仅后台刷新动态状态
-            if (_cachedSoftwarePage != null && _softwareCacheDark == buildDark && _softwareCacheKey != null
-                && string.Equals(_softwareCacheKey,
-                    string.Join("|", SoftwareInstall.GetEffectiveList().Select(s => s.Id)),
-                    StringComparison.Ordinal))
-            {
-                _softwareRefresh?.Invoke();
-                return _cachedSoftwarePage;
-            }
-            // 目录/主题变化 → 丢弃旧缓存，走完整重建
-            _cachedSoftwarePage = null;
-            _softwareRefresh = null;
-            _softwareCacheKey = null;
+            var cached = _softwareCache.TryGet(buildDark, string.Join("|", SoftwareInstall.GetEffectiveList().Select(s => s.Id)));
+            if (cached != null) return cached;
 
             // Grid 布局：header / actionBar / toolBar / 列表卡（撑满）/ pb / log
             var root = new Grid();
@@ -399,7 +386,13 @@ namespace CpqSystemTool
                         btnAll.Click += (s, e) =>
                         {
                             swAllSelected = !swAllSelected;
-                            foreach (var t in rowItems) t.Item1.IsChecked = swAllSelected;
+                            // 修复：此前全选不区分可见性，会把被搜索/分类过滤隐藏（Collapsed）的行一并勾选，
+                            // 随后的批量安装/卸载就会作用在用户看不见的软件上。这里只勾选当前可见行。
+                            foreach (var t in rowItems)
+                            {
+                                if (t.Item2.Visibility != Visibility.Visible) continue;
+                                t.Item1.IsChecked = swAllSelected;
+                            }
                             btnAll.Content = swAllSelected ? "☐ 取消全选" : "☑ 全选";
                             UpdateSelCount();
                         };
@@ -514,7 +507,7 @@ namespace CpqSystemTool
                                 // 无 SynchronizationContext，GetAwaiter().GetResult() 无死锁且异常同步传播（RunInBg 的 try/catch 可捕获，
                                 // 不用 async void lambda —— 其异常会逃逸到 ThreadPool 触发 UnhandledException 崩溃）。
                                 RunInBg(log, l => SoftwareInstall.InstallAsync(sw.Id, l, customDir).GetAwaiter().GetResult(),
-                                    (sw.Installed ? "修复完成: " : "安装完成: ") + sw.Name, () => { RefreshAllRows(); });
+                                    (sw.Installed ? "修复完成: " : "安装完成: ") + sw.Name, () => { pb.Visibility = Visibility.Collapsed; RefreshAllRows(); });
                             }, 90);
                             instBtn.MinHeight = 26;
                             instBtn.Margin = new Thickness(2, 2, 2, 2);
@@ -532,6 +525,7 @@ namespace CpqSystemTool
                             RunInBg(log, l => SoftwareInstall.Uninstall(sw.Id, l),
                                 "卸载完成: " + sw.Name, () =>
                                 {
+                                    pb.Visibility = Visibility.Collapsed;
                                     // 卸载完成后自动全量刷新列表（保留日志可见），状态/按钮同步更新
                                     RefreshAllRows(() => log.AppendText("— 卸载流程结束，详情见上方日志 —\r\n"));
                                 });
@@ -625,7 +619,7 @@ namespace CpqSystemTool
                                     SoftwareInstall.InstallAsync(sw.Id, l, customDir).GetAwaiter().GetResult();
                                 }
                             }, $"已安装 {selected.Count(s => !s.Installed)}/{selected.Count} 款",
-                            () => { RefreshAllRows(); });
+                            () => { pb.Visibility = Visibility.Collapsed; RefreshAllRows(); });
                         };
 
                         // 卸载选中（btnUninstall 已在 DockPanel 中创建）
@@ -644,6 +638,7 @@ namespace CpqSystemTool
                             }, $"已卸载 {selected.Count(s => s.Installed)}/{selected.Count} 款",
                             () =>
                             {
+                                pb.Visibility = Visibility.Collapsed;
                                 // 批量卸载完成后自动全量刷新列表（保留日志可见）
                                 RefreshAllRows(() => log.AppendText("— 批量卸载结束，详情见上方日志 —\r\n"));
                             });
@@ -682,7 +677,7 @@ namespace CpqSystemTool
                                 log.AppendText("[OK] 识别 StoreId: " + direct + "，直接安装\r\n");
                                 pb.Visibility = Visibility.Visible;
                             RunInBg(log, l => AppxManager.Install(direct, l), "安装启动",
-                                () => RefreshAllRows(() => log.AppendText("— 安装启动完成，详情见上方日志 —\r\n")));
+                                () => { pb.Visibility = Visibility.Collapsed; RefreshAllRows(() => log.AppendText("— 安装启动完成，详情见上方日志 —\r\n")); });
                                 return;
                             }
 
@@ -807,10 +802,9 @@ namespace CpqSystemTool
                         // 仅在构建期间主题未变时写入缓存（避免把混入旧主题刷子的页面标记为可复用）
                         if (buildDark == _isDarkMode)
                         {
-                            _cachedSoftwarePage = root;
-                            _softwareCacheKey = string.Join("|", rowItems.Select(t => t.Item3.Id));
-                            _softwareCacheDark = buildDark;
-                            _softwareRefresh = () =>
+                            _softwareCache.Set(root, buildDark);
+                            _softwareCache.SetContentKey(string.Join("|", rowItems.Select(t => t.Item3.Id)));
+                            _softwareCache.SetRefresh(() =>
                             {
                                 // 复位动态状态（与旧版每次新建页面行为一致）：
                                 // 恢复本地列表（若处于搜索结果态）、清空日志/搜索/分类筛选、复位全选与勾选、后台刷新安装状态
@@ -831,7 +825,7 @@ namespace CpqSystemTool
                                 ApplyFilter();     // 刷新计数与可见行
                                 UpdateSelCount();
                                 RefreshAllRows();  // 后台全量刷新版本号/状态/按钮（保留日志）
-                            };
+                            });
                         }
                     }); } catch { /* 窗口已关闭，忽略 */ }
                 }
@@ -907,6 +901,7 @@ namespace CpqSystemTool
                 {
                     installBtn.IsEnabled = false;
                     installBtn.Content = "已安装";
+                    pb.Visibility = Visibility.Collapsed;
                     onDone?.Invoke();
                 };
                 if (r.Source == "winget")

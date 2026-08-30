@@ -22,19 +22,6 @@ namespace CpqSystemTool
         /// <summary>MakeCheck 复选框勾选态的语义：勾选 = 禁用，还是勾选 = 启用。</summary>
         private enum CheckSemantics { CheckedMeansDisable, CheckedMeansEnable }
 
-        /// <summary>在可视化树中查找指定类型的第一个子元素。</summary>
-        private static T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
-        {
-            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
-            {
-                var child = VisualTreeHelper.GetChild(parent, i);
-                if (child is T result) return result;
-                var descendant = FindVisualChild<T>(child);
-                if (descendant != null) return descendant;
-            }
-            return null;
-        }
-
         /// <summary>构造带线条下拉箭头的 Expander（替代系统默认实心三角箭头）。</summary>
         private Expander MakeLineArrowExpander(UIElement header, UIElement content, bool expanded = true, Thickness? margin = null)
         {
@@ -164,25 +151,15 @@ namespace CpqSystemTool
         // 服务优化页缓存（与常用软件/Appx 页同款降级方案：整页实例缓存）。
         // 服务列表构建时同步枚举，禁用状态由后台 AutoLoad 并行读取（每服务一次 sc qc，必须在后台线程）；
         // 再次进页复用已构建面板，仅通过 _servicesRefresh 复位按钮并后台重刷状态，避免每次导航重建 ~20 行控件与重复枚举。
-        private UIElement _cachedServicesPage;
-        private string _servicesCacheKey;
-        private bool _servicesCacheDark;
-        private Action _servicesRefresh;
+        private readonly PageCache<UIElement> _servicesCache = new PageCache<UIElement>();
 
         private UIElement BuildServices()
         {
             // 记录本次构建时主题：缓存仅在主题一致时命中（主题切换会重建当前页，避免复用旧主题刷子的页面）
             bool buildDark = _isDarkMode;
             // 缓存命中且主题一致 → 复用已构建页面，仅后台刷新服务状态
-            if (_cachedServicesPage != null && _servicesCacheDark == buildDark && _servicesCacheKey != null)
-            {
-                _servicesRefresh?.Invoke();
-                return _cachedServicesPage;
-            }
-            // 主题/状态变化 → 丢弃旧缓存，走完整重建
-            _cachedServicesPage = null;
-            _servicesRefresh = null;
-            _servicesCacheKey = null;
+            var cached = _servicesCache.TryGet(buildDark);
+            if (cached != null) return cached;
 
             var root = new StackPanel();
             root.Children.Add(Header("服务优化", "列出可安全禁用的后台服务，一键禁用/恢复。"));
@@ -260,7 +237,7 @@ namespace CpqSystemTool
                                         pb.Visibility = Visibility.Visible;
                                         RunInBg(log, l2 => ServiceOptimizer.Apply(s, !curDis, l2),
                                             curDis ? "已恢复: " + s.Display : "已禁用: " + s.Display,
-                                            () => { _cachedServicesPage = null; pb.Visibility = Visibility.Collapsed; btn.Tag = !curDis; btn.Content = !curDis ? "恢复" : "禁用"; });
+                                            () => { _servicesCache.Invalidate(); pb.Visibility = Visibility.Collapsed; btn.Tag = !curDis; btn.Content = !curDis ? "恢复" : "禁用"; });
                                     };
                                 }
                                 btn.Tag = dis;
@@ -275,10 +252,8 @@ namespace CpqSystemTool
             // 仅在构建期间主题未变时写入缓存（避免把混入旧主题刷子的页面标记为可复用）
             if (buildDark == _isDarkMode)
             {
-                _cachedServicesPage = root;
-                _servicesCacheKey = "services";
-                _servicesCacheDark = buildDark;
-                _servicesRefresh = () =>
+                _servicesCache.Set(root, buildDark);
+                _servicesCache.SetRefresh(() =>
                 {
                     // 复位动态状态（与旧版每次新建页面行为一致）：复位各服务按钮为"检测中…"禁用态、后台重刷服务状态
                     foreach (var s in ServiceOptimizer.All)
@@ -290,7 +265,7 @@ namespace CpqSystemTool
                         }
                     }
                     RefreshServiceStates();
-                };
+                });
             }
 
             return root;
@@ -324,6 +299,8 @@ namespace CpqSystemTool
             mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });   // 间距
             mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            // 单列模式需要第二行；双列模式只用第 0 行。行定义由 applyEdgeColumns 按需重建。
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             // 5 频道标识
             string[] channels = { "stable", "beta", "dev", "canary", "sxs" };
@@ -614,6 +591,33 @@ namespace CpqSystemTool
             Grid.SetColumn(rightCard, 2);
             mainGrid.Children.Add(rightCard);
 
+            // 双列 ⇄ 单列切换。
+            // 阈值推导：两张卡片内部都有「标签 + ComboBox」行和双按钮操作行，
+            // 单张卡片舒适宽度约 350px（低于此值按钮文字会被挤压/换行错位），
+            // 故双列最少需要 350 × 2 + 12(列间距) = 712px，取 720 并留少量余量防临界抖动。
+            // 折叠后两张卡片上下堆叠，各自宽度回到整个视口，内容完整可见。
+            const double EdgeTwoColumnMinWidth = 720;
+            Action<bool> applyEdgeColumns = twoColumns =>
+            {
+                mainGrid.RowDefinitions.Clear();
+                if (twoColumns)
+                {
+                    mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                    Grid.SetRow(leftCard, 0);  Grid.SetColumn(leftCard, 0);  Grid.SetColumnSpan(leftCard, 1);
+                    Grid.SetRow(rightCard, 0); Grid.SetColumn(rightCard, 2); Grid.SetColumnSpan(rightCard, 1);
+                }
+                else
+                {
+                    mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                    mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(12) });   // 两卡之间的间距
+                    mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                    Grid.SetRow(leftCard, 0);  Grid.SetColumn(leftCard, 0);  Grid.SetColumnSpan(leftCard, 3);
+                    Grid.SetRow(rightCard, 2); Grid.SetColumn(rightCard, 0); Grid.SetColumnSpan(rightCard, 3);
+                }
+            };
+            applyEdgeColumns(true);   // 先按双列摆好，随后由自适应按实际宽度纠正
+            EnableTwoColumnResponsive(root, EdgeTwoColumnMinWidth, applyEdgeColumns);
+
             root.Children.Add(mainGrid);
             root.Children.Add(pb);
             root.Children.Add(logBorder);
@@ -879,6 +883,48 @@ namespace CpqSystemTool
 
         private string _lastSystemInfo = "";
 
+        /// <summary>
+        /// 窄窗自适应：视口宽度不足时把两列布局折叠成单列，宽度够时恢复双列。
+        ///
+        /// ★ 为什么不用「给页面外面包一层 HorizontalScrollBarVisibility=Auto 的 ScrollViewer」？
+        ///   那是个陷阱，对**任何一层** ScrollViewer 都成立：ScrollViewer 会把 CanHorizontallyScroll
+        ///   设为 (H != Disabled)，于是 ScrollContentPresenter.MeasureOverride 用「无限宽」度量子内容；
+        ///   而 Grid.MeasureOverride 在无限宽下【不解析 Star 列】，Star 退化成内容宽度，
+        ///   只有 Arrange 阶段才按最终宽度重分配。放开横滚等于把全局布局 bug 缩小到单页，
+        ///   长文本不换行、Star 列不再等分、底部常驻横条，问题并没有消失。
+        ///   （这也是全局 ContentArea.HorizontalScrollBarVisibility 必须保持 Disabled 的原因，
+        ///    详见 MainWindow.xaml.cs 中该行处的注释。）
+        ///
+        /// 所以正确解法是「响应式重排」：窄了就少用一列，让内容按有限宽度正常排版。
+        /// </summary>
+        /// <param name="viewportElement">宽度随视口变化的元素（一般是页面 root，其在 ContentArea 内宽度有限）</param>
+        /// <param name="minWidthForTwoColumns">维持双列所需的最小宽度（低于此值折叠为单列）</param>
+        /// <param name="applyTwoColumn">切换回调，true=双列 / false=单列；仅在模式真正变化时才调用</param>
+        private static void EnableTwoColumnResponsive(
+            FrameworkElement viewportElement,
+            double minWidthForTwoColumns,
+            Action<bool> applyTwoColumn)
+        {
+            if (viewportElement == null || applyTwoColumn == null) return;
+
+            // 当前模式（null = 尚未确定）。SizeChanged 在布局过程中会反复触发，
+            // 必须靠它挡住"模式没变却反复重排"造成的抖动甚至布局死循环。
+            bool? current = null;
+            viewportElement.SizeChanged += (s, e) =>
+            {
+                try
+                {
+                    bool want = e.NewSize.Width >= minWidthForTwoColumns;
+                    if (current == want) return;   // 模式未变 → 直接返回，不碰布局
+                    current = want;
+                    applyTwoColumn(want);
+                }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+            };
+            // 说明：这里用 lambda 挂 SizeChanged 是安全的 —— 每次页面重建都会产生一个新的 root，
+            // 旧 root 连同其处理器一起被丢弃，不会跨重建累积（不像在 LoadingRow 里对复用的行容器反复挂）。
+        }
+
         private UIElement BuildSystemInfo()
         {
             // Grid 布局：让内容区在最大化时撑满剩余空间
@@ -912,7 +958,7 @@ namespace CpqSystemTool
                     if (dlg.ShowDialog() == true)
                     {
                         File.WriteAllText(dlg.FileName, _lastSystemInfo, Encoding.UTF8);
-                        _lastSystemInfo += "\r\n[OK] 已导出到: " + dlg.FileName;
+                        SetStatus("已导出到: " + dlg.FileName);
                     }
                 }, 150),
                 Btn("🔄 重新采集", false, () =>
@@ -935,11 +981,15 @@ namespace CpqSystemTool
             DockPanel.SetDock(pb, Dock.Top);
             inner.Children.Add(pb);
 
-            // 两列布局 - 左侧 TextBox + 右侧 TextBox，中间用 GridSplitter 推拉调整
+            // 两列布局 - 左侧 TextBox + 右侧 TextBox，中间用 GridSplitter 推拉调整。
+            // 窄窗时由 EnableTwoColumnResponsive 折叠成「上下单列」（见下方 applySysInfoColumns），
+            // 避免两列各 MinWidth=180 撑不下时内容被硬裁掉。
             var twoColGrid = new Grid();
             twoColGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 180 });
-            twoColGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            twoColGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });   // 分隔条（宽 1）
             twoColGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 180 });
+            // 单列模式需要第二行；双列模式只用第 0 行。行定义由 applySysInfoColumns 按需重建。
+            twoColGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
             // 左侧
             leftInfoBox = new TextBox
@@ -1005,6 +1055,37 @@ namespace CpqSystemTool
             Grid.SetColumn(rightBorder, 2);
             twoColGrid.Children.Add(rightBorder);
 
+            // 双列 ⇄ 单列切换。
+            // 阈值推导：双列最少需要 左列 180 + 分隔条 1 + 右列 180 = 361px，
+            // 再留约 40px 余量避免临界宽度反复抖动 → 取 400。
+            // 单列时两个 TextBox 各占一行（上半 / 下半），各自都有垂直滚动条，
+            // 因此内容一条不少，只是从"左右并排"变成"上下堆叠"，不会被裁掉。
+            const double SysInfoTwoColumnMinWidth = 400;
+            Action<bool> applySysInfoColumns = twoColumns =>
+            {
+                twoColGrid.RowDefinitions.Clear();
+                if (twoColumns)
+                {
+                    twoColGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                    splitter.Visibility = Visibility.Visible;
+                    Grid.SetRow(leftBorder, 0); Grid.SetColumn(leftBorder, 0); Grid.SetColumnSpan(leftBorder, 1);
+                    Grid.SetRow(splitter, 0);   Grid.SetColumn(splitter, 1);   Grid.SetColumnSpan(splitter, 1);
+                    Grid.SetRow(rightBorder, 0); Grid.SetColumn(rightBorder, 2); Grid.SetColumnSpan(rightBorder, 1);
+                }
+                else
+                {
+                    twoColGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                    twoColGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(8) });   // 两块之间的间距
+                    twoColGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                    // 单列时没有左右两列可推拉，分隔条必须收起，否则会留下一条突兀的竖线
+                    splitter.Visibility = Visibility.Collapsed;
+                    Grid.SetRow(leftBorder, 0); Grid.SetColumn(leftBorder, 0); Grid.SetColumnSpan(leftBorder, 3);
+                    Grid.SetRow(rightBorder, 2); Grid.SetColumn(rightBorder, 0); Grid.SetColumnSpan(rightBorder, 3);
+                }
+            };
+            applySysInfoColumns(true);   // 先按双列摆好，随后由自适应按实际宽度纠正
+            EnableTwoColumnResponsive(root, SysInfoTwoColumnMinWidth, applySysInfoColumns);
+
             // 左右两列 TextBox 已自带垂直滚动条，不需要外层整体滚动控件
             // 作为 DockPanel 最后一个子元素，自动填满剩余空间
             inner.Children.Add(twoColGrid);  // DockPanel 最后子元素 → 填满剩余空间
@@ -1028,7 +1109,9 @@ namespace CpqSystemTool
             });
 
             // 动态 MaxHeight：最大化时 root 跟随视口拉伸
-            // 稳健布局：root.MaxHeight 绑定到 ContentArea.ViewportHeight（自动跟随初始+缩放，规避 vp=0 跳过）
+            // 修正：原注释写「绑定到 ContentArea.ViewportHeight」，实现（MainWindow.Helpers.cs 的
+            // BindRootHeightToViewport）绑的是 ContentArea.ActualHeight——只读 DP，尺寸变化时自动通知，
+            // 首次布局与窗口缩放均自动跟随，规避了旧手动方案的 vp=0 时序 bug。
             BindRootHeightToViewport(root);
 
             return root;

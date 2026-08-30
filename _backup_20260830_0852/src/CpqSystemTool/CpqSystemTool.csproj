@@ -1,0 +1,53 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>系统清理与优化工具</AssemblyName>
+    <RootNamespace>CpqSystemTool</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <NoWarn>NU1603</NoWarn>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <ApplicationIcon>brush.ico</ApplicationIcon>
+    <!-- 程序集元数据：文件属性中显示的中文产品信息 -->
+    <AssemblyTitle>系统清理与优化工具</AssemblyTitle>
+    <AssemblyProduct>系统清理与优化工具</AssemblyProduct>
+    <AssemblyDescription>面向 Windows 10/11 的一体化系统清理、优化与维护工具</AssemblyDescription>
+    <AssemblyCopyright>Copyright © 2026</AssemblyCopyright>
+    <AssemblyVersion>1.0.16.0</AssemblyVersion>
+    <FileVersion>1.0.16.0</FileVersion>
+    <InformationalVersion>1.0.16.0</InformationalVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="[1.0.2045.28, 1.0.2045.28]" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Management" />
+    <Reference Include="System.ServiceProcess" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="Microsoft.VisualBasic" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="brush.ico" />
+    <Resource Include="brush.png" />
+    <Resource Include="background.png" />
+    <Resource Include="background-light.png" />
+    <EmbeddedResource Include="src.zip" />
+    <EmbeddedResource Include="Resources\Skus\**\*.xrm-ms" />
+    <!-- About 页更新日志单一事实来源：嵌入仓库根 CHANGELOG.md，运行时解析渲染，避免与硬编码文本脱节 -->
+    <EmbeddedResource Include="..\..\CHANGELOG.md" LogicalName="CHANGELOG.md" />
+  </ItemGroup>
+
+</Project>
