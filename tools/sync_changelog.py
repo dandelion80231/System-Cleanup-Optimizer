@@ -14,7 +14,7 @@ CHANGELOG_HTML = os.path.join(SRC, "changelog.html")
 DOWNLOAD_HTML = os.path.join(SRC, "download.html")
 
 ALL_VERSIONS = [
-    "v1.17", "v1.16", "v1.15", "v1.14", "v1.13", "v1.12", "v1.11", "v1.10",
+    "v1.17", "v1.16.1", "v1.16", "v1.15", "v1.14", "v1.13", "v1.12", "v1.11", "v1.10",
     "v1.09", "v1.08", "v1.07", "v1.06", "v1.05", "v1.04", "v1.03",
     "v1.02", "v1.01",
 ]
@@ -138,7 +138,56 @@ def update_changelog_html(html, blocks, dates):
 
 
 def update_download_html(html, blocks, dates):
-    # 1. 添加 v1.17 tab（在 v1.16 tab 之前）
+    """
+    从 CHANGELOG.md 完整同步 v1.17 内容到 download.html
+    直接替换 chlog-panels 容器的完整内容
+    """
+    # 1. 移除旧的 v1.17 tab（如果有）
+    tab_pattern = r'          <button[^>]*data-ver="v1\.17"[^>]*>v1\.17</button>\n'
+    html = re.sub(tab_pattern, '', html)
+
+    # 2. 移除旧的 v1.17 dl-panel（如果有）
+    panel_pattern = r'            <div class="dl-panel"[^>]*data-panel="v1\.17"[^>]*>.*?</div>\n            </div>\n'
+    html = re.sub(panel_pattern, '', html, flags=re.DOTALL)
+
+    # 3. 找到 chlog-panels 容器并替换其完整内容
+    panels_start = html.find('class="chlog-panels"')
+    if panels_start >= 0:
+        # 找到 chlog-panels 的结束位置
+        # 结构: <div class="chlog-panels">\n  ...panels...\n</div>\n          </div>\n        </div>
+        search_from = panels_start
+        # 找到最后一个 chlog-panel 的结束 </div>
+        # 然后找到对应的 chlog-panels 结束 </div>
+        # 模式: </div>\n            </div>\n          </div>
+        # 第一个 </div> 关闭最后一个 chlog-panel
+        # 第二个 </div> 关闭 chlog-panels
+        # 第三个 </div> 关闭 dl-changelog
+
+        # 找到 "data-panel=\"v1.01\"" 后面的第一个完整 closing 序列
+        last_panel = html.find('data-panel="v1.01"', search_from)
+        if last_panel >= 0:
+            # 找到最后一个 chlog-panel 的 </div>
+            end_div = html.find('</div>', last_panel)
+            if end_div >= 0:
+                # 找到 chlog-panels 的结束 </div>
+                chlog_panels_end = html.find('</div>', end_div + 1)
+                if chlog_panels_end >= 0:
+                    # 重建 chlog-panels 内容
+                    chlog_panels_content = []
+                    for ver in ALL_VERSIONS:
+                        if ver not in blocks:
+                            continue
+                        body = version_body_html(blocks, ver)
+                        is_active = ' active' if ver == "v1.17" else ''
+                        chlog_panels_content.append(
+                            f'              <div class="chlog-panel{is_active}" data-panel="{ver}">\n{body}\n              </div>'
+                        )
+                    new_chlog_panels = '\n'.join(chlog_panels_content)
+
+                    # 替换
+                    html = html[:panels_start + len('class="chlog-panels"')] + '>\n' + new_chlog_panels + '\n            </div>' + html[chlog_panels_end + 6:]
+
+    # 4. 添加 v1.17 tab（在 v1.16 tab 之前）
     tab_pattern = r'(<button[^>]*data-ver="v1\.16"[^>]*>)'
     match = re.search(tab_pattern, html)
     if match:
@@ -151,7 +200,7 @@ def update_download_html(html, blocks, dates):
             html
         )
 
-    # 2. 添加 v1.17 dl-panel（在 v1.16 panel 之前）
+    # 5. 添加 v1.17 dl-panel（在 v1.16 panel 之前）
     panel_pattern = r'(<div class="dl-panel"[^>]*data-panel="v1\.16"[^>]*>)'
     match = re.search(panel_pattern, html)
     if match:
@@ -165,15 +214,6 @@ def update_download_html(html, blocks, dates):
             </div>
 '''
         html = html[:match.start()] + v117_panel + html[match.start():]
-
-    # 3. 添加 v1.17 chlog-panel（在 v1.16 chlog-panel 之前）
-    chlog_pattern = r'(<div class="chlog-panel"[^>]*data-panel="v1\.16"[^>]*>)'
-    match = re.search(chlog_pattern, html)
-    if match:
-        body = version_body_html(blocks, "v1.17")
-        v117_chlog = f'''              <div class="chlog-panel active" data-panel="v1.17">\n{body}\n              </div>
-'''
-        html = html[:match.start()] + v117_chlog + html[match.start():]
 
     return html
 

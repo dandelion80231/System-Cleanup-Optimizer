@@ -79,6 +79,14 @@
 </div>
         </div>
         <div class="tl-item">
+          <span class="ver">v1.16.1</span><span class="date">2026-08-30</span>
+          <div class="chg-body">
+<h4>🐛 软件安装下载修复</h4>
+<ul><li><strong>Geek Uninstaller 等便携软件下载卡住</strong>：<code>DownloadAsync</code> 改用 <code>Downloader.DownloadAsync</code>，开启 <code>useProxyFallback: true</code>（系统代理 → 直连 → Watt Toolkit 本地代理依次尝试），最多重试 3 次、间隔 5 秒，解决代理环境下直连失败导致永久挂起的问题。</li><li><strong>便携版支持自定义安装目录</strong>：<code>IsPortable</code> 单文件分支（如 Geek Uninstaller）优先使用用户指定的 <code>customDir</code>，不再硬编码 <code>%LOCALAPPDATA%\CpqSystemTool\Portable\&lt;id&gt;\</code>。</li><li><strong>保留 Referer 支持</strong>：<code>Downloader.DownloadAsync</code> 新增可选 <code>referer</code> 参数，<code>SoftwareInstall.DownloadAsync</code> 透传 <code>SoftwareDef.Referer</code>，确保哔哩哔哩等需要 Referer 头的软件仍可正常下载。</li></ul>
+<p>---</p>
+</div>
+        </div>
+        <div class="tl-item">
           <span class="ver">v1.16</span><span class="date">2026-08-22</span>
           <div class="chg-body">
 <blockquote>相对 v1.15 的源码变更：Edge 管理页新增「实验性功能 flags」批量管理（11 项推荐配置 + 一键优化/恢复 + 强制重启生效）。</blockquote>
