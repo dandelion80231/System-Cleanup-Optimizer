@@ -528,8 +528,14 @@ namespace CpqSystemTool
         {
             try
             {
+                logf("   [DIAG] ProbeSiteFastAsync: entryUrl=" + entryUrl);
                 var got = await HttpGetAsync(entryUrl, MAX_REDIRECTS, 0, 8000);
-                if (!got.ok) return null;
+                logf("   [DIAG] HttpGetAsync 返回: ok=" + got.ok + ", status=" + got.status + ", isBinary=" + got.isBinary + ", bodyLen=" + (got.body?.Length ?? 0));
+                if (!got.ok)
+                {
+                    logf("   [DIAG] HttpGetAsync 失败，返回 null");
+                    return null;
+                }
 
                 var found = new Dictionary<string, CandidateUrl>(StringComparer.OrdinalIgnoreCase);
                 void Add(string url, string strategy)
@@ -558,9 +564,19 @@ namespace CpqSystemTool
                 }
 
                 // 入口本身是二进制可执行文件
-                if (got.isBinary && ProbeData.ExeUrlRe.IsMatch(entryUrl)) Add(entryUrl, "anchor");
+                bool entryIsExe = ProbeData.ExeUrlRe.IsMatch(entryUrl);
+                logf("   [DIAG] ExeUrlRe.IsMatch(entryUrl)=" + entryIsExe + ", isBinary=" + got.isBinary);
+                if (got.isBinary && entryIsExe)
+                {
+                    Add(entryUrl, "anchor");
+                    logf("   [DIAG] 已添加直链: " + entryUrl);
+                }
 
-                if ((got.body ?? "").Length < 50 && !got.isBinary) return null;
+                if ((got.body ?? "").Length < 50 && !got.isBinary)
+                {
+                    logf("   [DIAG] body太短且非二进制，返回 null");
+                    return null;
+                }
 
                 // 扫描所有可能的下载链接（.exe + .zip/.7z/.rar，并解析相对路径）
                 var exes = ProbeData.ExeUrlRe.Matches(got.body ?? "");
@@ -582,7 +598,12 @@ namespace CpqSystemTool
                     if (!string.IsNullOrEmpty(abs)) Add(abs, "jsonp");
                 }
 
-                if (found.Count == 0) return null;
+                if (found.Count == 0)
+                {
+                    logf("   [DIAG] found.Count==0，返回 null");
+                    return null;
+                }
+                logf("   [DIAG] found.Count=" + found.Count + "，返回结果");
                 var res = new BrowserProbeResult();
                 res.Candidates.AddRange(found.Values);
                 return res;
