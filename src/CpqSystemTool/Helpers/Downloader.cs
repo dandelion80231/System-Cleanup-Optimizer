@@ -19,12 +19,13 @@ namespace CpqSystemTool
         public const string DefaultUserAgent = "CpqSystemTool";
 
         /// <summary>
-        /// 代理回退候选：系统代理 → 直连 → Watt Toolkit 本地 HTTP 代理（与 MainWindow.About 原 GetProxyCandidates 顺序一致）。
+        /// 代理回退候选：直连 → 系统代理 → Watt Toolkit 本地 HTTP 代理（与 MainWindow.About 原 GetProxyCandidates 顺序一致）。
+        /// 直连优先，避免系统代理配置错误时卡住所有请求。
         /// </summary>
         private static readonly IWebProxy[] ProxyCandidates =
         {
-            WebRequest.DefaultWebProxy,                      // 1) 系统代理（Watt Toolkit System 模式等）
-            null,                                            // 2) 直连（无代理）
+            null,                                            // 1) 直连（无代理）
+            WebRequest.DefaultWebProxy,                      // 2) 系统代理（Watt Toolkit System 模式等）
             new WebProxy("http://127.0.0.1:26561", false)    // 3) Watt Toolkit 本地端口（PAC/System 模式）
         };
 

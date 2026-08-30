@@ -309,6 +309,7 @@ namespace CpqSystemTool
         private static readonly HttpClient Http = new HttpClient(new HttpClientHandler
         {
             AllowAutoRedirect = false,
+            UseProxy = false,  // 显式禁用代理：探针目标多为国外站点，系统代理往往无法访问，默认 UseProxy=true 会导致静默超时
         })
         {
             Timeout = TimeSpan.FromMilliseconds(ProbeData.VerifyTimeout)
