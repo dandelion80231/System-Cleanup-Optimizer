@@ -309,8 +309,6 @@ namespace CpqSystemTool
         private static readonly HttpClient Http = new HttpClient(new HttpClientHandler
         {
             AllowAutoRedirect = false,
-            UseProxy = true,
-            Proxy = WebRequest.DefaultWebProxy,
         })
         {
             Timeout = TimeSpan.FromMilliseconds(ProbeData.VerifyTimeout)
