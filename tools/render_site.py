@@ -42,7 +42,8 @@ CSS_SRC = os.path.join(PROJECT_ROOT, "site-css", "style.css")
 # JS 唯一源（受 git 跟踪）→ 渲染产物 site-dist/script.{sha256前12}.js
 JS_SRC = os.path.join(PROJECT_ROOT, "site-js", "script.js")
 
-TEMPLATE_FILES = ["index.html", "download.html", "changelog.html", "features.html", "about.html"]
+TEMPLATE_FILES = ["index.html", "changelog.html", "features.html", "about.html"]
+# download.html 由 render_download_pages() 单独处理（需 versions.json 数据）
 
 REQUIRED_FIELDS = ["version", "date", "name", "url", "size", "sha256"]
 

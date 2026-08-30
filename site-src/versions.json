@@ -1,0 +1,123 @@
+{
+  "versions": [
+    {
+      "version": "v1.17",
+      "date": "2026-08-30",
+      "size_mb": 5.06,
+      "sha256": "61293df5eceb813e235b7e567b7323e743583f64480ce6cdfc74e9eece0cf7ce",
+      "is_latest": true
+    },
+    {
+      "version": "v1.16",
+      "date": "2026-08-22",
+      "size_mb": 6.93,
+      "sha256": "ecd6da433b3074ad1a9d3ca3ea6b82e353fc97a548c6952f63d51f3bf4ed8067",
+      "is_latest": false
+    },
+    {
+      "version": "v1.15",
+      "date": "2026-08-21",
+      "size_mb": 6.91,
+      "sha256": "b2622d7b893011834f00c157af5dec3735019a046560a390dc6bd99ce6e30927",
+      "is_latest": false
+    },
+    {
+      "version": "v1.14",
+      "date": "2026-08-21",
+      "size_mb": 6.91,
+      "sha256": "59bac8f96a4362001b9f433d05d923389aed21cfcda696f9a38d4e8d8a13bdee",
+      "is_latest": false
+    },
+    {
+      "version": "v1.13",
+      "date": "2026-08-21",
+      "size_mb": 6.89,
+      "sha256": "245c38d830aeb8bc486160a05e154de8e8d8a0603a3ac5895b9505d248d20b66",
+      "is_latest": false
+    },
+    {
+      "version": "v1.12",
+      "date": "2026-08-21",
+      "size_mb": 6.87,
+      "sha256": "024fefa289b2aa539b0789497141b49d2fde45f0bcd1a4ba00c49c9f10b520ec",
+      "is_latest": false
+    },
+    {
+      "version": "v1.11",
+      "date": "2026-08-20",
+      "size_mb": 6.86,
+      "sha256": "edb5835f89ec9000d13ecfe9a2b3e661c1dce5f4569e83a90437f318afb988b1",
+      "is_latest": false
+    },
+    {
+      "version": "v1.10",
+      "date": "2026-08-18",
+      "size_mb": 6.83,
+      "sha256": "24f3499d1a516d28ca3df45220b4cc8cf2d486ab4fca764aec7f9bec3714546b",
+      "is_latest": false
+    },
+    {
+      "version": "v1.09",
+      "date": "2026-08-18",
+      "size_mb": 6.79,
+      "sha256": "13428e824db284f6229bd87459f5909f66d4fa687a9047c8a44c9462caf2b9bf",
+      "is_latest": false
+    },
+    {
+      "version": "v1.08",
+      "date": "2026-08-17",
+      "size_mb": 6.79,
+      "sha256": "efbb9f2906f8ed64c3532ba166ae0ed778053370cfe1c20b879edb044ae7e568",
+      "is_latest": false
+    },
+    {
+      "version": "v1.07",
+      "date": "2026-08-17",
+      "size_mb": 6.79,
+      "sha256": "ce6cdc3cd29a18c610018e17f6d4ad74ea62228c41679fcf48b30cba23b62211",
+      "is_latest": false
+    },
+    {
+      "version": "v1.06",
+      "date": "2026-08-16",
+      "size_mb": 6.76,
+      "sha256": "50933ee1422527a80be9b86df7b0240f167f8bec82b1e45e32d285ecaf593f40",
+      "is_latest": false
+    },
+    {
+      "version": "v1.05",
+      "date": "2026-08-14",
+      "size_mb": 6.74,
+      "sha256": "e131f241d7dcc5ea5e25acc26754a7b0e7888725cf68b6952553b6217d38550d",
+      "is_latest": false
+    },
+    {
+      "version": "v1.04",
+      "date": "2026-08-12",
+      "size_mb": 6.66,
+      "sha256": "fe8afc95f2f8939c16c1b2021b3cd769c22706aab7eff9e1ef4608ced966ebf6",
+      "is_latest": false
+    },
+    {
+      "version": "v1.03",
+      "date": "2026-08-11",
+      "size_mb": 6.36,
+      "sha256": "38b7ad45d844dd5acfd9fa4886e9a99b0ebfa6df6933d312bc09ce0807208043",
+      "is_latest": false
+    },
+    {
+      "version": "v1.02",
+      "date": "2026-08-11",
+      "size_mb": 6.36,
+      "sha256": "1f45bb1f497391f03cdbd352ae85717f13675d01c94302996659d161b1db4f35",
+      "is_latest": false
+    },
+    {
+      "version": "v1.01",
+      "date": "2026-08-06",
+      "size_mb": 6.28,
+      "sha256": "d79e8976124ede8fbe8a4509bc85e2e435b794588b77404ebe9c6d91c62b0c8d",
+      "is_latest": false
+    }
+  ]
+}
