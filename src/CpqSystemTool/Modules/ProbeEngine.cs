@@ -447,6 +447,50 @@ namespace CpqSystemTool
                 logf("   候选 " + finalized.Count + " 个，推荐: " + (rec != null ? rec.Url : "无"));
             }
 
+            // 域名反向匹配 VendorMap 直链兜底：
+            // 当用户输入官网首页 URL（source=url）时，主探测扫首页 HTML 只找到 /download 等相对链接，
+            // 快速路径 + 浏览器渲染均无法提取直链。此时若 URL 域名命中 VendorMap，
+            // 直接用 VendorMap 中已验证的直链作为兜底（如 geekuninstaller.com → geek.exe）。
+            if ((site == null || site.Candidates.Count == 0 || result.Recommended == "")
+                && string.IsNullOrEmpty(vendorKey)
+                && Uri.TryCreate(entryUrl, UriKind.Absolute, out var entryUri)
+                && entryUri.Host != null)
+            {
+                string matchedKey = null;
+                foreach (var vmKey in ProbeData.VendorMap.Keys)
+                {
+                    if (ProbeData.OfficialDomains.TryGetValue(vmKey, out var domains)
+                        && domains.Exists(d => d.Equals(entryUri.Host, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        matchedKey = vmKey;
+                        break;
+                    }
+                }
+                if (matchedKey != null)
+                {
+                    vendorKey = matchedKey;
+                    string vmUrl = ProbeData.VendorMap[matchedKey];
+                    logf(">>> 域名「" + entryUri.Host + "」命中厂商「" + matchedKey + "」，使用 VendorMap 直链兜底: " + vmUrl);
+                    var fbRes = await ProbeSiteFastAsync(vmUrl, skipDownloadCheck, logf);
+                    if (fbRes != null && fbRes.Candidates.Count > 0)
+                    {
+                        var fin = await FinalizeAsync(vmUrl, fbRes.Candidates);
+                        ApplyTrust(fin, vmUrl, "vendor");
+                        var rec = PickRecommended(fin);
+                        if (rec != null)
+                        {
+                            result.Rows.AddRange(BuildRows(vmUrl, "vendor", fin));
+                            if (string.IsNullOrEmpty(result.Recommended)) result.Recommended = rec.Url;
+                            logf("   ✅ 域名反向匹配兜底命中: " + rec.Url);
+                        }
+                    }
+                    else
+                    {
+                        logf("   ⚠️ VendorMap 直链验证失败（可能 404），请手动更新探针数据。");
+                    }
+                }
+            }
+
             // 版本漂移兜底：主探测未获直链，且该厂商配置了官方 CDN 兜底
             if ((site == null || site.Candidates.Count == 0 || result.Recommended == "") && !string.IsNullOrEmpty(vendorKey) && ProbeData.FallbackCdn.TryGetValue(vendorKey, out var fb))
             {
