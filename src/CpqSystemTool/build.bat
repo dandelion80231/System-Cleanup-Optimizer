@@ -41,10 +41,24 @@ if not exist "%OUT%" (
     exit /b 1
 )
 
-echo [3/3] Deploying to %~dp0..\系统清理与优化工具_v1.10.exe ...
-copy /Y "%OUT%" "%~dp0..\系统清理与优化工具_v1.10.exe" >nul
+REM --- 从 csproj 自动读取 AssemblyVersion（如 1.0.16.0 → v1.16）---
+set "VER=v0.00"
+for /f "tokens=*" %%v in ('findstr /i "<FileVersion>" "%~dp0CpqSystemTool.csproj"') do (
+    for /f "tokens=2 delims=<>" %%a in ("%%v") do set "FV=%%a"
+)
+if defined FV (
+    for /f "tokens=1,2 delims=." %%m in ("%FV%") do (
+        set "MAJOR=%%m"
+        set "MINOR=%%n"
+    )
+    REM 补零：确保 MINOR 是两位（如 1.6 → 06，1.16 → 16）
+    if "%MINOR:~1,1%"=="" set "MINOR=0%MINOR%"
+    set "VER=v%MAJOR%.%MINOR%"
+)
+echo [3/3] Deploying to %~dp0..\系统清理与优化工具_%VER%.exe ...
+copy /Y "%OUT%" "%~dp0..\系统清理与优化工具_%VER%.exe" >nul
 if %errorlevel%==0 (
-    echo Done. New exe deployed.
+    echo Done. New exe deployed: 系统清理与优化工具_%VER%.exe
 ) else (
     echo [!] Copy failed (file in use?). Close the running exe first, then re-run this script.
 )
