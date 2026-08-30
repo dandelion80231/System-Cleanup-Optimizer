@@ -75,7 +75,6 @@ namespace CpqSystemTool
     // ===================== 静态数据 + 纯逻辑（由 official_exe_finder.js 移植） =====================
     internal static class ProbeData
     {
-        public const string UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
         public const int VerifyTimeout = 15000;
 
         public static readonly Regex ExeBinCt = new Regex("application/octet-stream|application/x-msdownload|application/x-msdos-program|application/force-download|binary", RegexOptions.IgnoreCase);
@@ -129,6 +128,10 @@ namespace CpqSystemTool
             { "wechat", "https://pc.weixin.qq.com/" },
             { "微信", "https://pc.weixin.qq.com/" },
             { "weixin", "https://pc.weixin.qq.com/" },
+            // Geek Uninstaller：官方直链静态可访问（HTTP 200, application/octet-stream），无需浏览器渲染
+            { "geek", "https://geekuninstaller.com/geek.exe" },
+            { "geekuninstaller", "https://geekuninstaller.com/geek.exe" },
+            { "Geek Uninstaller", "https://geekuninstaller.com/geek.exe" },
         };
 
         public static readonly Dictionary<string, string> VendorCanon = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -144,6 +147,7 @@ namespace CpqSystemTool
             { "xshell", "xshell" }, { "xshell7", "xshell" }, { "netsarang", "xshell" },
             { "kimi", "kimi" }, { "kimi智能助手", "kimi" }, { "月之暗面", "kimi" },
             { "wechat", "wechat" }, { "微信", "wechat" }, { "weixin", "wechat" },
+            { "geek", "geek" }, { "geekuninstaller", "geek" }, { "Geek Uninstaller", "geek" },
         };
 
         public static readonly Dictionary<string, List<string>> OfficialDomains = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
@@ -263,18 +267,33 @@ namespace CpqSystemTool
             return (official, lowTrust);
         }
 
+        // 性能优化：Classify 会对每个候选链接调用一次，原来每次调用都 new 4 个 Regex
+        // （构造 + JIT 编译 + 缓存预热，是纯浪费）。提为静态只读：编译一次、永久复用。
+        private static readonly Regex ReExe = new Regex(@"\.exe(\?|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex ReX64 = new Regex(@"x64|x86[_-]?64|win64|amd64|64bit", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex ReNoX64 = new Regex(@"no-?x64", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex ReArm64 = new Regex(@"arm64|aarch64", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex ReX86 = new Regex(@"(^|[._-])x86([._-]|$)|win32|ia32|32bit", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        // 旧版/拒绝名单：原来是每次调用 new 出来的 4 个实例，同样提为静态只读。
+        private static readonly Regex[] Denylist =
+        {
+            new Regex("PCQQ9\\.7\\.25", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            new Regex("-old[._-]", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            new Regex("_old[._-]", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            new Regex("old\\b(?:version)?", RegexOptions.IgnoreCase | RegexOptions.Compiled)
+        };
+
         // 架构 / 是否 exe / 是否明显旧版
         public static (bool isExe, bool isX64, bool isArm64, bool isX86, bool denylisted) Classify(string rawUrl)
         {
             var url = rawUrl.Split('#')[0];
             var lower = url.ToLowerInvariant();
             var fn = Uri.UnescapeDataString(url.Split('?')[0].Split('/').Length > 0 ? url.Split('?')[0].Split('/')[url.Split('?')[0].Split('/').Length - 1] : "");
-            bool isExe = Regex.IsMatch(url, @"\.exe(\?|$)", RegexOptions.IgnoreCase);
-            bool isX64 = isExe && Regex.IsMatch(lower, @"x64|x86[_-]?64|win64|amd64|64bit", RegexOptions.IgnoreCase) && !Regex.IsMatch(lower, @"no-?x64", RegexOptions.IgnoreCase);
-            bool isArm64 = isExe && Regex.IsMatch(lower, @"arm64|aarch64", RegexOptions.IgnoreCase);
-            bool isX86 = isExe && Regex.IsMatch(lower, @"(^|[._-])x86([._-]|$)|win32|ia32|32bit", RegexOptions.IgnoreCase) && !isX64;
-            var denylist = new[] { new Regex("PCQQ9\\.7\\.25", RegexOptions.IgnoreCase), new Regex("-old[._-]", RegexOptions.IgnoreCase), new Regex("_old[._-]", RegexOptions.IgnoreCase), new Regex("old\\b(?:version)?", RegexOptions.IgnoreCase) };
-            bool denylisted = Array.Exists(denylist, r => r.IsMatch(url) || r.IsMatch(fn));
+            bool isExe = ReExe.IsMatch(url);
+            bool isX64 = isExe && ReX64.IsMatch(lower) && !ReNoX64.IsMatch(lower);
+            bool isArm64 = isExe && ReArm64.IsMatch(lower);
+            bool isX86 = isExe && ReX86.IsMatch(lower) && !isX64;
+            bool denylisted = Array.Exists(Denylist, r => r.IsMatch(url) || r.IsMatch(fn));
             return (isExe, isX64, isArm64, isX86, denylisted);
         }
     }
@@ -658,7 +677,6 @@ namespace CpqSystemTool
                     var next = loc.IsAbsoluteUri ? loc.AbsoluteUri : new Uri(new Uri(rawUrl), loc.ToString()).AbsoluteUri;
                     return await VerifyExeAsync(next, depth + 1);
                 }
-                bool verified = code >= 200 && code < 300 && ProbeData.ExeBinCt.IsMatch(ct);
                 return new VerifyResult
                 {
                     url = rawUrl,
