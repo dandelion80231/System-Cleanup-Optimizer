@@ -74,7 +74,6 @@
 <ul><li><strong>自定义软件 ID 路径穿越封禁</strong>：<code>swinst_</code> 临时目录路径直接拼接用户输入，恶意 <code>..\</code> 可逃逸 %TEMP%；修复：输入层校验 ID 仅允许 <code>[A-Za-z0-9_-]</code>（长度 1-64），使用 <code>SanitizeSwId</code> 防御性清洗。</li><li><strong>Defender 状态缓存跨线程同步</strong>：<code>_cacheRealtime</code> 等 6 个静态缓存字段后台线程写、UI 线程读；修复：全部 <code>volatile</code> + <code>_cacheLock</code> 整体包住刷新/读取。</li><li><strong>安全加固</strong>：MAS 激活改走系统目录完整路径 <code>powershell.exe</code> + <code>-EncodedCommand</code>，消除 PATH 劫持风险；Chocolatey OData 过滤的 <code>id</code> 加白名单校验；Office 部署 XML 中 <code>pid</code>/<code>channel</code> 用 <code>SecurityElement.Escape</code> 转义。</li></ul>
 <h4>🧹 项目卫生（v1.17 即时清理）</h4>
 <ul><li>清理工作目录：删除 15+ 个备份文件（.bak*）、10+ 个日志文件、4 个临时目录（<code>.bak_pagecache_*</code> / <code>site-css</code> / <code>site-js</code> / <code>.bak_*</code>）。</li><li>建立长期记忆规则：禁止在交付目录保留无版本号副本；清理 <code>.bak*</code> 备份、<code>.log</code> 日志、<code>.bak_*</code> 临时目录。</li><li>Git commit: e60ec39 chore: 清理备份文件和日志</li></ul>
-<p>---</p>
 </div>
         </div>
         <div class="tl-item">
@@ -109,7 +108,6 @@
 <blockquote>相对 v1.12 的源码变更：按「基础设计缺失扫描」结论整体补强——exe 自替换原子化、全局操作防重入、配置原子写入、危险操作确认、更新状态锁，并新增两处 UI 提醒。</blockquote>
 <h4>🛡️ 健壮性 / 补强</h4>
 <ul><li><strong>清理页 CheckBox 垂直对齐修复（v1.13 补丁）</strong>：清理项列表的 CheckBox 由垂直居中改为<strong>顶端对齐 + 3px 微调</strong>，与文字顶端对齐（修复部分项 CheckBox 视觉偏低的上下错位）；WrapPanel 换行行为保持不变。</li><li><strong>「检查更新」IPv4 直连修复（v1.13 补丁·核心原因）</strong>：根因是 <code>.NET Framework 4.8</code> 的 <code>HttpWebRequest</code> DNS 解析 <strong>IPv6 优先且失败不回退 IPv4</strong>，而 Cloudflare Pages 返回 AAAA 记录、本机无 IPv6 连通 → 直接超时"无法连接"（浏览器有 Happy Eyeballs 自动回退所以正常）。修复：<code>DownloadStringWithProxyFallback</code> 首选「手动解析 A 记录 → IP 直连 + Host 头保留域名（SNI/证书正确）」，系统代理 / Watt Toolkit 作回退；顺带每次显式升 TLS 1.2。</li><li><strong>exe 自替换原子化（P0）</strong>：<code>ApplyPendingBakeIfAny</code> 由「先改名后替换」两步改为 <code>MoveFileEx</code> 原子替换（<code>MOVEFILE_REPLACE_EXISTING|WRITE_THROUGH</code>），占用时回退「改名+移入」并带<strong>失败回滚</strong>——中途失败不再让主程序停在 <code>.old</code>，自包含更新始终可用。</li><li><strong>全局操作防重入（P1）</strong>：新增 <code>OperationLock</code> 全局互斥，清理 / 优化 / 安全防护（Defender 禁用/恢复、开关、防火墙规则、更新管理）等耗时操作同一时间只允许一个——按钮连点或跨模块并发不再并行删同目录 / 并行写同注册表键；冲突时提示「已有XX操作正在运行」。</li><li><strong>配置原子写入（P1）</strong>：<code>ConfigBackup.Save</code> / <code>Theme.SaveBackgroundSettings</code> / <code>SoftwareDefPersistence.StageBake</code> 由 <code>WriteAllText</code> 直写改为「同目录 tmp + <code>MoveFileEx</code> 原子替换」——崩溃不再留半截 JSON 导致配置静默丢失。</li><li><strong>危险操作确认（P1）</strong>：「开始优化」「一键禁用 Defender」「清理策略残留」「移除防火墙规则」等此前点击即执行的高危操作，补 YesNo 确认对话框。</li><li><strong>更新状态锁（P1）</strong>：「检查更新」「下载更新」加 <code>_checkingUpdate</code> / <code>_downloadingUpdate</code> 状态锁 + 按钮禁用联动——并发触发不再竞态写更新地址 / 重复弹下载框。</li><li><strong>UI 提醒（P2）</strong>：「关闭系统还原」优化项下方常驻提示「⚠ 关闭系统还原后，危险操作将失去还原点兜底」；配置目录不可写时首次弹窗告知（含路径），不再静默失败。</li></ul>
-<p>---</p>
 </div>
         </div>
         <div class="tl-item">
@@ -120,7 +118,6 @@
 <ul><li><strong>单实例保护（v1.12 补丁）</strong>：此前无任何 Mutex 保护，双击 exe 可无限多开窗口；现在同一时间只允许一个实例——第二实例启动时自动激活已有窗口（最小化则恢复前台）并退出，不再创建新窗口；Mutex 获取异常时放行启动，保证工具始终可用。</li></ul>
 <h4>♻️ 重构 / 清理</h4>
 <ul><li><strong>下载实现统一（<code>Helpers/Downloader.cs</code>）</strong>：此前 4 套重复的 HTTP 下载逻辑（About 代理回退下载 / AppxManager 断点续传 / WebView2ProbeDeps 进度下载 / OfficeInstall 过时 <code>WebClient</code>）合并为单一 <code>Downloader.DownloadAsync</code>——支持重试、进度回调、请求级超时（CTS）、代理回退、断点续传（Range）、UA 注入；后续修下载类 bug 只需改一处，行为一致。</li><li><strong>后台线程 Dispatcher 调用全部加兜底</strong>：全项目甄别 35 处 <code>Dispatcher.Invoke/BeginInvoke</code>，其中 32 处后台线程调用（下载进度回调、Appx/软件页 ThreadPool 加载、Defender/防火墙状态刷新、还原点列表、内存分析、系统事件线程等）统一补 <code>try { } catch { /* 窗口已关闭，忽略 */ }</code>——后台任务运行中关闭窗口不再因 Dispatcher 关停抛未处理异常导致进程终止（延续 v1.11 的 RunInBg 修复，封死剩余面）。</li><li><strong>消除全部 <code>.Result</code>（sync-over-async）</strong>：9 处阻塞等待全部改造——ChocolateyResolver 解析链、SoftwareInstall 下载/安装/页面解析链真 async 化（<code>TryResolveAsync</code>/<code>DownloadAsync</code>/<code>ResolveAsync</code>/<code>InstallAsync</code>），ProbeBrowserHost 已 await 完成取值改 <code>GetAwaiter().GetResult()</code>；全项目 <code>.Result</code> 清零，消除死锁隐患。</li></ul>
-<p>---</p>
 </div>
         </div>
         <div class="tl-item">
@@ -133,7 +130,6 @@
 <ul><li><strong>官方直链探针候选验证并行化</strong>：串行 <code>foreach + await</code> → <code>SemaphoreSlim(5)</code> + <code>Task.WhenAll</code>（保序），多候选场景最坏 225s → 约 45s（5 倍提速）。</li><li><strong>常用软件页注册表枚举缓存</strong>：3 个 Uninstall 根一次性枚举 + 5s TTL 内存缓存，页面渲染枚举成本 O(100×N) → O(N)。</li><li><strong>WebView2 就绪检测缓存</strong>：<code>CheckWebView2ReadyAsync</code> 30s TTL（成功/失败均缓存）+ 「管理依赖」重入锁，反复打开秒回。</li><li><strong>Chocolatey / 页面解析结果缓存</strong>：24h TTL（失败不缓存），重复安装每次省 2~6s。</li><li><strong>日志框写入优化</strong>：进度行 O(n) 全量读写 → TextBox 行索引定位 O(log n)；长日志（&gt;500 行）滚动降频，减轻 UI 线程布局压力。</li></ul>
 <h4>♻️ 重构 / 清理</h4>
 <ul><li><strong><code>MainWindow.Pages.cs</code> 拆分</strong>：5,599 → 833 行，按功能域拆 8 个 partial（Tweaks/Appx/Software/About/Security/Config/Cleanup/SystemTools）+ 2 个独立类（<code>StoreSearchWindow</code>/<code>BoolToBrushConverter</code>）。</li><li><strong>日志统一</strong>：113 处「异常(已忽略)」内联复制 → 公共 <code>DebugLog.Ignore(ex)</code>。</li><li><strong>公共工具收编</strong>：版本比较两套合一（<code>VersionUtil</code>）、MiniJson 双实现合一（<code>MiniJson</code>）、3 处版本名映射字典合一（<code>EditionMap</code>，单一数据源双向查询）。</li><li><strong>Config 路径集中</strong>：4 处 <code>BaseDirectory\Config</code> 硬编码 → <code>AppPaths.ConfigDir</code>。</li><li><strong>HttpClient 静态单例复用</strong>：4 处「用完即弃」<code>new HttpClient</code> → 共享单例，消除 socket TIME_WAIT 堆积；请求级超时（CTS）与 UA/Referer 注入，探针专用单例保留。</li></ul>
-<p>---</p>
 </div>
         </div>
         <div class="tl-item">
@@ -149,7 +145,6 @@
 <ul><li><strong>软件安装下载修复</strong>：<code>DownloadAsync</code> 改用 <code>Downloader.DownloadAsync</code>，开启 <code>useProxyFallback: true</code>（系统代理 → 直连 → Watt Toolkit 本地代理依次尝试），最多重试 3 次、间隔 5 秒，解决代理环境下直连失败导致永久挂起的问题。</li><li><strong>便携版支持自定义安装目录</strong>：<code>IsPortable</code> 单文件分支（如 Geek Uninstaller）优先使用用户指定的 <code>customDir</code>，不再硬编码 <code>%LOCALAPPDATA%\CpqSystemTool\Portable\&lt;id&gt;\</code>。</li><li><strong>保留 Referer 支持</strong>：<code>Downloader.DownloadAsync</code> 新增可选 <code>referer</code> 参数，<code>SoftwareInstall.DownloadAsync</code> 透传 <code>SoftwareDef.Referer</code>，确保哔哩哔哩等需要 Referer 头的软件仍可正常下载。</li></ul>
 <h4>🔧 发布后跟进（v1.10 即时修补）</h4>
 <ul><li><strong>内存拆解「使用中为 0」+ 天文数字 GB（根因修复）</strong>：<code>Modules/MemoryAnalyzer.cs</code> 的 PDH 格式常量 <code>PDH_FMT_LARGE</code> 被误写成 <code>0x00000200</code>（该值实为 <code>PDH_FMT_DOUBLE</code>）。代码据此请求 DOUBLE 格式却又用 <code>cv.longValue</code>（64 位整数）读取，把 IEEE-754 double 的二进制位当成整数读 → 出现数十亿 GB 的假数据；进而「可用 + 已修改」远大于总物理内存，使「使用中 = 总 − 可用 − 已修改」被钳为 0。修复：补 <code>PDH_FMT_DOUBLE = 0x00000200</code> 并将 <code>PDH_FMT_LARGE</code> 改正为 <code>0x00000400</code>，<code>fmt</code> 现在真正请求 LARGE 格式、<code>longValue</code> 读取合法 → 「使用中」显示真实值、各项字节数回归正常量级。</li><li><strong>内存优化「点了没反应」</strong>：「清空备用列表 / 清空所有进程工作集」两个按钮执行后未重新分析内存，拆解视图一直冻结，误以为优化无效（RAMMap 清理后即可瞬间看到变化）。修复：两个 <code>RunInBg</code> 调用补充第 4 参 <code>onDoneUi = () =&gt; DoMemoryAnalyze(pb, applyUi)</code>，在后台优化完成后于 UI 线程自动重新抓取并刷新「内存使用拆解」视图，效果即时可见。</li></ul>
-<p>---</p>
 </div>
         </div>
         <div class="tl-item">
@@ -159,7 +154,6 @@
 <h4>✨ 新增</h4>
 <ul><li><strong>Whesvc 诊断日志清理</strong>：在「系统文件」清理类新增 <code>Whesvc 诊断日志</code> 项（默认不勾选），清理 <code>C:\Windows\Temp\DiagOutputDir\Whesvc</code> 下 Windows 健康状况和优化体验服务生成本地性能追踪 ETL 日志。该日志可安全删除、服务重新启用时会再生；服务运行时文件被占用会自动跳过。</li><li><strong>服务项优化新增 <code>whesvc</code></strong>：在可禁用服务清单新增「Windows 健康状况和优化体验」，风险等级 <code>mid</code>，说明注明「本地性能诊断日志(占C盘)，关掉无性能提升、笔记本可能影响节能」。</li></ul>
 <h4>♻️ 变更 / 策略</h4>
-<p>---</p>
 </div>
         </div>
         <div class="tl-item">
@@ -170,7 +164,6 @@
 <ul><li><strong>关于页新增官网地址</strong>：在「开发者与协议」卡片新增 <code>官网：cpq-system-tool.pages.dev</code> 链接，指向 https://cpq-system-tool.pages.dev/。</li></ul>
 <h4>♻️ 变更 / 策略</h4>
 <ul><li><strong>检查更新改为从官网 version.json 获取新版本</strong>：原检查更新从 GitHub Releases API 拉取 <code>tag_name</code>，现改为读取官网根 <code>version.json</code> 的 <code>version</code>/<code>name</code>/<code>url</code> 字段，普通用户无需访问 GitHub、下载更快；版本比较与「下载更新」弹窗逻辑保持不变。</li><li><strong>官网安装包统一改为中文名</strong>：官网托管与下载页全部 exe 由 <code>System-Cleanup-Optimizer_vX.XX.exe</code> 改为 <code>系统清理与优化工具_vX.XX.exe</code>（v1.01–v1.08），<code>version.json</code> 的 <code>name</code>/<code>url</code> 同步使用中文名；GitHub Release 资产保留英文名 <code>System-Cleanup-Optimizer_v1.08.exe</code>（规避 gh 中文文件名截断）。</li></ul>
-<p>---</p>
 </div>
         </div>
         <div class="tl-item">
@@ -181,7 +174,6 @@
 <ul><li><strong>「安装到」按钮背景/字体色随主题切换</strong>：自定义安装路径态此前硬编码浅薄荷背景 <code>Color.FromRgb(0xE6,0xF7,0xF4)</code>，深色模式下始终不变；现改为主题笔刷 <code>_btnSecondaryBg</code> + <code>_accent</code> 高亮文字/边框，与默认态均随深/浅色自动变换。</li><li><strong>修复自定义下拉「浮到最顶层」</strong>：「管理依赖」「全部分类」两个 Popup（AllowsTransparency=true 会以独立顶层 HWND 带 WS_EX_TOPMOST 渲染）在打开时剥离 WS_EX_TOPMOST，并挂 HwndSource Hook 在 WM_WINDOWPOSCHANGED 时持续剥离，使其落到正常层级、 不再压在所有窗口（含其他应用）之上（<code>UiShapes.DisablePopupTopmost</code>）。</li></ul>
 <h4>♻️ 变更 / 策略</h4>
 <ul><li><strong>统一全部 ComboBox 深/浅色自适应</strong>：新增 <code>UiShapes.ApplyComboBoxTheme</code>，以自定义 ControlTemplate（闭合框 + 下拉弹层均引用主题键）+ ComboBoxItem 样式，让 7 个 ComboBox（版本切换目标 / Office 版本 / Edge 频道 / 驱动引擎 / 分组 / 软件分类 / 风险等级）的背景、字体、边框与下拉弹层（含选中/悬浮态）统一跟随深/浅色主题笔刷，替代默认跟随系统色的 Aero2 模板（深模式下弹层为刺眼白底）；弹层刻意关闭 AllowsTransparency 以复用默认 ComboBox 的非置顶行为，避免重新引入浮层问题。</li></ul>
-<p>---</p>
 </div>
         </div>
         <div class="tl-item">
@@ -198,7 +190,6 @@
 <ul><li>抽出 <code>AppendOrReplaceLog</code>（原地百分比进度重写）、<code>repositionDepsPopup</code>（主窗口拖动时下拉跟随）等局部优化。</li></ul>
 <h4>🔧 发布后跟进（v1.06 即时修补）</h4>
 <ul><li><strong>WebView2 探针依赖下载改为 API 自身异步卸载</strong>：<code>WebView2ProbeDeps.EnsureWebView2ProbeDeps</code> 重构为 <code>EnsureWebView2ProbeDepsAsync</code>（真正异步、下载走线程池、可 await），<code>ProbeBrowserHost.InitAsync</code> 与 <code>CheckWebView2ReadyAsync</code> 改为直接 <code>await</code>，不再依赖「调用方用 Task.Run 包裹」的约定来避免 UI 冻结；保留同步兼容包装供后台线程（RunInBg）调用方使用，全程 <code>ConfigureAwait(false)</code> 无死锁风险。</li><li><strong>抽取 <code>UiShapes.MakeTextWithArrowGrid</code></strong>：消除「管理依赖」「全部分类」两处下拉按钮重复的「文字 + 右侧箭头」2 列 Grid 构造，统一由共享方法生成（布局与原先完全一致）。</li></ul>
-<p>---</p>
 </div>
         </div>
         <div class="tl-item">
@@ -215,7 +206,6 @@
 <ul><li><strong>DriverStorePanel</strong>：删除 4 个声明赋值后从未读取的死画刷字段；强制删除按钮去硬编码红边，改用主题画刷 <code>_dangerDark</code>。</li><li><strong>SoftwareInstall</strong>：安装器等待逻辑加入心跳日志（每 10 秒输出一次进度），不加重试、保持原有超时/Kill/退出码行为。</li></ul>
 <h4>📄 文档 / 合规</h4>
 <ul><li><strong>驱动清理模块许可证澄清</strong>：上游 Driver Store Explorer（RAPR）实际采用 GPL v2 许可（与本项目 Apache-2.0 不兼容）。经核查本仓库未包含其任何源代码，驱动清理为基于 Windows 原生 <code>SetupAPI</code> / <code>PnPUtil</code> / <code>DISM</code> 的独立实现，仅界面列布局与行为设计受其启发。已将 README / NOTICE 措辞修正为「参考 / 独立实现」，并在 NOTICE 补充「第三方来源与致谢」（非隶属、非衍生声明）。本澄清不影响 Apache-2.0 许可合规性。</li></ul>
-<p>---</p>
 </div>
         </div>
         <div class="tl-item">
@@ -226,7 +216,6 @@
 <ul><li><strong>Edge 优化「恢复不掉」根因修复（两层）</strong>：① <code>Tweaks.cs</code> 前 4 个 Edge 优化项（欢迎页/标签页性能检测/新标签页资讯/个性化广告）的 <code>Disable</code> 原误写成「设值 0/1」而非「删除策略值」，Edge 检测到有值即视为「由组织管理」而恢复不掉；改为 <code>DeleteEdgePolicy</code> 彻底删除。② <code>ApplyChecked</code> 原只对勾选项做启用、不处理取消勾选项，导致「取消勾选 + 开始优化」什么都不做；改为 WYSIWYG 全量纳入。</li><li><strong>Edge 组策略双 hive 彻底清除</strong>：<code>RegistryHelper</code> 新增 <code>EdgePolicyHives</code>（HKCU + HKLM）辅助块（<code>SetEdgePolicy</code> / <code>SetEdgePolicyRecommended</code> / <code>DeleteEdgePolicy</code> / <code>DeleteEdgePolicyRecommended</code> / <code>DeleteEdgePolicyTree</code> / <code>GetEdgePolicyState</code> / <code>GetEdgePolicyRecommendedState</code>）。仅清 HKLM 会因 HKCU 残留而清不掉「由组织管理」状态，现统一双 hive 操作。<code>EdgeCore</code> 的 <code>BlockEdgeUpdate</code> / <code>RestoreEdgeUpdate</code> / <code>SetStartupBoost</code> / <code>IsStartupBoostEnabled</code> 同步迁移到双 hive。<code>DeleteKeyTree</code> 增加「键不存在即视为成功」前置判断，避免 HKCU 无 Edge 键时的误报 <code>[!] 删键失败</code>。</li><li><strong>系统信息版本显示本地化</strong>：<code>Modules/SystemInfo.cs</code> 按 <code>CurrentBuild</code> 判断 Windows 代际（11/10/8.1/8/7），并将 <code>EditionID</code> 与 <code>ProductName</code> 中的版本片段映射为中文（如 <code>ProfessionalWorkstation</code> / <code>Pro for Workstations</code> → "专业工作站版"）；原英文 <code>Build:</code> 改为中文 <code>版本号：</code>。映射表已覆盖 Windows 10/11 全部主流版本（含 N / S(LTSC) / S 模式 / IoT 企业版 / 服务器 / 多会话），并按键长降序匹配避免短片段误命中。<strong>映射缺失时优雅降级为英文原文（EditionID 或 ProductName 去 "Windows X " 前缀后的片段），绝不报错。</strong></li></ul>
 <h4>♻️ 变更 / 策略</h4>
 <ul><li><strong>WYSIWYG 应用策略（勾选即优化、取消即还原）</strong>：底部「开始优化」按钮按当前勾选状态应用【所有】项——勾选=启用优化(On)，取消=还原系统默认(Off)；三态项的不确定=交还系统默认(Default)。因此「取消勾选 + 开始优化」即可单独还原某项，无需动用「还原所有项」误伤其它优化项。顶部说明文案同步更新。</li><li><strong>Edge 优化首次勾选提示</strong>：首次勾选「Edge优化」组任一项时弹 YesNo 提示，说明组策略副作用（edge://management 显示「由你的组织管理」为固有表现，非故障），本次会话仅提示一次。</li><li><strong>清理兜底降级</strong>：<code>Cleanup.cs</code> 删除失败改用 <code>Exec.RunPowerShellGetFull</code> 捕获 stderr/exitCode；「文件正被另一进程使用」属预期（程序运行中），降级为安静 <code>[SKIP]</code> 提示，不再刷 <code>[PS-ERR]</code> 噪声；其余真实错误仍如实暴露。</li><li><strong>版本切换下拉默认本机版本</strong>：<code>vsTargetCombo</code> 默认选中当前系统 <code>EditionID</code>，不再固定首项。</li><li><strong>更新下载代理回退增强</strong>：<code>DownloadStringWithProxyFallback</code> / <code>DownloadFileWithProxyFallback</code> 依次尝试 系统代理 → 直连 → 本地常见回环代理端口 三层自动回退；<code>DownloadUpdate</code> 改为 <code>async/await</code> 替代原 <code>Task.Run</code> + <code>while(IsBusy) Sleep</code> 忙等轮询。</li><li><strong>版本号规范化（恢复两段式）</strong>：v1.03 → v1.04，<strong>统一回到本项目两段式惯例 <code>vX.YY</code></strong>（历史 v1.01 / v1.02 / v1.03 均为两段；上一版误用三段式 <code>v1.0.4</code> 导致「检查更新」段位错位误报「已高于线上」）。同步 csproj（1.0.4.0，内部程序集版本保持不变）/ <code>APP_VERSION</code>（<code>v1.04</code>）；交付文件名 <code>系统清理与优化工具_v1.04.exe</code>。<code>CompareVersion</code> 保留 <code>NormalizeVersion</code> 防御层（两段且第二段≤9 自动补 0），杜绝日后混用。</li></ul>
-<p>---</p>
 </div>
         </div>
         <div class="tl-item">
@@ -237,7 +226,6 @@
 <ul><li><strong>安全加固（信任边界）</strong>：MAS 激活改走系统目录完整路径 <code>powershell.exe</code> + <code>-EncodedCommand</code>，消除 PATH 劫持风险；Chocolatey OData 过滤的 <code>id</code> 加白名单 <code>^[A-Za-z0-9.\-]+$</code> 校验；Office 部署 XML 中 <code>pid</code>/<code>channel</code> 用户值用 <code>SecurityElement.Escape</code> 转义；WebView2 引导程序与 Office 安装包下载加存在性与非空校验，避免对损坏文件静默执行。</li><li><strong>健壮性</strong>：维护工具依赖检测异常由空 <code>catch{}</code> 改为 <code>Debug.WriteLine</code> 可见日志，不再把检测异常误报为 Node 未安装；<code>ProbeBrowserHost</code> 同步异常路径经 <code>TaskCompletionSource</code> 传播，避免调用方 <code>.GetAwaiter().GetResult()</code> 永久挂起。</li></ul>
 <h4>🔧 变更 / 清理</h4>
 <ul><li><strong>Dialog 脚手架复用</strong>：标题栏与错误提示公共逻辑提取到 <code>DialogChrome</code>（新增 <code>ShowError</code> / <code>BuildTitleBar</code>），3 个 Dialog 复用，减少重复；删除 <code>Theme.cs</code> 冗余 <code>Debug.WriteLine</code>、死文档注释、冗余列宽赋值。</li><li><strong>Tier3 勾选大小求和修复</strong>：原写法在非连续勾选时会错位，改为索引对齐配对遍历。</li><li><strong>注册表 Dword 读取模板统一</strong>：多处 <code>try{OpenSubKey...is int v}</code> 模板收敛为 <code>RegistryHelper.GetDwordState</code>。</li><li><strong>关于页更新体验增强</strong>：检测到新版本后新增「下载更新」按钮，支持自选保存路径下载新 exe；更新日志区域增加 <code>ScrollViewer</code> 并限制最大高度，避免版本增多后卡片无限拉长。</li><li><strong>更新下载健壮性修复</strong>：下载直链改由 GitHub API 返回的 <code>browser_download_url</code> 取得（避免本地拼中文资产名与线上实际英文名不一致导致 404）；下载增加系统代理 → 直连 → <code>127.0.0.1:26561</code> 三层自动回退，解决无代理环境下连接 GitHub CDN 失败的问题。</li><li><strong>版本号规范化</strong>：v1.02 → v1.03，同步 6 处。</li></ul>
-<p>---</p>
 </div>
         </div>
         <div class="tl-item">
@@ -250,7 +238,6 @@
 <ul><li><strong>WebView2 官方 exe 直链探针模块</strong>：<code>Modules/ProbeBrowserHost.cs</code>（独立 STA 线程 + WinForms 承载 WebView2，复用系统 Edge Runtime，主动扫描 <code>msedgewebview2.exe</code> 绕过损坏注册表）与 <code>Modules/ProbeEngine.cs</code>（参考 official_exe_finder.js 的纯逻辑引擎，独立实现）。</li><li><strong>依赖管理 UI 增强</strong>（<code>MainWindow.Maint.cs</code>，+363 行）：Node + Playwright + Chromium 回退路径的安装 / 卸载与状态刷新；<code>IsNodeDepsReady</code> 收口为统一就绪判定。</li></ul>
 <h4>🔧 变更</h4>
 <ul><li><strong>版本号规范化</strong>：v1.01 → v1.02，同步 6 处（csproj 版本号 / app.manifest / <code>APP_VERSION</code> / 关于页更新日志 / README / build.bat）。</li><li><strong>交付文件名带版本号</strong>：<code>系统清理与优化工具_v1.02.exe</code>（保留 AssemblyName=中文名，仅部署文件名带版本，避免资源 URI 连锁修改）。</li><li><strong>代码审查确认</strong>：Node + Playwright + Chromium 回退路径代码健康可用（本轮无代码改动，仅验证）。</li></ul>
-<p>---</p>
 </div>
         </div>
         <div class="tl-item">
