@@ -316,11 +316,15 @@ namespace CpqSystemTool
         };
 
         // 初始化 TLS 安全协议：确保使用 TLS 1.2+，兼容现代 HTTPS 服务器
+        // .NET Framework 4.8 默认可能只启用 TLS 1.0/1.1，需要显式启用 TLS 1.2
         static ProbeEngine()
         {
+            var original = System.Net.ServicePointManager.SecurityProtocol;
             System.Net.ServicePointManager.SecurityProtocol |=
                 System.Net.SecurityProtocolType.Tls12 |
                 System.Net.SecurityProtocolType.Tls13;
+            var modified = System.Net.ServicePointManager.SecurityProtocol;
+            System.Diagnostics.Debug.WriteLine($"[DIAG] SecurityProtocol: {original} -> {modified}");
         }
 
         // UA 池：近期 Chrome/Edge 桌面 UA（Win11 x64），按静态计数器轮换，避免固定单一 UA 被目标站按指纹识别。
@@ -537,7 +541,7 @@ namespace CpqSystemTool
             try
             {
                 logf("   [DIAG] ProbeSiteFastAsync: entryUrl=" + entryUrl);
-                var got = await HttpGetAsync(entryUrl, MAX_REDIRECTS, 0, 8000);
+                var got = await HttpGetAsync(entryUrl, MAX_REDIRECTS, 0, 8000, logf);
                 logf("   [DIAG] HttpGetAsync 返回: ok=" + got.ok + ", status=" + got.status + ", isBinary=" + got.isBinary + ", bodyLen=" + (got.body?.Length ?? 0));
                 if (!got.ok)
                 {
@@ -738,7 +742,7 @@ namespace CpqSystemTool
             }
         }
 
-        private static async Task<(bool ok, int status, string finalUrl, string body, bool isBinary)> HttpGetAsync(string url, int maxRedirect, int depth, int timeoutMs)
+        private static async Task<(bool ok, int status, string finalUrl, string body, bool isBinary)> HttpGetAsync(string url, int maxRedirect, int depth, int timeoutMs, Action<string> logf = null)
         {
             if (depth > maxRedirect || !Uri.IsWellFormedUriString(url, UriKind.Absolute))
                 return (false, 0, url, "", false);
@@ -747,12 +751,14 @@ namespace CpqSystemTool
                 using var cts = new CancellationTokenSource(timeoutMs);
                 var req = new HttpRequestMessage(HttpMethod.Get, url);
                 ApplyBrowserHeaders(req, url);
+                logf?.Invoke("[DIAG] HttpGetAsync 发送请求: " + url + ", SecurityProtocol=" + System.Net.ServicePointManager.SecurityProtocol);
                 using var resp = await Http.SendAsync(req, cts.Token);
                 int code = (int)resp.StatusCode;
+                logf?.Invoke("[DIAG] HttpGetAsync 收到响应: StatusCode=" + code + ", Content-Type=" + (resp.Content.Headers.ContentType?.MediaType ?? "null"));
                 if (resp.Headers.Location != null && (code == 301 || code == 302 || code == 303 || code == 307 || code == 308))
                 {
                     var next = resp.Headers.Location.IsAbsoluteUri ? resp.Headers.Location.AbsoluteUri : new Uri(new Uri(url), resp.Headers.Location.ToString()).AbsoluteUri;
-                    return await HttpGetAsync(next, maxRedirect, depth + 1, timeoutMs);
+                    return await HttpGetAsync(next, maxRedirect, depth + 1, timeoutMs, logf);
                 }
                 var ct = (resp.Content.Headers.ContentType?.MediaType ?? "").ToLowerInvariant();
                 bool isBinary = ProbeData.ExeBinCt.IsMatch(ct) || ProbeData.ExeUrlRe.IsMatch(url);
@@ -767,7 +773,11 @@ namespace CpqSystemTool
                 if (body.Length > 5 * 1024 * 1024) body = body.Substring(0, 5 * 1024 * 1024);
                 return (true, code, url, body, false);
             }
-            catch { return (false, 0, url, "", false); }
+            catch (Exception ex)
+            {
+                logf?.Invoke("[DIAG] HttpGetAsync 异常: " + ex.GetType().Name + ": " + ex.Message);
+                return (false, 0, url, "", false);
+            }
         }
 
         private static async Task<VerifyResult> VerifyExeAsync(string rawUrl, int depth)
