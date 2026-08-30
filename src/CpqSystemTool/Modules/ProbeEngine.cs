@@ -306,7 +306,12 @@ namespace CpqSystemTool
         // 重定向步数硬上限：手动跟随重定向（AllowAutoRedirect=false）时避免无限循环/环回
         private const int MAX_REDIRECTS = 10;
 
-        private static readonly HttpClient Http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+        private static readonly HttpClient Http = new HttpClient(new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+            UseProxy = true,
+            Proxy = WebRequest.DefaultWebProxy,
+        })
         {
             Timeout = TimeSpan.FromMilliseconds(ProbeData.VerifyTimeout)
         };
