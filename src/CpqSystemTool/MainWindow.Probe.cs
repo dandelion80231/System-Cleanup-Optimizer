@@ -325,17 +325,19 @@ namespace CpqSystemTool
 
             // 优先尝试 WebView2 进程内探针（替代 Node + Chromium 依赖）。
             // CreateAsync 会通过系统注册表定位 Runtime；若注册表损坏则 ProbeBrowserHost 内部已改为显式扫描磁盘目录兜底。
-            bool webView2Succeeded = false;
+            bool webView2InitOk = false;   // WebView2 是否成功初始化（区别于是否拿到结果）
+            bool webView2GotResult = false; // 是否拿到了候选结果
             try
             {
                 logf("[*] 尝试 WebView2 进程内探针（直接调用本机 Edge，无需下载依赖）…");
                 // 安全网：探针初始化前确保 exe 目录存在 WebView2 托管依赖（单文件分发场景，
-                // 用户从未点过“修复/安装”时也要能拉到）。失败仅记录，探针随后回退 Node 方案。
+                // 用户从未点过"修复/安装"时也要能拉到）。失败仅记录，探针随后回退 Node 方案。
                 WebView2ProbeDeps.EnsureWebView2ProbeDeps(logf, p => logf(WebView2ProbeDeps.ProgressLine(p)));
                 using (var host = new ProbeBrowserHost())
                 {
                     if (host.InitAsync(TimeSpan.FromSeconds(20), logf).GetAwaiter().GetResult())
                     {
+                        webView2InitOk = true;
                         var res = ProbeEngine.RunAsync(input, skipDownloadCheck, host, logf).GetAwaiter().GetResult();
                         if (res != null && res.Rows.Count > 0)
                         {
@@ -343,10 +345,10 @@ namespace CpqSystemTool
                             recommended = res.Recommended;
                             searchLocated = res.SearchLocated;
                             logf("[✓] WebView2 探针完成（候选 " + rows.Count + " 个）");
-                            webView2Succeeded = true;
+                            webView2GotResult = true;
                             return;
                         }
-                        logf("[*] WebView2 探针未产出可用结果。");
+                        logf("[*] WebView2 探针未产出可用结果（软件可能仅商店分发或无直链）。");
                     }
                     else
                     {
@@ -361,9 +363,12 @@ namespace CpqSystemTool
                 logf("[!] WebView2 探针异常: " + ex.Message);
             }
 
-            if (webView2Succeeded) return;
+            if (webView2GotResult) return;
 
-            // 不再自动回退 Node：由用户选择，避免在用户已删 Node 测试 WebView2 时强行跑安装脚本。
+            // 初始化成功但无结果（如软件仅商店分发、网站 JS 动态渲染等），不弹 Node 切换框，静默结束。
+            if (webView2InitOk) return;
+
+            // WebView2 初始化失败时才提示用户切换到 Node 方案。
             bool switchToNode = false;
             try { Dispatcher.Invoke(new Action(() =>
             {
@@ -381,7 +386,7 @@ namespace CpqSystemTool
             }
             else
             {
-                logf("[*] 已取消自动回退。可在「维护工具 → 管理依赖」中修复 WebView2 Runtime 或安装 Node 方案后再试。");
+                logf("[*] 未切换到 Node 探针，可在「维护工具 → 管理依赖」中修复 WebView2 Runtime 或安装 Node 方案后再试。");
             }
         }
 
@@ -481,7 +486,9 @@ namespace CpqSystemTool
             }
             catch (Exception ex)
             {
-                logf("[!] JSON 解析失败：" + ex.Message + "（原始输出已保留在日志中，可手动复制）");
+                // 修正：原日志称「原始输出已保留在日志中」，实现只回显前 4000 字符（超出部分硬编码截断丢弃），
+                // 说法与事实不符，故文案改为如实说明截断长度。
+                logf("[!] JSON 解析失败：" + ex.Message + "（下方回显原始输出前 4000 字符，超出部分已截断）");
                 if (!string.IsNullOrWhiteSpace(stdout))
                     logf(stdout.Length > 4000 ? stdout.Substring(0, 4000) : stdout);
             }

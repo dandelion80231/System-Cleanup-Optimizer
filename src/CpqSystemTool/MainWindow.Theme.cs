@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -14,50 +15,44 @@ namespace CpqSystemTool
     /// </summary>
     public partial class MainWindow
     {
-        // ---------- 自定义背景图（持久化到 Config\background.json） ----------
+        // ---------- 自定义背景（持久化到 Config\background.json） ----------
         private static string _bgSettingsPath => Path.Combine(AppPaths.ConfigDir, "background.json");
-        private string _customBgDarkPath = "";
-        private string _customBgLightPath = "";
-        private double _customBgDarkOpacity = 0.55;   // 深色默认半透明
-        private double _customBgLightOpacity = 1.0;   // 浅色默认不透明
 
         // 图片格式转换（pwsh 调用）超时：15 秒
         private const int IMAGE_CONVERT_TIMEOUT_MS = 15000;
 
-        /// <summary>从 Config\background.json 加载自定义背景设置</summary>
+        /// <summary>从 Config\background.json 加载背景设置到 _backgroundSettings。</summary>
         private void LoadBackgroundSettings()
         {
             try
             {
                 if (!File.Exists(_bgSettingsPath)) return;
                 var json = File.ReadAllText(_bgSettingsPath, System.Text.Encoding.UTF8);
-                // 极简 JSON 解析（避免依赖外部库）：找 "DarkPath":"..." 和 "LightPath":"..."
-                var d = ExtractJsonString(json, "DarkPath");
-                var l = ExtractJsonString(json, "LightPath");
-                var do_ = ExtractJsonDouble(json, "DarkOpacity");
-                var lo = ExtractJsonDouble(json, "LightOpacity");
-                if (d != null && File.Exists(d)) _customBgDarkPath = d;
-                if (l != null && File.Exists(l)) _customBgLightPath = l;
-                if (do_.HasValue) _customBgDarkOpacity = do_.Value;
-                if (lo.HasValue) _customBgLightOpacity = lo.Value;
+                _backgroundSettings = BackgroundSettings.FromJson(json);
             }
             catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
+            if (_backgroundSettings == null) _backgroundSettings = new BackgroundSettings();
         }
 
-        /// <summary>保存自定义背景设置到 Config\background.json</summary>
-        private void SaveBackgroundSettings()
+        /// <summary>保存 _backgroundSettings 到 Config\background.json。</summary>
+        public void SaveBackgroundSettings()
         {
             try
             {
+                if (_backgroundSettings == null) return;
                 Directory.CreateDirectory(Path.GetDirectoryName(_bgSettingsPath));
-                var json = "{\n  \"DarkPath\": " + JsonStr(_customBgDarkPath) +
-                    ",\n  \"LightPath\": " + JsonStr(_customBgLightPath) +
-                    ",\n  \"DarkOpacity\": " + _customBgDarkOpacity.ToString(System.Globalization.CultureInfo.InvariantCulture) +
-                    ",\n  \"LightOpacity\": " + _customBgLightOpacity.ToString(System.Globalization.CultureInfo.InvariantCulture) +
-                    "\n}\n";
+                var json = _backgroundSettings.ToJson();
                 WriteFileAtomic(_bgSettingsPath, json);   // tmp + 原子替换，避免崩溃留下半截 JSON
             }
             catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  ShowConfigDirWarningOnce(); }
+        }
+
+        /// <summary>应用弹窗返回的设置并刷新窗口背景。</summary>
+        public void ApplyBackgroundSettings(BackgroundSettings settings)
+        {
+            if (settings == null) return;
+            _backgroundSettings = settings.Clone();
+            ApplyShellColors();
         }
 
         // ===== 原子写入：同目录 tmp + MoveFileEx 原子替换（不跨文件耦合，本类私有） =====
@@ -121,42 +116,7 @@ namespace CpqSystemTool
             catch { show(); }
         }
 
-        // ---------- 极简 JSON 工具（不引入额外依赖） ----------
-        private static string ExtractJsonString(string json, string key)
-        {
-            // 找 "Key":"value" 或 "Key": "value"
-            var idx = json.IndexOf("\"" + key + "\"");
-            if (idx < 0) return null;
-            var colon = json.IndexOf(':', idx);
-            if (colon < 0) return null;
-            var start = json.IndexOf('"', colon + 1);
-            if (start < 0) return null;
-            var end = start + 1;
-            while (end < json.Length)
-            {
-                if (json[end] == '\\') { end += 2; continue; }
-                if (json[end] == '"') break;
-                end++;
-            }
-            if (end >= json.Length) return null;
-            return json.Substring(start + 1, end - start - 1).Replace("\\\"", "\"").Replace("\\\\", "\\");
-        }
-
-        private static double? ExtractJsonDouble(string json, string key)
-        {
-            var idx = json.IndexOf("\"" + key + "\"");
-            if (idx < 0) return null;
-            var colon = json.IndexOf(':', idx);
-            if (colon < 0) return null;
-            int i = colon + 1;
-            while (i < json.Length && char.IsWhiteSpace(json[i])) i++;
-            int j = i;
-            while (j < json.Length && (char.IsDigit(json[j]) || json[j] == '.' || json[j] == '-' || json[j] == '+' || json[j] == 'e' || json[j] == 'E')) j++;
-            if (double.TryParse(json.Substring(i, j - i), out double v)) return v;
-            return null;
-        }
-
-        private static string JsonStr(string s) => s == null ? "null" : "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+        // 极简 JSON 解析已迁移至 BackgroundSettings.cs，此处不再重复实现。
 
         /// <summary>尝试从文件路径加载 BitmapImage（双通道：BitmapImage 原生 + System.Drawing 转码 webp）。失败返回 null。</summary>
         public static BitmapImage TryLoadImagePublic(string path) => TryLoadImageAny(path);
@@ -366,44 +326,55 @@ namespace CpqSystemTool
         /// </summary>
         private void ApplyShellColors()
         {
-            if (_isDarkMode)
+            // 背景层：优先按用户自定义模式渲染
+            var mode = _backgroundSettings?.Mode ?? BackgroundMode.Image;
+            Background = _windowBg;
+            if (mode == BackgroundMode.Image)
             {
-                try
+                BgGradient.Fill = Brushes.Transparent;
+                if (_isDarkMode)
                 {
-                    // 优先使用自定义深色背景
-                    var img = TryLoadImage(_customBgDarkPath);
-                    if (img == null)
+                    try
                     {
-                        img = new BitmapImage(
-                            new Uri("pack://application:,,,/系统清理与优化工具;component/background.png", UriKind.Absolute));
-                        img.Freeze();
+                        var img = TryLoadImage(_backgroundSettings.DarkPath);
+                        if (img == null)
+                        {
+                            img = new BitmapImage(
+                                new Uri("pack://application:,,,/系统清理与优化工具;component/background.png", UriKind.Absolute));
+                            img.Freeze();
+                        }
+                        BgImage.Source = img;
+                        BgImage.Opacity = _backgroundSettings.DarkOpacity;
                     }
-                    Background = _windowBg;
-                    BgImage.Source = img;
-                    BgImage.Opacity = _customBgDarkOpacity;
+                    catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  BgImage.Source = null; }
                 }
-                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  BgImage.Source = null; }
+                else
+                {
+                    try
+                    {
+                        var img = TryLoadImage(_backgroundSettings.LightPath);
+                        if (img == null)
+                        {
+                            img = new BitmapImage(
+                                new Uri("pack://application:,,,/系统清理与优化工具;component/background-light.png", UriKind.Absolute));
+                            img.Freeze();
+                        }
+                        BgImage.Source = img;
+                        BgImage.Opacity = _backgroundSettings.LightOpacity;
+                    }
+                    catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  BgImage.Source = null; }
+                }
             }
             else
             {
-                // 浅色：优先自定义，否则内置
+                // 纯色/渐变/网格模式：隐藏背景图，把生成的 Brush 赋给 BgGradient
+                BgImage.Source = null;
                 try
                 {
-                    var img = TryLoadImage(_customBgLightPath);
-                    if (img == null)
-                    {
-                        img = new BitmapImage(
-                            new Uri("pack://application:,,,/系统清理与优化工具;component/background-light.png", UriKind.Absolute));
-                        img.Freeze();
-                    }
-                    Background = _windowBg;
-                    BgImage.Source = img;
-                    BgImage.Opacity = _customBgLightOpacity;
+                    BgGradient.Fill = BuildBackgroundBrush(mode);
+                    BgImage.Opacity = 1.0;
                 }
-                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); 
-                    Background = _windowBg;
-                    BgImage.Source = null;
-                }
+                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  BgGradient.Fill = Brushes.Transparent; }
             }
 
             // 全部设为 Transparent
@@ -426,14 +397,113 @@ namespace CpqSystemTool
                 _isDarkMode ? Color.FromRgb(0x3C, 0x46, 0x54) : Color.FromRgb(0xB8, 0xC0, 0xCC));
             // 统一悬浮边框高亮色（XAML Button ControlTemplate IsMouseOver 触发器引用）
             Resources["AccentBrush"] = new SolidColorBrush(_accent.Color);
-            // 按钮悬浮填充：深色模式用 accent 半透明（~35%），浅色模式用 accent（~22%）
-            // 效果：non-primary 按钮显示明显悬浮层；primary 按钮 accent 底→微亮叠加
             // 按钮悬浮填充：深色模式用更亮的 #16E0BD 叠加（微亮），浅色模式用更暗的 #089182 叠加（微暗）
-            // 修正：原写法深浅分支反了，导致深色按钮悬浮反而变暗、浅色按钮悬浮反而变亮
             Resources["ButtonHoverBrush"] = new SolidColorBrush(
                 _isDarkMode ? Color.FromArgb(0x38, 0x16, 0xE0, 0xBD)   // #16E0BD @ 22% (深色：亮叠加)
                               : Color.FromArgb(0x59, 0x08, 0x91, 0x82));  // #089182 @ 35% (浅色：暗叠加)
 
+        }
+
+        /// <summary>根据设置构建背景 Brush（纯色/线性/径向/网格）。
+        /// 运行时与弹窗预览共用同一套逻辑，避免两套实现各自漂移。</summary>
+        private Brush BuildBrushFrom(BackgroundSettings s)
+        {
+            var mode = s?.Mode ?? BackgroundMode.Image;
+            if (mode == BackgroundMode.Solid)
+            {
+                return new SolidColorBrush(BackgroundSettings.ParseColor(s.SolidColor));
+            }
+
+            if (mode == BackgroundMode.LinearGradient)
+            {
+                var brush = new LinearGradientBrush
+                {
+                    StartPoint = new Point(0, 0),
+                    EndPoint = new Point(1, 0),
+                    MappingMode = BrushMappingMode.RelativeToBoundingBox,
+                    SpreadMethod = GradientSpreadMethod.Pad
+                };
+                // WPF 默认 LinearGradientBrush 方向是 0°（左→右）；用 RotateTransform 旋转角度
+                brush.Transform = new RotateTransform(s.GradientAngle, 0.5, 0.5);
+                foreach (var st in s.Stops.OrderBy(x => x.Offset))
+                    brush.GradientStops.Add(new GradientStop(BackgroundSettings.ParseColor(st.Color), st.Offset));
+                if (brush.GradientStops.Count == 0)
+                {
+                    brush.GradientStops.Add(new GradientStop(Colors.Transparent, 0));
+                    brush.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
+                }
+                return brush;
+            }
+
+            if (mode == BackgroundMode.RadialGradient)
+            {
+                var brush = new RadialGradientBrush
+                {
+                    GradientOrigin = new Point(s.RadialCenterX, s.RadialCenterY),
+                    Center = new Point(s.RadialCenterX, s.RadialCenterY),
+                    RadiusX = s.RadialRadiusX,
+                    RadiusY = s.RadialRadiusY,
+                    MappingMode = BrushMappingMode.RelativeToBoundingBox,
+                    SpreadMethod = GradientSpreadMethod.Pad
+                };
+                foreach (var st in s.Stops.OrderBy(x => x.Offset))
+                    brush.GradientStops.Add(new GradientStop(BackgroundSettings.ParseColor(st.Color), st.Offset));
+                if (brush.GradientStops.Count == 0)
+                {
+                    brush.GradientStops.Add(new GradientStop(Colors.Transparent, 0));
+                    brush.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
+                }
+                return brush;
+            }
+
+            if (mode == BackgroundMode.MeshGradient)
+            {
+                // 用 DrawingBrush 叠加多层径向渐变来模拟 mesh gradient（类似 gradients.app）
+                var drawing = new DrawingGroup();
+                // 底层用窗口底色打底，保证文字可读
+                drawing.Children.Add(new GeometryDrawing(
+                    _windowBg, null, new RectangleGeometry(new Rect(0, 0, 1, 1))));
+                foreach (var b in s.Blobs)
+                {
+                    var blobBrush = new RadialGradientBrush
+                    {
+                        GradientOrigin = new Point(0.5, 0.5),
+                        Center = new Point(0.5, 0.5),
+                        RadiusX = 0.5,
+                        RadiusY = 0.5,
+                        MappingMode = BrushMappingMode.RelativeToBoundingBox,
+                        SpreadMethod = GradientSpreadMethod.Pad
+                    };
+                    var c = BackgroundSettings.ParseColor(b.Color);
+                    // 透明度过大会让底层窗口色透不出，这里把 0..1 的 Opacity 收敛到 0..255 并钳制，避免 >1 时 (byte) 回绕
+                    byte alpha = (byte)Math.Max(0, Math.Min(255, (int)Math.Round(255 * b.Opacity)));
+                    blobBrush.GradientStops.Add(new GradientStop(Color.FromArgb(alpha, c.R, c.G, c.B), 0));
+                    blobBrush.GradientStops.Add(new GradientStop(Color.FromArgb(0, c.R, c.G, c.B), 1));
+                    var geo = new EllipseGeometry(new Point(b.CenterX, b.CenterY), b.Radius, b.Radius);
+                    drawing.Children.Add(new GeometryDrawing(blobBrush, null, geo));
+                }
+                return new DrawingBrush(drawing)
+                {
+                    Stretch = Stretch.Fill,
+                    Viewbox = new Rect(0, 0, 1, 1),
+                    ViewboxUnits = BrushMappingMode.RelativeToBoundingBox,
+                    TileMode = TileMode.None
+                };
+            }
+
+            return Brushes.Transparent;
+        }
+
+        /// <summary>运行时应用：基于当前 _backgroundSettings 构建背景 Brush。</summary>
+        private Brush BuildBackgroundBrush(BackgroundMode mode)
+        {
+            return BuildBrushFrom(_backgroundSettings);
+        }
+
+        /// <summary>为弹窗预览生成背景 Brush（不依赖 _backgroundSettings，支持任意设置实例）。</summary>
+        internal Brush BuildBackgroundBrushPreview(BackgroundSettings settings)
+        {
+            return BuildBrushFrom(settings);
         }
 
         private void ThemeToggle_Click(object sender, RoutedEventArgs e)

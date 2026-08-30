@@ -262,10 +262,10 @@ namespace CpqSystemTool
             // 恢复默认背景按钮（右上角）
             var resetBgBtn = Btn("🔄 恢复默认背景", false, () =>
             {
-                _customBgDarkPath = "";
-                _customBgLightPath = "";
-                _customBgDarkOpacity = 0.55;
-                _customBgLightOpacity = 1.0;
+                _backgroundSettings.DarkPath = "";
+                _backgroundSettings.LightPath = "";
+                _backgroundSettings.DarkOpacity = 0.55;
+                _backgroundSettings.LightOpacity = 1.0;
                 darkOpSlider.Value = 0.55;
                 lightOpSlider.Value = 1.0;
                 SaveBackgroundSettings();
@@ -335,7 +335,7 @@ namespace CpqSystemTool
                                     var retry = MainWindow.TryLoadImagePublic(dlg.FileName);
                                     if (retry != null)
                                     {
-                                        _customBgDarkPath = dlg.FileName;
+                                        _backgroundSettings.DarkPath = dlg.FileName;
                                         SaveBackgroundSettings();
                                         l("[OK] WebP 解码器已安装，背景已自动应用");
                                         try { Dispatcher.Invoke(() => { refreshThumbs(); ApplyShellColors(); }); } catch { /* 窗口已关闭，忽略 */ }
@@ -357,7 +357,7 @@ namespace CpqSystemTool
                             "背景图加载失败", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
                         return;
                     }
-                    _customBgDarkPath = dlg.FileName;
+                    _backgroundSettings.DarkPath = dlg.FileName;
                     SaveBackgroundSettings();
                     log.AppendText("[OK] 深色背景已设置: " + Path.GetFileName(dlg.FileName) + "\r\n");
                     refreshThumbs();
@@ -381,15 +381,15 @@ namespace CpqSystemTool
             // 透明度调整（滑块加长，视觉更舒展）
             var darkOpLbl = new TextBlock { Text = "透明度:", FontSize = 11.5, Foreground = _textMain, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) };
             darkOpSlider = new System.Windows.Controls.Slider
-            { Minimum = 0.1, Maximum = 1.0, Value = _customBgDarkOpacity, TickFrequency = 0.05, IsSnapToTickEnabled = true, Width = 140, VerticalAlignment = VerticalAlignment.Center };
-            var darkOpVal = new TextBlock { Text = _customBgDarkOpacity.ToString("P0"), FontSize = 11.5, Foreground = _accent, VerticalAlignment = VerticalAlignment.Center, MinWidth = 34, Margin = new Thickness(4, 0, 0, 0) };
+            { Minimum = 0.1, Maximum = 1.0, Value = _backgroundSettings.DarkOpacity, TickFrequency = 0.05, IsSnapToTickEnabled = true, Width = 140, VerticalAlignment = VerticalAlignment.Center };
+            var darkOpVal = new TextBlock { Text = _backgroundSettings.DarkOpacity.ToString("P0"), FontSize = 11.5, Foreground = _accent, VerticalAlignment = VerticalAlignment.Center, MinWidth = 34, Margin = new Thickness(4, 0, 0, 0) };
             darkOpSlider.ValueChanged += (s, e) =>
             {
-                _customBgDarkOpacity = darkOpSlider.Value;
-                darkOpVal.Text = _customBgDarkOpacity.ToString("P0");
+                _backgroundSettings.DarkOpacity = darkOpSlider.Value;
+                darkOpVal.Text = _backgroundSettings.DarkOpacity.ToString("P0");
                 SaveBackgroundSettings();
-                darkThumbImg.Opacity = _customBgDarkOpacity;
-                BgImage.Opacity = _customBgDarkOpacity;
+                darkThumbImg.Opacity = _backgroundSettings.DarkOpacity;
+                BgImage.Opacity = _backgroundSettings.DarkOpacity;
             };
             var darkCtrlRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) };
             darkCtrlRow.Children.Add(darkOpLbl); darkCtrlRow.Children.Add(darkOpSlider); darkCtrlRow.Children.Add(darkOpVal);
@@ -445,7 +445,7 @@ namespace CpqSystemTool
                                     var retry = MainWindow.TryLoadImagePublic(dlg.FileName);
                                     if (retry != null)
                                     {
-                                        _customBgLightPath = dlg.FileName;
+                                        _backgroundSettings.LightPath = dlg.FileName;
                                         SaveBackgroundSettings();
                                         l("[OK] WebP 解码器已安装，背景已自动应用");
                                         try { Dispatcher.Invoke(() => { refreshThumbs(); ApplyShellColors(); }); } catch { /* 窗口已关闭，忽略 */ }
@@ -466,7 +466,7 @@ namespace CpqSystemTool
                             "背景图加载失败", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
                         return;
                     }
-                    _customBgLightPath = dlg.FileName;
+                    _backgroundSettings.LightPath = dlg.FileName;
                     SaveBackgroundSettings();
                     log.AppendText("[OK] 浅色背景已设置: " + Path.GetFileName(dlg.FileName) + "\r\n");
                     refreshThumbs();
@@ -490,15 +490,15 @@ namespace CpqSystemTool
             // 透明度调整（滑块加长，视觉更舒展）
             var lightOpLbl = new TextBlock { Text = "透明度:", FontSize = 11.5, Foreground = _textMain, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) };
             lightOpSlider = new System.Windows.Controls.Slider
-            { Minimum = 0.1, Maximum = 1.0, Value = _customBgLightOpacity, TickFrequency = 0.05, IsSnapToTickEnabled = true, Width = 140, VerticalAlignment = VerticalAlignment.Center };
-            var lightOpVal = new TextBlock { Text = _customBgLightOpacity.ToString("P0"), FontSize = 11.5, Foreground = _accent, VerticalAlignment = VerticalAlignment.Center, MinWidth = 34, Margin = new Thickness(4, 0, 0, 0) };
+            { Minimum = 0.1, Maximum = 1.0, Value = _backgroundSettings.LightOpacity, TickFrequency = 0.05, IsSnapToTickEnabled = true, Width = 140, VerticalAlignment = VerticalAlignment.Center };
+            var lightOpVal = new TextBlock { Text = _backgroundSettings.LightOpacity.ToString("P0"), FontSize = 11.5, Foreground = _accent, VerticalAlignment = VerticalAlignment.Center, MinWidth = 34, Margin = new Thickness(4, 0, 0, 0) };
             lightOpSlider.ValueChanged += (s, e) =>
             {
-                _customBgLightOpacity = lightOpSlider.Value;
-                lightOpVal.Text = _customBgLightOpacity.ToString("P0");
+                _backgroundSettings.LightOpacity = lightOpSlider.Value;
+                lightOpVal.Text = _backgroundSettings.LightOpacity.ToString("P0");
                 SaveBackgroundSettings();
-                lightThumbImg.Opacity = _customBgLightOpacity;
-                if (!_isDarkMode) BgImage.Opacity = _customBgLightOpacity;
+                lightThumbImg.Opacity = _backgroundSettings.LightOpacity;
+                if (!_isDarkMode) BgImage.Opacity = _backgroundSettings.LightOpacity;
             };
             var lightCtrlRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) };
             lightCtrlRow.Children.Add(lightOpLbl); lightCtrlRow.Children.Add(lightOpSlider); lightCtrlRow.Children.Add(lightOpVal);
@@ -514,21 +514,21 @@ namespace CpqSystemTool
             // 刷新缩略图辅助方法（闭包捕获）
             refreshThumbs = () =>
             {
-                var dImg = TryLoadImage(_customBgDarkPath);
+                var dImg = TryLoadImage(_backgroundSettings.DarkPath);
                 if (dImg == null)
                 {
                     try { dImg = new BitmapImage(new Uri("pack://application:,,,/系统清理与优化工具;component/background.png", UriKind.Absolute)); dImg.Freeze(); } catch { }
                 }
                 darkThumbImg.Source = dImg;
-                darkThumbImg.Opacity = _customBgDarkOpacity;
+                darkThumbImg.Opacity = _backgroundSettings.DarkOpacity;
 
-                var lImg = TryLoadImage(_customBgLightPath);
+                var lImg = TryLoadImage(_backgroundSettings.LightPath);
                 if (lImg == null)
                 {
                     try { lImg = new BitmapImage(new Uri("pack://application:,,,/系统清理与优化工具;component/background-light.png", UriKind.Absolute)); lImg.Freeze(); } catch { }
                 }
                 lightThumbImg.Source = lImg;
-                lightThumbImg.Opacity = _customBgLightOpacity;
+                lightThumbImg.Opacity = _backgroundSettings.LightOpacity;
             };
 
             bgCard.Child = bgSp;
@@ -583,8 +583,8 @@ namespace CpqSystemTool
                     log.Clear();
                     pb.Visibility = Visibility.Collapsed;
                     pathInput.Text = ConfigBackup.ConfigDir;
-                    darkOpSlider.Value = _customBgDarkOpacity;
-                    lightOpSlider.Value = _customBgLightOpacity;
+                    darkOpSlider.Value = _backgroundSettings.DarkOpacity;
+                    lightOpSlider.Value = _backgroundSettings.LightOpacity;
                     refreshThumbs();
                     ReloadConfigList();
                 };

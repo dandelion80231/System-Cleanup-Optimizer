@@ -94,6 +94,8 @@
             <ColumnDefinition Width="180" x:Name="SidebarCol"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
+        <!-- 渐变背景层（跨两列；图片模式时置空，渐变/纯色模式时由 ApplyShellColors 填充 Brush） -->
+        <Rectangle x:Name="BgGradient" Grid.ColumnSpan="2" Fill="Transparent" IsHitTestVisible="False"/>
         <!-- 背景图（跨两列，作为最底层；由 ApplyShellColors 动态切换深/浅色图）
              Stretch=Fill：忽略原图比例彻底铺满窗口（最大化时无死角）
              原 UniformToFill 在超宽屏可能露出边缘透明像素 -->
@@ -116,10 +118,14 @@
             <Border Grid.Row="0" x:Name="TopBar" Background="#121821" BorderBrush="#1E2630" BorderThickness="0,0,0,1" Padding="22,14">
                 <Grid>
                     <TextBlock x:Name="PageTitle" Text="系统优化" FontSize="22" FontWeight="Bold" Foreground="#E6EDF3" VerticalAlignment="Center" Margin="0"/>
-                    <Button x:Name="ThemeToggleBtn" HorizontalAlignment="Right" VerticalAlignment="Center"
-                            Width="36" Height="36" Cursor="Hand" ToolTip="切换主题"
-                            BorderThickness="0" Background="Transparent" Foreground="#8B98A5"
-                            FontSize="16" Content="🌙" Click="ThemeToggle_Click"/>
+                    <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal">
+                        <Button x:Name="BgSettingsBtn" Width="36" Height="36" Cursor="Hand" ToolTip="自定义背景"
+                                BorderThickness="0" Background="Transparent" Foreground="#8B98A5"
+                                FontSize="16" Content="🎨" Click="BgSettingsBtn_Click"/>
+                        <Button x:Name="ThemeToggleBtn" Width="36" Height="36" Cursor="Hand" ToolTip="切换主题"
+                                BorderThickness="0" Background="Transparent" Foreground="#8B98A5"
+                                FontSize="16" Content="🌙" Click="ThemeToggle_Click"/>
+                    </StackPanel>
                 </Grid>
             </Border>
             <ScrollViewer Grid.Row="1" x:Name="ContentArea" Margin="22,12,22,22" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Background="Transparent"/>

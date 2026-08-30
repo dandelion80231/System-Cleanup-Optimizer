@@ -53,6 +53,9 @@ namespace CpqSystemTool
         private bool _isDarkMode = true;
         private bool _userOverrodeTheme = false; // 用户是否手动切换过（手动后不再跟随系统）
 
+        // ---- 自定义背景设置（运行时实例，用于弹窗编辑与实时预览）----
+        internal BackgroundSettings _backgroundSettings = new BackgroundSettings();
+
         // ---- 右边缘拖拽状态（侧边栏宽度调整）----
         private bool _isDraggingSidebar = false;
         private double _dragStartX = 0, _dragStartWidth = 0;
@@ -175,6 +178,25 @@ namespace CpqSystemTool
 
         // ---- 更新管理页：最后点击的操作按钮标识（用于操作后高亮反馈）----
         private string _lastUpdateAction = null;
+
+        /// <summary>右上角「自定义背景」按钮：打开背景设置对话框。</summary>
+        private void BgSettingsBtn_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var dlg = new BackgroundSettingsDialog(this, _backgroundSettings?.Clone() ?? new BackgroundSettings());
+                dlg.Owner = this;
+                if (dlg.ShowDialog() == true)
+                {
+                    ApplyBackgroundSettings(dlg.ResultSettings);
+                    SaveBackgroundSettings();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("打开背景设置失败：\n" + ex.Message + "\n\n" + ex.StackTrace, "系统清理与优化工具", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
 
         // ---- 所有页面 Build 方法迁移至 MainWindow.Pages.cs ----
     }
