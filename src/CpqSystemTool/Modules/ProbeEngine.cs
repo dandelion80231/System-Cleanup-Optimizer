@@ -536,20 +536,34 @@ namespace CpqSystemTool
         }
 
         // 无浏览器快速路径：HTTP 抓取入口 HTML/JSONP，扫描直链并验证
+        // 注意：不使用静态 Http 客户端，而是每次创建新的，避免连接池复用导致的间歇性超时
         private static async Task<BrowserProbeResult> ProbeSiteFastAsync(string entryUrl, bool skipDownloadCheck, Action<string> logf)
         {
             try
             {
                 logf("   [DIAG] ProbeSiteFastAsync: entryUrl=" + entryUrl);
-                // 使用较长超时：国外站点可能需要较长时间建立连接
-                var got = await HttpGetAsync(entryUrl, MAX_REDIRECTS, 0, 60000, logf);
-                logf("   [DIAG] HttpGetAsync 返回: ok=" + got.ok + ", status=" + got.status + ", isBinary=" + got.isBinary + ", bodyLen=" + (got.body?.Length ?? 0));
-                if (!got.ok)
+                // 使用独立 HttpClient，避免共享连接池的间歇性超时问题
+                using var handler = new HttpClientHandler
                 {
-                    logf("   [DIAG] HttpGetAsync 失败，返回 null");
-                    return null;
-                }
-
+                    AllowAutoRedirect = false,
+                    UseProxy = false,
+                };
+                using var client = new HttpClient(handler)
+                {
+                    Timeout = TimeSpan.FromSeconds(30)
+                };
+                var req = new HttpRequestMessage(HttpMethod.Get, entryUrl);
+                ApplyBrowserHeaders(req, entryUrl);
+                logf("   [DIAG] HttpGetAsync 发送请求: " + entryUrl + ", SecurityProtocol=" + System.Net.ServicePointManager.SecurityProtocol);
+                
+                using var cts = new CancellationTokenSource(60000);
+                using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+                int code = (int)resp.StatusCode;
+                logf("   [DIAG] HttpGetAsync 收到响应: StatusCode=" + code + ", Content-Type=" + (resp.Content.Headers.ContentType?.MediaType ?? "null"));
+                
+                var ct = (resp.Content.Headers.ContentType?.MediaType ?? "").ToLowerInvariant();
+                bool isBinary = ProbeData.ExeBinCt.IsMatch(ct) || ProbeData.ExeUrlRe.IsMatch(entryUrl);
+                
                 var found = new Dictionary<string, CandidateUrl>(StringComparer.OrdinalIgnoreCase);
                 void Add(string url, string strategy)
                 {
@@ -558,59 +572,33 @@ namespace CpqSystemTool
                     if (!found.ContainsKey(norm)) found[norm] = new CandidateUrl { Url = norm, Strategy = strategy };
                     else if (!found[norm].Strategy.Contains(strategy)) found[norm].Strategy += "+" + strategy;
                 }
-
-                // 帮助将 HTML 中的相对路径（如 /geek.zip）解析为绝对 URL
-                string ResolveRelative(string raw)
-                {
-                    if (string.IsNullOrEmpty(raw)) return raw;
-                    var normalized = raw.Split('#')[0].Trim();
-                    if (normalized.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-                        normalized.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-                        return normalized;
-                    try
-                    {
-                        var baseUri = new Uri(entryUrl);
-                        var resolved = new Uri(baseUri, normalized).ToString();
-                        return resolved;
-                    }
-                    catch { return null; }
-                }
-
-                // 入口本身是二进制可执行文件
-                bool entryIsExe = ProbeData.ExeUrlRe.IsMatch(entryUrl);
-                logf("   [DIAG] ExeUrlRe.IsMatch(entryUrl)=" + entryIsExe + ", isBinary=" + got.isBinary);
-                if (got.isBinary && entryIsExe)
+                
+                if (isBinary)
                 {
                     Add(entryUrl, "anchor");
-                    logf("   [DIAG] 已添加直链: " + entryUrl);
+                    logf("   [DIAG] 已添加直链（二进制响应）: " + entryUrl);
                 }
-
-                if ((got.body ?? "").Length < 50 && !got.isBinary)
+                
+                string body;
+                if (!isBinary)
                 {
-                    logf("   [DIAG] body太短且非二进制，返回 null");
-                    return null;
+                    body = await resp.Content.ReadAsStringAsync();
+                    if (body.Length > 5 * 1024 * 1024) body = body.Substring(0, 5 * 1024 * 1024);
+                    if ((body ?? "").Length < 50)
+                    {
+                        logf("   [DIAG] body太短，返回 null");
+                        return null;
+                    }
+                    
+                    // 扫描所有可能的下载链接
+                    var exes = ProbeData.ExeUrlRe.Matches(body);
+                    foreach (Match m in exes)
+                    {
+                        var abs = ResolveRelative(m.Value, entryUrl);
+                        if (!string.IsNullOrEmpty(abs)) Add(abs, "anchor");
+                    }
                 }
-
-                // 扫描所有可能的下载链接（.exe + .zip/.7z/.rar，并解析相对路径）
-                var exes = ProbeData.ExeUrlRe.Matches(got.body ?? "");
-                foreach (Match m in exes)
-                {
-                    var abs = ResolveRelative(m.Value);
-                    if (!string.IsNullOrEmpty(abs)) Add(abs, "anchor");
-                }
-                var packages = ProbeData.PackageUrlRe.Matches(got.body ?? "");
-                foreach (Match m in packages)
-                {
-                    var abs = ResolveRelative(m.Value);
-                    if (!string.IsNullOrEmpty(abs)) Add(abs, "anchor");
-                }
-                var fcgs = ProbeData.FileRedirectRe.Matches(got.body ?? "");
-                foreach (Match m in fcgs)
-                {
-                    var abs = ResolveRelative(m.Value);
-                    if (!string.IsNullOrEmpty(abs)) Add(abs, "jsonp");
-                }
-
+                
                 if (found.Count == 0)
                 {
                     logf("   [DIAG] found.Count==0，返回 null");
@@ -620,6 +608,26 @@ namespace CpqSystemTool
                 var res = new BrowserProbeResult();
                 res.Candidates.AddRange(found.Values);
                 return res;
+            }
+            catch (Exception ex)
+            {
+                logf("   [DIAG] ProbeSiteFastAsync 异常: " + ex.GetType().Name + ": " + ex.Message);
+                return null;
+            }
+        }
+
+        // 帮助将 HTML 中的相对路径（如 /geek.zip）解析为绝对 URL
+        private static string ResolveRelative(string raw, string baseUri)
+        {
+            if (string.IsNullOrEmpty(raw)) return raw;
+            var normalized = raw.Split('#')[0].Trim();
+            if (normalized.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                normalized.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                return normalized;
+            try
+            {
+                var resolved = new Uri(new Uri(baseUri), normalized).ToString();
+                return resolved;
             }
             catch { return null; }
         }
