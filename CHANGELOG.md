@@ -4,6 +4,15 @@
 
 ---
 
+## [v1.16.1] - 2026-08-30
+
+### 🐛 软件安装下载修复
+- **Geek Uninstaller 等便携软件下载卡住**：`DownloadAsync` 改用 `Downloader.DownloadAsync`，开启 `useProxyFallback: true`（系统代理 → 直连 → Watt Toolkit 本地代理依次尝试），最多重试 3 次、间隔 5 秒，解决代理环境下直连失败导致永久挂起的问题。
+- **便携版支持自定义安装目录**：`IsPortable` 单文件分支（如 Geek Uninstaller）优先使用用户指定的 `customDir`，不再硬编码 `%LOCALAPPDATA%\CpqSystemTool\Portable\<id>\`。
+- **保留 Referer 支持**：`Downloader.DownloadAsync` 新增可选 `referer` 参数，`SoftwareInstall.DownloadAsync` 透传 `SoftwareDef.Referer`，确保哔哩哔哩等需要 Referer 头的软件仍可正常下载。
+
+---
+
 ## [v1.16] - 2026-08-22
 
 > 相对 v1.15 的源码变更：Edge 管理页新增「实验性功能 flags」批量管理（11 项推荐配置 + 一键优化/恢复 + 强制重启生效）。

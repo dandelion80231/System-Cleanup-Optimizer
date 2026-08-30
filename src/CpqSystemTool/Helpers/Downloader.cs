@@ -49,10 +49,17 @@ namespace CpqSystemTool
             bool resume = false,
             bool useProxyFallback = false,
             int retryDelayMs = 5000,
-            string userAgent = DefaultUserAgent)
+            string userAgent = DefaultUserAgent,
+            string referer = null)
         {
-            if (string.IsNullOrEmpty(url)) { log?.Invoke("[下载] URL 为空，无法下载"); return false; }
-            if (string.IsNullOrEmpty(destPath)) { log?.Invoke("[下载] 目标路径为空，无法下载"); return false; }
+            // 修复：内部 ConfigureAwait(false) 之后所有 await 续跑在线程池线程，progress / log 回调也随之脱离 UI 线程，
+            // 调用方在回调里直接改 UI 控件会抛跨线程异常。故在入口捕获调用方同步上下文，回调统一封送回原线程。
+            var ui = SynchronizationContext.Current;
+            Action<string> logCb = log == null ? (Action<string>)null : (s => Post(ui, () => log(s)));
+            Action<int> progressCb = progress == null ? (Action<int>)null : (v => Post(ui, () => progress(v)));
+
+            if (string.IsNullOrEmpty(url)) { logCb?.Invoke("[下载] URL 为空，无法下载"); return false; }
+            if (string.IsNullOrEmpty(destPath)) { logCb?.Invoke("[下载] 目标路径为空，无法下载"); return false; }
 
             IWebProxy[] candidates = useProxyFallback ? ProxyCandidates : new[] { WebRequest.DefaultWebProxy };
 
@@ -61,37 +68,47 @@ namespace CpqSystemTool
             {
                 foreach (var proxy in candidates)
                 {
-                    string error = await TryDownloadOnce(url, destPath, proxy, log, progress, timeoutMs, readTimeoutMs, resume, userAgent).ConfigureAwait(false);
+                    string error = await TryDownloadOnce(url, destPath, proxy, logCb, progressCb, timeoutMs, readTimeoutMs, resume, userAgent, referer).ConfigureAwait(false);
                     if (error == null) return true;
                     lastError = error;
-                    log?.Invoke($"[下载] 第 {attempt}/{maxAttempts} 次尝试失败: {error}");
+                    logCb?.Invoke($"[下载] 第 {attempt}/{maxAttempts} 次尝试失败: {error}");
                 }
 
                 if (attempt < maxAttempts)
                 {
-                    log?.Invoke($"[下载] {retryDelayMs / 1000} 秒后{(resume ? "从断点续传" : "")}重试（第 {attempt + 1}/{maxAttempts} 次）...");
+                    logCb?.Invoke($"[下载] {retryDelayMs / 1000} 秒后{(resume ? "从断点续传" : "")}重试（第 {attempt + 1}/{maxAttempts} 次）...");
                     await Task.Delay(retryDelayMs).ConfigureAwait(false);
                 }
             }
 
-            log?.Invoke($"[下载] 全部 {maxAttempts} 次尝试均失败: {lastError ?? "未知错误"}");
+            logCb?.Invoke($"[下载] 全部 {maxAttempts} 次尝试均失败: {lastError ?? "未知错误"}");
             return false;
+        }
+
+        /// <summary>把回调封送回捕获到的同步上下文（UI 线程）执行；无上下文（控制台/后台线程调用）时直接同步执行。</summary>
+        private static void Post(SynchronizationContext ctx, Action a)
+        {
+            if (ctx == null) { a(); return; }
+            try { ctx.Post(_ => a(), null); }
+            catch { a(); }   // 上下文已失效（如 UI 线程退出）时退化为直接调用，避免吞掉回调
         }
 
         /// <summary>单次单代理下载尝试。成功返回 null；失败返回错误描述（供外层统一记录）。</summary>
         private static async Task<string> TryDownloadOnce(
             string url, string destPath, IWebProxy proxy,
             Action<string> log, Action<int> progress,
-            int timeoutMs, int readTimeoutMs, bool resume, string userAgent)
+            int timeoutMs, int readTimeoutMs, bool resume, string userAgent, string referer = null)
         {
+            // 修复：HttpClient 现为共享/缓存实例（见 CreateClient），全程不得 Dispose
             HttpClient client = CreateClient(proxy);
-            bool owned = !ReferenceEquals(client, HttpClients.Default); // 共享单例不得 dispose
             try
             {
                 long existing = resume && File.Exists(destPath) ? new FileInfo(destPath).Length : 0;
 
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.UserAgent.ParseAdd(userAgent);
+                if (!string.IsNullOrEmpty(referer))
+                    request.Headers.Referrer = new Uri(referer);
                 if (existing > 0) request.Headers.Range = new RangeHeaderValue(existing, null); // 断点续传
 
                 using (var cts = new CancellationTokenSource(timeoutMs))
@@ -109,7 +126,10 @@ namespace CpqSystemTool
                         using (var dst = new FileStream(destPath, append ? FileMode.Append : FileMode.Create, FileAccess.Write))
                         {
                             var buffer = new byte[65536];
-                            long downloaded = append ? existing : 0; // 续传时累计，保证进度百分比接近真实；服务器忽略 Range 时从 0 计
+                            // 续传时把已有字节计入，保证进度百分比接近真实；服务器忽略 Range 时从 0 计
+                            long existingBytes = append ? existing : 0;
+                            long downloaded = existingBytes;
+                            long expected = total > 0 ? existingBytes + total : -1; // 预期总量（total 未知时不校验）
                             int lastPercent = -1;
                             int n;
                             while ((n = await ReadChunkAsync(src, buffer, readTimeoutMs, cts.Token).ConfigureAwait(false)) > 0)
@@ -122,7 +142,15 @@ namespace CpqSystemTool
                                     if (pct != lastPercent) { lastPercent = pct; progress?.Invoke(pct); }
                                 }
                             }
-                            if (total > 0) progress?.Invoke(100); // 仅在确知总长度时补发收尾信号
+                            // 修复：循环结束只代表流读到 EOF，服务端中途断开时文件被静默截断、仍然返回成功。
+                            // 已知总长度时必须校验实际字节数，不符则判定不完整并删除残留文件（避免截断的安装包被当成品使用）。
+                            if (expected > 0 && downloaded != expected)
+                            {
+                                string incomplete = "下载不完整：预期 " + expected + " 字节，实际 " + downloaded + " 字节（连接被中断，已删除不完整文件）";
+                                try { if (File.Exists(destPath)) File.Delete(destPath); } catch { }
+                                return incomplete;
+                            }
+                            if (total > 0) progress?.Invoke(100); // 仅在确知总长度且校验通过后补发收尾信号
                         }
                     }
                 }
@@ -142,18 +170,49 @@ namespace CpqSystemTool
             {
                 return ex.Message;
             }
-            finally
+        }
+
+        // HttpClient 缓存锁（懒加载，见 CreateClient）
+        private static readonly object ClientLock = new object();
+        // 修复：此前每次尝试都 new HttpClient(new HttpClientHandler())，等于每次新建连接池、短连接关闭后
+        // 大量 socket 停在 TIME_WAIT，正是本类注释声称要避免的问题。改为按代理实例缓存复用。
+        private static HttpClient _directClient;                                    // 直连（proxy == null）
+        private static readonly System.Collections.Generic.Dictionary<IWebProxy, HttpClient> ProxyClients =
+            new System.Collections.Generic.Dictionary<IWebProxy, HttpClient>(ProxyRefComparer.Instance);
+
+        /// <summary>按代理选择 HttpClient 并缓存复用：系统代理 → 共享单例 HttpClients.Default；
+        /// 直连 / 自定义代理（如 Watt Toolkit）→ 按代理实例懒加载缓存（代理切换逻辑保持原样）。
+        /// 返回实例均为共享或缓存实例，调用方不得 Dispose。</summary>
+        private static HttpClient CreateClient(IWebProxy proxy)
+        {
+            if (proxy == null)   // 直连
             {
-                if (owned) client.Dispose();
+                lock (ClientLock)
+                    return _directClient ?? (_directClient = new HttpClient(new HttpClientHandler { UseProxy = false }));
+            }
+            if (ReferenceEquals(proxy, WebRequest.DefaultWebProxy)) return HttpClients.Default;   // 系统代理 → 复用共享单例
+
+            lock (ClientLock)    // 自定义代理
+            {
+                HttpClient c;
+                if (!ProxyClients.TryGetValue(proxy, out c))
+                {
+                    c = new HttpClient(new HttpClientHandler { UseProxy = true, Proxy = proxy });
+                    ProxyClients[proxy] = c;
+                }
+                return c;
             }
         }
 
-        /// <summary>按代理选择 HttpClient：系统代理 → 共享单例 HttpClients.Default；直连/自定义代理 → 一次性短生命期实例。</summary>
-        private static HttpClient CreateClient(IWebProxy proxy)
+        /// <summary>按引用比较代理实例：IWebProxy 实现可能重写 Equals/GetHashCode，缓存必须按实例区分。</summary>
+        private sealed class ProxyRefComparer : System.Collections.Generic.IEqualityComparer<IWebProxy>
         {
-            if (proxy == null) return new HttpClient(new HttpClientHandler { UseProxy = false }); // 直连
-            if (ReferenceEquals(proxy, WebRequest.DefaultWebProxy)) return HttpClients.Default;   // 系统代理 → 复用共享单例
-            return new HttpClient(new HttpClientHandler { UseProxy = true, Proxy = proxy });      // 自定义代理（如 Watt Toolkit）
+            public static readonly ProxyRefComparer Instance = new ProxyRefComparer();
+            public bool Equals(IWebProxy x, IWebProxy y) { return ReferenceEquals(x, y); }
+            public int GetHashCode(IWebProxy obj)
+            {
+                return System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+            }
         }
 
         /// <summary>单次读：readTimeoutMs&gt;0 时用「链接 CTS + 每读 CancelAfter」实现空闲超时（等价原 HttpWebRequest.ReadWriteTimeout）。</summary>

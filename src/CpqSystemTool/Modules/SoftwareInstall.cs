@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
@@ -64,11 +65,15 @@ namespace CpqSystemTool
 
         private string _tempDir;
 
-        /// <summary>卸载信息所在的三个注册表根路径（统一使用 HKEY_ 前缀格式，确保 Registry.GetValue 兼容）</summary>
+        /// <summary>
+        /// 卸载信息所在的注册表根路径。32 位 WOW64 进程下 RegistryView.Default 会把 HKLM\SOFTWARE 重定向到
+        /// HKLM\SOFTWARE\WOW6432Node；显式保留普通 SOFTWARE 路径，由 EnumerateUninstallCache 用 Registry64
+        /// 与 Registry32 分别打开，即可同时覆盖 64 位真实视图与 32 位重定向视图，避免同时写 WOW6432Node
+        /// 路径导致的重复枚举。
+        /// </summary>
         private static readonly string[] UNINSTALL_ROOTS = new[]
         {
             @"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-            @"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
             @"HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
         };
 
@@ -166,7 +171,9 @@ namespace CpqSystemTool
             if (!string.IsNullOrEmpty(StoreId)) return InstallFromStore(log);
             log("=== 安装 " + Name + " ===");
 
-            // 运行时解析（Chocolatey 源）：主流包实时取官方 URL + SHA256 + 静默参数；离线回退快照
+            // 运行时解析（Chocolatey 源）：主流包实时取官方 URL + SHA256 + 静默参数；
+            // 解析失败时若已有原始 DownloadUrl（如 Geek 的官方直链），继续用原始 URL 安装，
+            // 而非直接中断 —— 仅当两者皆空才报错。
             string downloadUrl = DownloadUrl;
             string[] args = InstallArgs;
             string sha256 = Sha256;
@@ -176,11 +183,16 @@ namespace CpqSystemTool
                 if (r.ok)
                 {
                     downloadUrl = r.url; args = r.args; sha256 = r.sha256;
+                    log("   [*] Chocolatey 解析成功: " + r.url);
                 }
                 else
                 {
-                    log("   [!] Chocolatey 解析失败且无兜底，无法安装 " + Name);
-                    return false;
+                    log("   [!] Chocolatey 解析失败，回退原始直链 " + Name);
+                    if (string.IsNullOrEmpty(downloadUrl))
+                    {
+                        log("   [!] 无原始 DownloadUrl，无法安装 " + Name);
+                        return false;
+                    }
                 }
             }
 
@@ -237,12 +249,55 @@ namespace CpqSystemTool
                 runPath = inst; extracted = true;
                 if (!VerifyIntegrity(runPath, log)) { CleanupTemp(); return false; }  // 解压出的安装器再校验一次
             }
-            // 便携版（如 aria2）：解压即完成，无需运行安装程序（无参运行 exe 等于空跑）
+            // 便携版（如 aria2 的 zip、Geek Uninstaller 的单文件 exe）：下载/解压即完成，
+            // 无需运行安装程序（无参运行 exe 等于空跑）。
             if (IsPortable)
             {
-                string loc = extracted ? System.IO.Path.GetDirectoryName(runPath) : dest;
-                log("   [OK] 便携版已就绪：" + loc + "（无需安装程序）");
-                return true;  // 便携版保留在临时目录（清理会删除软件本体）
+                if (extracted)
+                {
+                    // 多文件便携版（aria2 这类 zip 解压出一堆文件）：保持原样留在解压目录。
+                    // 不整包搬走是因为解压产物可能含相对路径依赖，移动后反而跑不起来，
+                    // 且用户通常要用的就是里面全部文件。
+                    string loc = System.IO.Path.GetDirectoryName(runPath);
+                    log("   [OK] 便携版已就绪：" + loc + "（无需安装程序）");
+                }
+                else
+                {
+                    // 单文件便携版（Geek Uninstaller 这类「一个 exe 就是全部」）：
+                    // 旧实现直接把它留在临时下载目录 —— 用户根本不知道去哪找，
+                    // 临时目录随时可能被清理，而软件页仍显示"已安装"，自相矛盾。
+                    // 优先使用 customDir（用户指定），否则落到默认便携目录：
+                    string dir;
+                    if (!string.IsNullOrEmpty(customDir))
+                    {
+                        dir = customDir;
+                        log("   [*] 使用自定义目录：" + dir);
+                    }
+                    else
+                    {
+                        dir = System.IO.Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                            "CpqSystemTool", "Portable", SanitizeSwId(Id));
+                    }
+                    try
+                    {
+                        Directory.CreateDirectory(dir);
+                        string loc = System.IO.Path.Combine(
+                            dir, SanitizeSwId(Id) + System.IO.Path.GetExtension(dest));
+                        File.Copy(dest, loc, true);
+                        log("   [OK] 便携版已就绪：" + loc + "（无需安装程序）");
+                        log("   [*] 提示：这是绿色单文件版，直接运行即可。"
+                            + "它不写卸载注册表项，所以本工具无法像普通软件那样卸载它，需手动删除该文件。");
+                    }
+                    catch (Exception ex)
+                    {
+                        // 落盘失败不能算安装失败——文件其实已经下载好了，如实告知位置即可。
+                        DebugLog.Ignore(ex);
+                        log("   [!] 复制到便携目录失败：" + ex.Message);
+                        log("   [OK] 便携版已就绪：" + dest + "（无需安装程序）");
+                    }
+                }
+                return true;  // 便携版不清理临时目录（清理会删除软件本体）
             }
             bool ok = RunInstaller(runPath, args, log, InstallTimeout);
             CleanupTemp();  // 安装结束（无论成败）清理临时下载/解压文件，避免堆积
@@ -355,9 +410,14 @@ namespace CpqSystemTool
             log("   [*] 卸载命令: " + u);
 
             int rc = RunUninstallCommand(u, log);
-            if (rc == 0) log("   [OK] 卸载命令执行完成。");
-            else log("   [!] 卸载命令返回非零退出码: " + rc + "（可能已弹出卸载向导，请检查）");
-            return true;
+            if (rc == 0) { log("   [OK] 卸载命令执行完成。"); return true; }
+            // 修正（功能 bug）：原先无论 RunUninstallCommand 返回什么（超时 -2 / 启动失败 -1 / 非零退出码）
+            // 都一律 return true，调用方据此把软件当成「已卸载」。失败时必须返回 false。
+            string why = rc == -2 ? "（等待卸载程序超时）"
+                       : rc == -1 ? "（无法启动卸载程序，可能是提权被拒）"
+                       : "（卸载程序返回非零，可能已弹出卸载向导）";
+            log("   [FAIL] 卸载失败，退出码 " + rc + why);
+            return false;
         }
 
         /// <summary>
@@ -499,13 +559,42 @@ namespace CpqSystemTool
             return false;
         }
 
-        /// <summary>读取注册表字符串值（对齐 Win11EasyConfig：直接 Registry.GetValue(完整路径)）</summary>
+        /// <summary>
+        /// 读取注册表字符串值（对齐 Win11EasyConfig：直接 Registry.GetValue(完整路径)）。
+        /// 修复背景：32 位进程在 WOW64 下 Registry.GetValue 走 32 位视图，会把 HKLM\SOFTWARE 重定向到
+        /// HKLM\SOFTWARE\WOW6432Node。旧的硬编码 RegKey（如 ...\SOFTWARE\...\WinRAR archiver）指向的
+        /// 可能是 64 位项，按原路径读不到；故对 HKLM/HKCU 下非 WOW6432Node 的 SOFTWARE 路径，
+        /// 再用 RegistryView.Registry64 兜底读一次（WOW6432Node 路径本就是 32 位视图，无需重试）。
+        /// </summary>
         private static string ReadRegString(string keyPath, string valueName)
         {
             try
             {
                 object val = Microsoft.Win32.Registry.GetValue(keyPath, valueName, null);
-                return val as string;
+                if (val is string s) return s;
+            }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+
+            // 原路径（默认/32 位视图）没读到字符串值：可能是 64 位卸载项，用 64 位视图再读一次。
+            RegistryHive hive;
+            string sub;
+            if (TrySplitRegPath(keyPath, out hive, out sub)
+                && sub.IndexOf("SOFTWARE", StringComparison.OrdinalIgnoreCase) >= 0
+                && sub.IndexOf("WOW6432Node", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return ReadRegStringFromView(hive, sub, valueName, RegistryView.Registry64);
+            }
+            return null;
+        }
+
+        /// <summary>按指定视图读取注册表字符串值，读不到（键/值不存在或出错）返回 null。</summary>
+        private static string ReadRegStringFromView(RegistryHive hive, string sub, string valueName, RegistryView view)
+        {
+            try
+            {
+                using (var baseKey = RegistryKey.OpenBaseKey(hive, view))
+                using (var key = baseKey.OpenSubKey(sub))
+                    return key == null ? null : key.GetValue(valueName) as string;
             }
             catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return null; }
         }
@@ -578,6 +667,7 @@ namespace CpqSystemTool
         // ---- 内部实现 ----
         // 采用流式下载：边下边落盘，避免把整个安装包（可能数百 MB）一次性读入内存造成 GC 压力；
         // 相比 GetByteArrayAsync + WriteAllBytes，对大文件更省内存、更快，且 SHA256 仍照常校验（不降低安全性）。
+        // 使用 Downloader.DownloadAsync：支持代理回退（系统代理 → 直连 → Watt Toolkit）+ 重试 + 进度回调。
         private async Task<bool> DownloadAsync(string url, string dest, Action<string> log, int timeout, string sha256 = null)
         {
             try
@@ -586,28 +676,14 @@ namespace CpqSystemTool
                 string expect = string.IsNullOrWhiteSpace(sha256) ? Sha256 : sha256;
                 bool needHash = !string.IsNullOrWhiteSpace(expect);
                 log("   [*] 正在下载安装包…");
-                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeout))) // 原 client.Timeout → 请求级超时（单例不改全局 Timeout）
-                {
-                    var client = HttpClients.Default; // 进程内共享单例复用（B4）：避免每次 new/dispose 造成 socket TIME_WAIT 堆积
-                    using var req = new HttpRequestMessage(HttpMethod.Get, url); // UA/Referer 改请求级注入（不能写共享单例的 DefaultRequestHeaders）
-                    req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36");
-                    if (!string.IsNullOrEmpty(Referer))
-                        req.Headers.Referrer = new Uri(Referer);
-                    // ResponseHeadersRead：读完响应头即开始落盘，不等整包缓冲完（更快显现进度、更低峰值内存）
-                    using (var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token))
-                    {
-                        if (!resp.IsSuccessStatusCode)
-                        {
-                            log("   [!] 下载失败: HTTP " + (int)resp.StatusCode + " " + resp.ReasonPhrase);
-                            return false;
-                        }
-                        using (var inStream = await resp.Content.ReadAsStreamAsync())
-                        using (var outStream = File.Create(dest))
-                        {
-                            await inStream.CopyToAsync(outStream); // 异步增量写入，避免占用后台线程做纯 IO
-                        }
-                    }
-                }
+                bool ok = await Downloader.DownloadAsync(
+                    url, dest, log, null,
+                    maxAttempts: 3,
+                    timeoutMs: timeout * 1000,
+                    useProxyFallback: true,
+                    retryDelayMs: 5000,
+                    referer: string.IsNullOrEmpty(Referer) ? null : Referer).ConfigureAwait(false);
+                if (!ok) return false;
                 // 完整性校验：若配置了期望 SHA256（字段或运行时解析覆盖），则必须匹配（防篡改/损坏），不匹配直接拒绝
                 if (needHash)
                 {
@@ -680,15 +756,19 @@ namespace CpqSystemTool
                 p.BeginErrorReadLine();
                 // 受控等待 + 心跳日志：每 10 秒输出一次进度，避免静默安装器长时间无反馈；
                 // 总等待上限仍为 timeout，超时则 Kill 并上报（与原逻辑一致，不重试）。
+                // 单位修正：InstallTimeout 的单位是「秒」，而 waited/pollMs 累加的是「毫秒」，
+                // 不换算会导致首次轮询（1 秒）即满足 waited >= timeout 而误杀安装器，
+                // 结果所有非便携软件的安装必然失败、心跳日志也永远打不出来。统一换算为毫秒后再比较。
+                int timeoutMs = timeout * 1000;
                 int waited = 0;
                 const int pollMs = 1000;
                 while (!p.WaitForExit(pollMs))
                 {
                     waited += pollMs;
-                    if (waited >= timeout)
+                    if (waited >= timeoutMs)
                     {
                         try { p.Kill(); } catch { }
-                        log("   [!] 安装超时（>" + (timeout / 1000) + " 秒），已强制终止。");
+                        log("   [!] 安装超时（>" + (timeoutMs / 1000) + " 秒），已强制终止。");
                         return false;
                     }
                     if (waited % 10000 == 0)
@@ -700,17 +780,44 @@ namespace CpqSystemTool
             }
         }
 
-        private static RegistryKey OpenKey(string root)
+        /// <summary>把 "HKEY_LOCAL_MACHINE\子路径" 形式的完整键路径拆成 hive 与子路径（子路径带前导 '\'，OpenSubKey 可正常处理）。</summary>
+        private static bool TrySplitRegPath(string fullPath, out RegistryHive hive, out string sub)
+        {
+            hive = RegistryHive.LocalMachine;
+            sub = null;
+            if (string.IsNullOrEmpty(fullPath)) return false;
+            if (fullPath.StartsWith("HKEY_LOCAL_MACHINE", StringComparison.OrdinalIgnoreCase)) { hive = RegistryHive.LocalMachine; sub = fullPath.Substring(19); }
+            else if (fullPath.StartsWith("HKEY_CURRENT_USER", StringComparison.OrdinalIgnoreCase)) { hive = RegistryHive.CurrentUser; sub = fullPath.Substring(18); }
+            else if (fullPath.StartsWith("HKLM", StringComparison.OrdinalIgnoreCase)) { hive = RegistryHive.LocalMachine; sub = fullPath.Substring(4); }
+            else if (fullPath.StartsWith("HKCU", StringComparison.OrdinalIgnoreCase)) { hive = RegistryHive.CurrentUser; sub = fullPath.Substring(4); }
+            else return false;
+            return sub.Length > 0;
+        }
+
+        /// <summary>
+        /// 打开注册表键，可指定视图。
+        /// 修复背景：本程序 exe 为 32 位（PE 0x014C），在 64 位 Windows 上以 WOW64 运行，此时
+        /// RegistryView.Default 等价于 RegistryView.Registry32，会把 HKLM\SOFTWARE 重定向到
+        /// HKLM\SOFTWARE\WOW6432Node，导致只枚举到 32 位卸载项、漏掉约 21% 的 64 位已装软件。
+        /// 故枚举/读取卸载信息时必须显式同时使用 Registry64 与 Registry32 两个视图。
+        /// </summary>
+        private static RegistryKey OpenKey(string root, RegistryView view = RegistryView.Default)
         {
             RegistryHive hive;
             string sub;
-            if (root.StartsWith("HKEY_LOCAL_MACHINE", StringComparison.OrdinalIgnoreCase)) { hive = RegistryHive.LocalMachine; sub = root.Substring(19); }
-            else if (root.StartsWith("HKEY_CURRENT_USER", StringComparison.OrdinalIgnoreCase)) { hive = RegistryHive.CurrentUser; sub = root.Substring(18); }
-            else if (root.StartsWith("HKLM", StringComparison.OrdinalIgnoreCase)) { hive = RegistryHive.LocalMachine; sub = root.Substring(4); }
-            else if (root.StartsWith("HKCU", StringComparison.OrdinalIgnoreCase)) { hive = RegistryHive.CurrentUser; sub = root.Substring(4); }
-            else return null;
-            try { using (var baseKey = RegistryKey.OpenBaseKey(hive, RegistryView.Default)) return baseKey.OpenSubKey(sub); }
+            if (!TrySplitRegPath(root, out hive, out sub)) return null;
+            try { using (var baseKey = RegistryKey.OpenBaseKey(hive, view)) return baseKey.OpenSubKey(sub); }
             catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return null; }
+        }
+
+        /// <summary>
+        /// 打开完整键路径：先按默认（32 位）视图打开，失败再用 64 位视图重试一次。
+        /// 用于打开由枚举缓存得到的路径 —— 该路径可能只在 64 位视图中存在（WOW64 重定向下默认视图打不开）。
+        /// </summary>
+        private static RegistryKey OpenKeyWith64Fallback(string keyPath)
+        {
+            var key = OpenKey(keyPath);
+            return key ?? OpenKey(keyPath, RegistryView.Registry64);
         }
 
         /// <summary>
@@ -730,28 +837,41 @@ namespace CpqSystemTool
                     return _uninstallCache;
 
                 var fresh = new Dictionary<string, UninstallEntry>(StringComparer.OrdinalIgnoreCase);
+                // 32 位 WOW64 进程下 RegistryView.Default 会把 HKLM\SOFTWARE 重定向到 WOW6432Node，
+                // 只看默认视图会漏掉 64 位卸载项。这里对 3 个根各枚举 64 位与 32 位两个视图并合并，
+                // 缓存 key 仍保持 "根\子键" 原有格式，不影响 FindUninstaller/FindUninstallerFull/FindVersion 匹配。
+                var views = new[] { RegistryView.Registry64, RegistryView.Registry32 };
                 try
                 {
                     foreach (var root in UNINSTALL_ROOTS)
                     {
-                        using (var key = OpenKey(root))
+                        foreach (var view in views)
                         {
-                            if (key == null) continue;
-                            foreach (var sub in key.GetSubKeyNames())
+                            using (var key = OpenKey(root, view))
                             {
-                                try
+                                if (key == null) continue;
+                                foreach (var sub in key.GetSubKeyNames())
                                 {
-                                    using (var sk = key.OpenSubKey(sub))
+                                    try
                                     {
-                                        if (sk == null) continue;
-                                        fresh[root + "\\" + sub] = new UninstallEntry
+                                        using (var sk = key.OpenSubKey(sub))
                                         {
-                                            DisplayName = sk.GetValue("DisplayName") as string,
-                                            DisplayVersion = sk.GetValue("DisplayVersion") as string
-                                        };
+                                            if (sk == null) continue;
+                                            var path = root + "\\" + sub;
+                                            // 同一路径可能同时存在于 64 位与 32 位视图（如同时在两侧注册的软件），
+                                            // 已有带 DisplayName 的条目时保留先读到的（64 位优先），避免被空值覆盖。
+                                            UninstallEntry existing;
+                                            if (fresh.TryGetValue(path, out existing) && !string.IsNullOrEmpty(existing.DisplayName))
+                                                continue;
+                                            fresh[path] = new UninstallEntry
+                                            {
+                                                DisplayName = sk.GetValue("DisplayName") as string,
+                                                DisplayVersion = sk.GetValue("DisplayVersion") as string
+                                            };
+                                        }
                                     }
+                                    catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
                                 }
-                                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
                             }
                         }
                     }
@@ -771,17 +891,14 @@ namespace CpqSystemTool
 
         private string FindUninstaller(string keyword)
         {
-            var entries = EnumerateUninstallCache();
+            var full = FindUninstallKeyByDisplayName(keyword);
+            if (full == null) return null;
+            // 仅返回子键名（不带根前缀），与原实现契约一致
             foreach (var root in UNINSTALL_ROOTS)
             {
                 var prefix = root + "\\";
-                foreach (var kv in entries)
-                {
-                    if (!kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-                    var name = kv.Value.DisplayName;
-                    if (!string.IsNullOrEmpty(name) && name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
-                        return kv.Key.Substring(prefix.Length); // 仅子键名（不带根前缀），与原实现一致
-                }
+                if (full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    return full.Substring(prefix.Length);
             }
             return null;
         }
@@ -792,16 +909,48 @@ namespace CpqSystemTool
         /// </summary>
         private string FindUninstallerFull(string keyword)
         {
+            return FindUninstallKeyByDisplayName(keyword);
+        }
+
+        /// <summary>
+        /// 按 DisplayName 在卸载项缓存中查找，返回命中的完整键路径；找不到返回 null。
+        ///
+        /// ★ 采用「先精确相等、后子串包含」的两轮匹配，这是修一个真实误判 bug 的关键。
+        ///   单轮子串匹配时，「名字更长的那一项」会抢先命中：本机同时存在
+        ///     · "Microsoft Edge"（卸载键名是 MSI GUID {C5DA3FA9-BB21-33F6-AC6E-73839ACE9E08}）
+        ///     · "Microsoft Edge WebView2 Runtime"（卸载键名 Microsoft EdgeWebView）
+        ///   后者的 DisplayName **包含** "Microsoft Edge"。而遍历的是 Dictionary，
+        ///   命中谁取决于插入顺序，于是 Edge 有可能被匹配到 WebView2 那一项，后果有两层：
+        ///     1. 版本号串了 —— Edge 显示成 WebView2 的版本；
+        ///     2. 更危险 —— _cachedUninstallKeyPath 会缓存成 WebView2 的键，
+        ///        Uninstall() 便会拿 WebView2 的卸载命令去执行（误卸运行时）。
+        ///   先做一轮 Equals 精确匹配，就能保证 "Microsoft Edge" 命中它自己。
+        ///
+        /// 子串一轮仍保留：有些软件的 DisplayName 带版本后缀（如 "... 3.2.1"），
+        /// 只靠精确匹配会漏，所以不能简单砍掉。
+        /// </summary>
+        private static string FindUninstallKeyByDisplayName(string keyword)
+        {
+            if (string.IsNullOrEmpty(keyword)) return null;
             var entries = EnumerateUninstallCache();
-            foreach (var root in UNINSTALL_ROOTS)
+
+            // 第一轮：DisplayName 完全相等；第二轮：子串包含
+            for (int pass = 0; pass < 2; pass++)
             {
-                var prefix = root + "\\";
-                foreach (var kv in entries)
+                bool exact = (pass == 0);
+                foreach (var root in UNINSTALL_ROOTS)
                 {
-                    if (!kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-                    var name = kv.Value.DisplayName;
-                    if (!string.IsNullOrEmpty(name) && name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
-                        return kv.Key; // 返回完整路径
+                    var prefix = root + "\\";
+                    foreach (var kv in entries)
+                    {
+                        if (!kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                        var name = kv.Value.DisplayName;
+                        if (string.IsNullOrEmpty(name)) continue;
+                        bool hit = exact
+                            ? string.Equals(name, keyword, StringComparison.OrdinalIgnoreCase)
+                            : name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0;
+                        if (hit) return kv.Key;
+                    }
                 }
             }
             return null;
@@ -837,7 +986,8 @@ namespace CpqSystemTool
                                 try
                                 {
                                     // 版本号属于"安装后需精确读最新值"的数据，不经缓存，直接读被匹配键的实时值
-                                    using (var sk = OpenKey(kv.Key))
+                                    // 该键可能只存在于 64 位视图（WOW64 重定向下默认视图打不开），故带 64 位兜底打开
+                                    using (var sk = OpenKeyWith64Fallback(kv.Key))
                                     {
                                         if (sk == null) continue;
                                         // 按优先级尝试多个版本值名（参考 Win11EasyConfig 策略）
@@ -957,6 +1107,28 @@ namespace CpqSystemTool
                 .AltKeywords("WebView2", "Microsoft Edge WebView2")
                 .RegKey(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge WebView2 Runtime")
                 .RegKey2(@"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge WebView2 Runtime")
+                .Category("系统工具").Build(),
+            // Geek Uninstaller：官方免费版是**绿色单文件 exe**（官网原文 "Portable – Single and small EXE
+            // runs on any 32 and 64-bit Windows"），没有安装程序、也不写卸载注册表项。
+            // 直链 https://geekuninstaller.com/geek.exe 已于 2026-08-30 实测：HTTP 200、
+            // application/octet-stream、7,546,512 字节（与本机已有的 D:\电脑桌面\geek.exe 完全一致）。
+            // 【为什么不给 Sha256】官方未公布任何哈希值，不能编造；防篡改依靠 https 官方直链
+            // + VerifyIntegrity 里的 Authenticode 签名校验（Geek 有正规签名）。
+            // 【安装后在哪】走 .Portable() 的单文件分支，落到
+            // %LOCALAPPDATA%\CpqSystemTool\Portable\geek\geek.exe（见 InstallAsync 的 IsPortable 分支），
+            // 下面的 KnownExePaths 第一条即该路径，保证安装后能被稳定检测为"已安装"。
+            new SoftwareDef.Builder("geek", "Geek Uninstaller", "卸载清理工具", "https://geekuninstaller.com/geek.exe")
+                .Risk("low")
+                .Portable()
+                .ChocolateyId("geekuninstaller")
+                .AltKeywords("GeekUninstaller", "Geek Uninstaller")
+                .KnownExePaths(
+                    // 本工具安装后的落点（与 InstallAsync 的便携版落地目录严格对应）
+                    System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "CpqSystemTool", "Portable", "geek", "geek.exe"),
+                    // 用户自行安装/解压时的常见位置
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "\\Geek Uninstaller\\geek.exe",
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) + "\\Geek Uninstaller\\geek.exe")
                 .Category("系统工具").Build(),
             new SoftwareDef.Builder("aria2", "aria2", "命令行下载工具", "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip").Portable().ChocolateyId("aria2").Category("下载工具").Build(),
             new SoftwareDef.Builder("weixin", "微信", "即时通讯", "https://dldir1.qq.com/weixin/Windows/WeChatSetup.exe", "/S")
