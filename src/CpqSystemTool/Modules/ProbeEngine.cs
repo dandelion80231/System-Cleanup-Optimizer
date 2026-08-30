@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -80,6 +81,7 @@ namespace CpqSystemTool
         public static readonly Regex ExeBinCt = new Regex("application/octet-stream|application/x-msdownload|application/x-msdos-program|application/force-download|binary", RegexOptions.IgnoreCase);
         public static readonly Regex MobileMacPkg = new Regex(@"\.apk|\.ipa|\.dmg|\.app|\.pkg|\.deb|\.rpm(\?|$)", RegexOptions.IgnoreCase);
         public static readonly Regex ExeUrlRe = new Regex(@"https?://[^\s""'<>()\\]+?\.exe(?:\?[^\s""'<>()\\]*)?", RegexOptions.IgnoreCase);
+        public static readonly Regex PackageUrlRe = new Regex(@"https?://[^\s""'<>()\\]+?\.(?:zip|7z|rar)(?:\?[^\s""'<>()\\]*)?", RegexOptions.IgnoreCase);
         public static readonly Regex FileRedirectRe = new Regex(@"https?://[^\s""'<>()\\]*?file_redirect\.fcg[^\s""'<>()\\]*", RegexOptions.IgnoreCase);
 
         public const string KimiWinCdn = "https://kimi-img.moonshot.cn/app/download/windows/kimi_3.1.3.exe";
@@ -490,14 +492,47 @@ namespace CpqSystemTool
                     else if (!found[norm].Strategy.Contains(strategy)) found[norm].Strategy += "+" + strategy;
                 }
 
+                // 帮助将 HTML 中的相对路径（如 /geek.zip）解析为绝对 URL
+                string ResolveRelative(string raw)
+                {
+                    if (string.IsNullOrEmpty(raw)) return raw;
+                    var normalized = raw.Split('#')[0].Trim();
+                    if (normalized.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                        normalized.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                        return normalized;
+                    try
+                    {
+                        var baseUri = new Uri(entryUrl);
+                        var resolved = new Uri(baseUri, normalized).ToString();
+                        return resolved;
+                    }
+                    catch { return null; }
+                }
+
+                // 入口本身是二进制可执行文件
                 if (got.isBinary && ProbeData.ExeUrlRe.IsMatch(entryUrl)) Add(entryUrl, "anchor");
 
                 if ((got.body ?? "").Length < 50 && !got.isBinary) return null;
 
+                // 扫描所有可能的下载链接（.exe + .zip/.7z/.rar，并解析相对路径）
                 var exes = ProbeData.ExeUrlRe.Matches(got.body ?? "");
-                foreach (Match m in exes) Add(m.Value, "anchor");
+                foreach (Match m in exes)
+                {
+                    var abs = ResolveRelative(m.Value);
+                    if (!string.IsNullOrEmpty(abs)) Add(abs, "anchor");
+                }
+                var packages = ProbeData.PackageUrlRe.Matches(got.body ?? "");
+                foreach (Match m in packages)
+                {
+                    var abs = ResolveRelative(m.Value);
+                    if (!string.IsNullOrEmpty(abs)) Add(abs, "anchor");
+                }
                 var fcgs = ProbeData.FileRedirectRe.Matches(got.body ?? "");
-                foreach (Match m in fcgs) Add(m.Value, "jsonp");
+                foreach (Match m in fcgs)
+                {
+                    var abs = ResolveRelative(m.Value);
+                    if (!string.IsNullOrEmpty(abs)) Add(abs, "jsonp");
+                }
 
                 if (found.Count == 0) return null;
                 var res = new BrowserProbeResult();
