@@ -33,6 +33,8 @@ namespace CpqSystemTool
         public string ChocolateyId;
         public string StoreId;                 // 非空则走微软商店(winget)分支
         public int DownloadTimeout = 320;
+        /// <summary>每次读空闲超时（毫秒）。0=不限，60000=60秒。服务器慢速时可设更大值（如 120000）。</summary>
+        public int ReadTimeoutMs;
         public int InstallTimeout = 300;
         public string UninstallKeywords;
         public string[] AltKeywords = new string[0]; // 英文/别名备选，用于注册表匹配
@@ -143,6 +145,8 @@ namespace CpqSystemTool
             public Builder PageResolver(string pageUrl) { _d.PageUrl = pageUrl; return this; }
             public Builder Referer(string referer) { _d.Referer = referer; return this; }
             public Builder Portable() { _d.IsPortable = true; return this; }
+            public Builder ReadTimeoutMs(int ms) { _d.ReadTimeoutMs = ms; return this; }
+            public Builder DownloadTimeout(int seconds) { _d.DownloadTimeout = seconds; return this; }
             /// <summary>显式指定自定义安装目录开关前缀（/D= 或 /DIR=）。自定义软件条目可借此覆盖构造器的自动推断。</summary>
             public Builder InstallDirSwitch(string sw) { _d.InstallDirSwitch = sw; return this; }
             public SoftwareDef Build() => _d;
@@ -680,7 +684,7 @@ namespace CpqSystemTool
                     url, dest, log, null,
                     maxAttempts: 3,
                     timeoutMs: timeout * 1000,
-                    readTimeoutMs: 60000,
+                    readTimeoutMs: ReadTimeoutMs > 0 ? ReadTimeoutMs : 60000,
                     useProxyFallback: true,
                     retryDelayMs: 5000,
                     referer: string.IsNullOrEmpty(Referer) ? null : Referer).ConfigureAwait(false);
@@ -1122,6 +1126,8 @@ namespace CpqSystemTool
                 .Risk("low")
                 .Portable()
                 .ChocolateyId("geekuninstaller")
+                .ReadTimeoutMs(120000)
+                .DownloadTimeout(900)
                 .AltKeywords("GeekUninstaller", "Geek Uninstaller")
                 .KnownExePaths(
                     // 本工具安装后的落点（与 InstallAsync 的便携版落地目录严格对应）

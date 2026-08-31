@@ -5,10 +5,10 @@
 
 ## [v1.18] - 2026-08-31
 
-> 相对 v1.17 的源码变更（1 个提交，1 个文件，+1 / −0 行）：修复 Geek Uninstaller 一键安装下载卡死问题。
+> 相对 v1.17 的源码变更（1 个提交，1 个文件，+14 / −1 行）：修复 Geek Uninstaller 一键安装下载卡死问题。
 
 ### 🐛 修复
-- **Geek Uninstaller 下载卡死修复**：`SoftwareInstall.cs` 的 `DownloadAsync` 调用新增 `readTimeoutMs: 60000`（60 秒读空闲超时），防止服务器慢连接或网络中断时下载永久挂起。此前 `readTimeoutMs` 默认为 0 表示无限制，数据下载阶段无任何超时保护。
+- **Geek Uninstaller 下载卡死修复**：为 `SoftwareInstall.cs` 新增 `ReadTimeoutMs` 和 `DownloadTimeout` 可配置字段，通过 Builder API（`.ReadTimeoutMs()` / `.DownloadTimeout()`）按软件条目独立设置。Geek Uninstaller 配置为总超时 900 秒 + 读空闲超时 120 秒；原默认值为总超时 320 秒 + 读空闲超时 60 秒，面对 Geek 服务器极慢速（~12 KB/s，7.5 MB 文件需 ~10 分钟）时反复超时失败。此修复同样让其他未来可能遇到慢速服务器的软件条目可灵活调整超时参数。
 
 ### ♻️ 项目卫生
 - **禁止上传 src.zip 到 Release**：src.zip 是项目内嵌资源（嵌入 exe 供「导出源码」功能使用），不是 Release 资产。Release 仅上传 exe + README.md。
