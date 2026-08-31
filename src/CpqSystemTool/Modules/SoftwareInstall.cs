@@ -270,7 +270,8 @@ namespace CpqSystemTool
                     // 单文件便携版（Geek Uninstaller 这类「一个 exe 就是全部」）：
                     // 旧实现直接把它留在临时下载目录 —— 用户根本不知道去哪找，
                     // 临时目录随时可能被清理，而软件页仍显示"已安装"，自相矛盾。
-                    // 优先使用 customDir（用户指定），否则落到默认便携目录：
+                    // 优先使用 customDir（用户指定），否则落到桌面根目录：
+                    // 桌面路径直观易用，用户打开电脑就能看到，无需翻找。
                     string dir;
                     if (!string.IsNullOrEmpty(customDir))
                     {
@@ -279,9 +280,8 @@ namespace CpqSystemTool
                     }
                     else
                     {
-                        dir = System.IO.Path.Combine(
-                            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                            "CpqSystemTool", "Portable", SanitizeSwId(Id));
+                        dir = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                        log("   [*] 便携版默认安装到桌面：" + dir);
                     }
                     try
                     {
@@ -1115,24 +1115,23 @@ namespace CpqSystemTool
                 .Category("系统工具").Build(),
             // Geek Uninstaller：官方免费版是**绿色单文件 exe**（官网原文 "Portable – Single and small EXE
             // runs on any 32 and 64-bit Windows"），没有安装程序、也不写卸载注册表项。
-            // 直链 https://geekuninstaller.com/geek.exe 已于 2026-08-30 实测：HTTP 200、
-            // application/octet-stream、7,546,512 字节（与本机已有的 D:\电脑桌面\geek.exe 完全一致）。
-            // 【为什么不给 Sha256】官方未公布任何哈希值，不能编造；防篡改依靠 https 官方直链
-            // + VerifyIntegrity 里的 Authenticode 签名校验（Geek 有正规签名）。
-            // 【安装后在哪】走 .Portable() 的单文件分支，落到
-            // %LOCALAPPDATA%\CpqSystemTool\Portable\geek\geek.exe（见 InstallAsync 的 IsPortable 分支），
-            // 下面的 KnownExePaths 第一条即该路径，保证安装后能被稳定检测为"已安装"。
-            new SoftwareDef.Builder("geek", "Geek Uninstaller", "卸载清理工具", "https://geekuninstaller.com/geek.exe")
+            // 官方下载直链为 ZIP 压缩包（内含 geek.exe），3.2MB，比裸 .exe（7.5MB）小得多，下载更快。
+            // 【SHA256】取官方 Chocolatey 包公布的 checksum，来源：chocolateyinstall.ps1 中的
+            // $checksum = '4ef2e5b3d3d861e1d2d9dcecc58ed7a2cdbc5fe743f44aa2614e10c72d31d694'。
+            // 该哈希验证的是 geek.zip 本身（3,198,063 字节），经实测与官方 URL 一致。
+            // 【安装后在哪】走 .Portable() 的单文件分支，落到桌面根目录 geek.exe（见 InstallAsync 的 IsPortable 分支），
+            // 下面的 KnownExePaths 第一条即桌面路径，保证安装后能被稳定检测为"已安装"。
+            new SoftwareDef.Builder("geek", "Geek Uninstaller", "卸载清理工具", "https://geekuninstaller.com/geek.zip")
                 .Risk("low")
                 .Portable()
                 .ChocolateyId("geekuninstaller")
+                .Sha256("4ef2e5b3d3d861e1d2d9dcecc58ed7a2cdbc5fe743f44aa2614e10c72d31d694")
                 .ReadTimeoutMs(120000)
-                .DownloadTimeout(900)
+                .DownloadTimeout(120)
                 .AltKeywords("GeekUninstaller", "Geek Uninstaller")
                 .KnownExePaths(
-                    // 本工具安装后的落点（与 InstallAsync 的便携版落地目录严格对应）
-                    System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                        "CpqSystemTool", "Portable", "geek", "geek.exe"),
+                    // 本工具安装后的落点（桌面根目录）
+                    System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "geek.exe"),
                     // 用户自行安装/解压时的常见位置
                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "\\Geek Uninstaller\\geek.exe",
                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) + "\\Geek Uninstaller\\geek.exe")
