@@ -15,7 +15,7 @@ CHANGELOG_HTML = os.path.join(SRC, "changelog.html")
 DOWNLOAD_HTML = os.path.join(SRC, "download.html")
 
 ALL_VERSIONS = [
-    "v1.17", "v1.16.1", "v1.16", "v1.15", "v1.14", "v1.13", "v1.12", "v1.11", "v1.10",
+    "v1.18", "v1.16", "v1.15", "v1.14", "v1.13", "v1.12", "v1.11", "v1.10",
     "v1.09", "v1.08", "v1.07", "v1.06", "v1.05", "v1.04", "v1.03",
     "v1.02", "v1.01",
 ]
