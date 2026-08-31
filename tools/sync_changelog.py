@@ -141,19 +141,43 @@ def update_changelog_html(html, blocks, dates):
 def update_download_html(html, blocks, dates):
     """
     从 CHANGELOG.md 完整同步最新版本内容到 download.html
-    直接替换 chlog-panels 容器的完整内容
+    只更新最新版本的信息，保留所有历史版本的 panel
+    
+    逻辑：
+    1. 移除旧的版本 tab（动态生成的那一行）
+    2. 移除旧的 dl-panel（最新版本的下载面板）
+    3. 重建 chlog-panels（changelog 部分）
+    4. 添加最新版本 tab（在 v1.16 之前）
+    5. 添加最新版本 dl-panel（在 v1.16 之前）
     """
     # 确定最新版本（CHANGELOG 中第一个条目）
-    latest_ver = list(blocks.keys())[0] if blocks else "v1.17"
-
-    # 1. 移除旧的版本 tab（如果有）
-    tab_pattern = r'          <button[^>]*data-ver="[^"]*"[^>]*>v1\.[0-9]+</button>\n'
+    latest_ver = list(blocks.keys())[0] if blocks else "v1.18"
+    latest_date = dates.get(latest_ver, "2026-08-31")
+    
+    # 获取最新的 SHA256 和文件大小
+    import hashlib, os
+    exe_path = os.path.join(ROOT, "src", "CpqSystemTool", "bin", "Release", "net48", "系统清理与优化工具.exe")
+    sha = ""
+    size_mb = "5.06"
+    exe_name = f"系统清理与优化工具_{latest_ver}.exe"
+    if os.path.exists(exe_path):
+        with open(exe_path, 'rb') as f:
+            sha = hashlib.sha256(f.read()).hexdigest()
+        size_bytes = os.path.getsize(exe_path)
+        size_mb = round(size_bytes / 1024 / 1024, 2)
+    else:
+        print(f"[WARN] 未找到 exe: {exe_path}")
+    
+    # 1. 移除动态生成的版本 tab（如果有重复）
+    # 匹配: <button ... data-ver="v1.18">v1.18</button> （在 dl-tabs 内的第一行）
+    tab_pattern = r' <button class="dl-tab active"[^>]*data-ver="' + re.escape(latest_ver) + '"[^>]*>.*?</button>\s*\n'
     html = re.sub(tab_pattern, '', html)
-
-    # 2. 移除旧的版本 dl-panel（用正则匹配完整块）
-    panel_pattern = r'(\s*<div class="dl-panel"[^>]*id="panel-v1\.[0-9]+"[^>]*>.*?</div>\n?)'
+    
+    # 2. 移除动态生成的最新版本 dl-panel（如果有）
+    # 使用更精确的模式：匹配从 dl-panel active 到下一个 dl-panel 或 dl-note 之间
+    panel_pattern = r'(\n            <div class="dl-panel active"[^>]*id="panel-' + re.escape(latest_ver) + '"[^>]*>.*?</div>\n          </div>)'
     html = re.sub(panel_pattern, '', html, flags=re.DOTALL)
-
+    
     # 3. 找到 chlog-panels 容器并替换其完整内容
     panels_start = html.find('class="chlog-panels"')
     if panels_start >= 0:
@@ -195,7 +219,7 @@ def update_download_html(html, blocks, dates):
     tab_pattern = r'(<button[^>]*data-ver="v1\.16"[^>]*>)'
     match = re.search(tab_pattern, html)
     if match:
-        v_tab = f'          <button class="dl-tab active" role="tab" aria-selected="true" aria-controls="panel-{latest_ver}" tabindex="0" data-ver="{latest_ver}">{latest_ver}</button>\n'
+        v_tab = f'              <button class="dl-tab active" role="tab" aria-selected="true" aria-controls="panel-{latest_ver}" tabindex="0" data-ver="{latest_ver}">{latest_ver}</button>\n'
         html = html[:match.start()] + v_tab + html[match.start():]
         # 移除 v1.16 tab 的 active 类
         html = re.sub(
@@ -208,22 +232,8 @@ def update_download_html(html, blocks, dates):
     panel_pattern = r'(<div class="dl-panel"[^>]*data-panel="v1\.16"[^>]*>)'
     match = re.search(panel_pattern, html)
     if match:
-        date = dates.get(latest_ver, "")
-        # 获取 exe SHA256（从已构建的 exe 文件读取）
-        import hashlib, os
-        exe_path = os.path.join(ROOT, "src", "CpqSystemTool", "bin", "Release", "net48", "系统清理与优化工具.exe")
-        sha = ""
-        size_mb = "5.06"
-        exe_name = f"系统清理与优化工具_{latest_ver}.exe"
-        if os.path.exists(exe_path):
-            with open(exe_path, 'rb') as f:
-                sha = hashlib.sha256(f.read()).hexdigest()
-            size_bytes = os.path.getsize(exe_path)
-            size_mb = round(size_bytes / 1024 / 1024, 2)
-        else:
-            print(f"[WARN] 未找到 exe: {exe_path}")
         v_panel = f'''            <div class="dl-panel active" role="tabpanel" id="panel-{latest_ver}" data-panel="{latest_ver}">
-              <h3 class="dl-ver">下载 {latest_ver} <span style="font-size:14px;opacity:.75;font-weight:500;">（最新 · {date} · {size_mb} MB）</span></h3>
+              <h3 class="dl-ver">下载 {latest_ver} <span style="font-size:14px;opacity:.75;font-weight:500;">（最新 · {latest_date} · {size_mb} MB）</span></h3>
               <p class="meta"><span>📦 单文件 exe</span><span>💾 {size_mb} MB</span><span>🪟 Win 10 / 11</span><span>🔓 开源免费</span></p>
               <a class="btn btn-primary" href="./{exe_name}" download>⬇️ 下载 {exe_name}</a>
               <div class="hash">SHA256: {sha}</div>
