@@ -6,6 +6,7 @@ sync_changelog.py — 将 CHANGELOG.md 内容同步到官网
 
 import os
 import re
+from html.parser import HTMLParser
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "site-src")
@@ -146,8 +147,9 @@ def update_download_html(html, blocks, dates):
     tab_pattern = r'          <button[^>]*data-ver="v1\.17"[^>]*>v1\.17</button>\n'
     html = re.sub(tab_pattern, '', html)
 
-    # 2. 移除旧的 v1.17 dl-panel（如果有）
-    panel_pattern = r'            <div class="dl-panel"[^>]*data-panel="v1\.17"[^>]*>.*?</div>\n            </div>\n'
+    # 2. 移除旧的 v1.17 dl-panel（用正则匹配完整块，避免 .NET 正则回溯限制）
+    # 使用非贪婪匹配确保匹配到正确闭合标签
+    panel_pattern = r'(\s*<div class="dl-panel"[^>]*id="panel-v1\.17"[^>]*>.*?</div>\n?)'
     html = re.sub(panel_pattern, '', html, flags=re.DOTALL)
 
     # 3. 找到 chlog-panels 容器并替换其完整内容

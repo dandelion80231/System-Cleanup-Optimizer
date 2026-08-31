@@ -141,7 +141,7 @@ namespace CpqSystemTool
         private static async Task DownloadFileWithClientAsync(string url, string destPath, Action<string> log, Action<int> progress)
         {
             bool ok = await Downloader.DownloadAsync(url, destPath, log, progress,
-                maxAttempts: 1, timeoutMs: DownloadTimeoutMs).ConfigureAwait(false);
+                maxAttempts: 1, timeoutMs: DownloadTimeoutMs, readTimeoutMs: 60000).ConfigureAwait(false);
             if (!ok)
                 throw new IOException("下载 WebView2 依赖失败（详见日志）");
         }

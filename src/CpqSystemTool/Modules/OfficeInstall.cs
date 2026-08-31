@@ -92,6 +92,7 @@ namespace CpqSystemTool
                 downloaded = Downloader.DownloadAsync(url, setup, log,
                     maxAttempts: 1,
                     timeoutMs: 100000,      // 等价 WebClient 默认 100 秒超时
+                    readTimeoutMs: 60000,   // 60s 读空闲超时，防慢连接永久挂起
                     userAgent: "Mozilla/5.0").GetAwaiter().GetResult();
                 // 安全加固：下载后校验文件存在且大小合理（非空），避免后续对损坏/截断的 setup.exe 静默执行
                 if (downloaded)
