@@ -5,10 +5,12 @@
 
 ## [v1.18] - 2026-08-31
 
-> 相对 v1.17 的源码变更（1 个提交，1 个文件，+14 / −1 行）：修复 Geek Uninstaller 一键安装下载卡死问题。
+> 相对 v1.17 的源码变更（3 个提交，1 个文件，+43 / −18 行）：修复 Geek Uninstaller 下载卡死、优化便携版安装路径、改用 ZIP 加速下载。
 
 ### 🐛 修复
 - **Geek Uninstaller 下载卡死修复**：为 `SoftwareInstall.cs` 新增 `ReadTimeoutMs` 和 `DownloadTimeout` 可配置字段，通过 Builder API（`.ReadTimeoutMs()` / `.DownloadTimeout()`）按软件条目独立设置。Geek Uninstaller 配置为总超时 900 秒 + 读空闲超时 120 秒；原默认值为总超时 320 秒 + 读空闲超时 60 秒，面对 Geek 服务器极慢速（~12 KB/s，7.5 MB 文件需 ~10 分钟）时反复超时失败。此修复同样让其他未来可能遇到慢速服务器的软件条目可灵活调整超时参数。
+- **Geek Uninstaller 便携版路径优化**：便携版默认安装路径从 `%LOCALAPPDATA%\CpqSystemTool\Portable\{id}\` 改为桌面根目录，用户打开电脑即可看到，无需翻找深层目录。同步更新 `KnownExePaths` 检测路径，确保安装后可正确识别为"已安装"。
+- **Geek Uninstaller 下载加速**：改用官方 ZIP 包（3.2MB）替代裸 EXE（7.5MB），下载时间减少约 60%。同时添加 SHA256 校验（来源：Chocolatey 官方包公布的 checksum），增强文件完整性验证。超时参数从 900 秒调整为 120 秒（ZIP 包体积小，120 秒足够）。
 
 ### ♻️ 项目卫生
 - **禁止上传 src.zip 到 Release**：src.zip 是项目内嵌资源（嵌入 exe 供「导出源码」功能使用），不是 Release 资产。Release 仅上传 exe + README.md。
