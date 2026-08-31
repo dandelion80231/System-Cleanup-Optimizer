@@ -680,6 +680,7 @@ namespace CpqSystemTool
                     url, dest, log, null,
                     maxAttempts: 3,
                     timeoutMs: timeout * 1000,
+                    readTimeoutMs: 60000,
                     useProxyFallback: true,
                     retryDelayMs: 5000,
                     referer: string.IsNullOrEmpty(Referer) ? null : Referer).ConfigureAwait(false);
