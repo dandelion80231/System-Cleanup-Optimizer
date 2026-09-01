@@ -301,10 +301,11 @@ def update_download_html(html, blocks, dates):
             html = html[:insert_pos] + v_tab + html[insert_pos:]
             print(f"[OK] 已添加最新版本 {latest_ver} 的 tab")
     else:
-        # 已有 tab，只需要设置 active
+        # 已有 tab，只需要设置 active（仅添加 class，不重复添加其他属性）
+        # 使用更精确的替换：只把 class="dl-tab" 改为 class="dl-tab active"
         html = html.replace(
-            f'<button class="dl-tab" role="tab"',
-            f'<button class="dl-tab active" role="tab" aria-selected="true" aria-controls="panel-{latest_ver}" tabindex="0"',
+            f'<button class="dl-tab" role="tab" aria-selected="false"',
+            f'<button class="dl-tab active" role="tab" aria-selected="true" tabindex="0"',
             1
         )
         print(f"[OK] 已设置最新版本 {latest_ver} 的 tab 为 active")
