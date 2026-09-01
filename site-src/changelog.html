@@ -68,7 +68,7 @@
         <div class="tl-item">
           <span class="ver">v1.17</span><span class="date">2026-08-30</span>
           <div class="chg-body">
-<blockquote>相对 v1.16.1 的源码变更（15 个提交，73 个文件，+8163 / −1913 行）：背景编辑器大规模迭代（HSV 色轮性能优化、颜色格式显示、对比度检查、网格光斑拖拽）、配置管理页重构（导出源码功能）、探针工程重构（独立 HttpClient、TLS 1.2/1.3、UA 池轮换）、App.xaml 异常处理前置、src.zip 防呆机制。</blockquote>
+<blockquote>相对 v1.16 的源码变更（15 个提交，73 个文件，+8163 / −1913 行）：背景编辑器大规模迭代（HSV 色轮性能优化、颜色格式显示、对比度检查、网格光斑拖拽）、配置管理页重构（导出源码功能）、探针工程重构（独立 HttpClient、TLS 1.2/1.3、UA 池轮换）、App.xaml 异常处理前置、src.zip 防呆机制。</blockquote>
 <h4>✨ 新增</h4>
 <ul><li><strong>背景编辑器功能扩展（v1.17）</strong>：</li><li><strong>HSV 色轮性能优化</strong>：复用 WriteableBitmap 与其像素数组，避免每次重绘都全量分配；拖明度/取色一帧内可能触发多次 <code>RenderColorWheel</code>，用 <code>BeginInvoke</code> + 标志位把多次请求压缩成一次真实渲染；明度变化才重算像素，拖色轮改色相/饱和度时只需移动指示器。</li><li><strong>颜色格式显示</strong>：新增 RGB / HSL / HSV / CMYK 四格式只读显示，每行标签+数值+复制按钮，Star 行均匀铺开占满剩余空间。</li><li><strong>对比度检查提示</strong>：右侧底部显示当前颜色与背景的对比度比值，辅助用户选择合适的深色/浅色组合。</li><li><strong>图片模式双列布局</strong>：左列控件（标题 + 恢复默认 + 深色/浅色选择 + 独立透明度），右列随主题显示的大预览图，最小高度 320px。</li><li><strong>网格渐变光斑拖拽交互</strong>：新增 <code>_blobHandles</code> 字典映射预览区光斑句柄，支持拖拽移动光斑位置；每模式最近一次的几何参数存回旧 mode、切回时从字典读回，避免 Linear 90° 切 Radial 后 90° 丢失。</li><li><strong>线性/径向渐变几何参数记忆</strong>：<code>_angleByMode</code> / <code>_centerXByMode</code> / <code>_centerYByMode</code> 三个字典，模式切换时把当前值存回旧 mode、切回时从字典读回。</li><li><strong>关闭时撤销机制改进</strong>：根据是否编辑过/应用过决定回滚目标——若已"应用"后又编辑，回到最近一次 Apply 的快照；否则回到打开前。</li><li><strong>HEX 输入校验优化</strong>：支持 <code>#RGB</code> / <code>#RRGGBB</code> / <code>#RRGGBBAA</code> 三种格式，<code>'#'</code> 可省略；防止中间态输入被误解析。</li><li><strong>明度滑块宽度调整</strong>：从 180px 改为 150px，与整体布局更协调。</li></ul>
 <h4>🐛 修复</h4>
