@@ -140,17 +140,27 @@ def update_changelog_html(html, blocks, dates):
 
 def get_all_dl_panel_versions(html):
     """从 download.html 的 dl-panels 区域提取所有版本"""
-    import re
-    # 只找 dl-panel 相关的，排除 chlog-panel
     idx = html.find('class="dl-panels"')
     if idx < 0:
         return []
-    # 找下一个 section 的开始位置
     next_section = html.find('<section', idx)
     if next_section < 0:
         next_section = len(html)
     dl_section = html[idx:next_section]
     versions = re.findall(r'data-panel="(v\d+\.\d+)"', dl_section)
+    return list(set(versions))
+
+
+def get_all_dl_tab_versions(html):
+    """从 download.html 的 dl-tabs 区域提取所有版本"""
+    idx = html.find('class="dl-tabs"')
+    if idx < 0:
+        return []
+    next_section = html.find('</div>', idx)
+    if next_section < 0:
+        next_section = len(html)
+    tabs_section = html[idx:next_section]
+    versions = re.findall(r'data-ver="(v\d+\.\d+)"', tabs_section)
     return list(set(versions))
 
 
@@ -162,9 +172,8 @@ def update_download_html(html, blocks, dates):
     逻辑：
     1. 确定最新版本（CHANGELOG 中第一个条目）
     2. 移除所有 active 状态
-    3. 删除旧最新版本（v1.17）的 panel（保持结构完整）
-    4. 重建 chlog-panels
-    5. 确保最新版本（v1.18）有 tab 和 panel，并设为 active
+    3. 删除旧最新版本（v1.17）的 tab 和 panel（如果存在）
+    4. 确保最新版本（v1.18）有 panel，并设为 active
     """
     # 确定最新版本（CHANGELOG 中第一个条目）
     latest_ver = list(blocks.keys())[0] if blocks else "v1.18"
@@ -184,41 +193,14 @@ def update_download_html(html, blocks, dates):
     else:
         print(f"[WARN] 未找到 exe: {exe_path}")
 
-    # 找出当前文件中已存在的 dl-panel 版本
-    existing_versions = get_all_dl_panel_versions(html)
-    # 同时获取所有 tab 中的版本
-    all_tab_versions = re.findall(r'data-ver="(v\d+\.\d+)"', html)
+    # 找出当前文件中已存在的版本
+    existing_panel_versions = get_all_dl_panel_versions(html)
+    existing_tab_versions = get_all_dl_tab_versions(html)
+    all_versions = set(existing_panel_versions + existing_tab_versions)
 
-    print(f"[DEBUG] 当前 dl-panel 版本: {sorted(existing_versions)}")
+    print(f"[DEBUG] 当前 dl-panel 版本: {sorted(existing_panel_versions)}")
+    print(f"[DEBUG] 当前 dl-tab 版本: {sorted(existing_tab_versions)}")
     print(f"[DEBUG] CHANGELOG 最新版本: {latest_ver}")
-
-    # 确定旧最新版本（在 panels 或 tabs 中找）
-    all_versions = set(existing_versions + all_tab_versions)
-    old_latest = None
-    for v in all_versions:
-        if v != latest_ver:
-            if old_latest is None or v > old_latest:
-                old_latest = v
-    print(f"[DEBUG] 旧最新版本: {old_latest}")
-
-    # 如果最新版本已经存在且有 panel，直接返回（无需更新）
-    if latest_ver in existing_versions:
-        # 但仍然需要移除 active 状态并重新设置
-        html = html.replace('class="dl-tab active"', 'class="dl-tab"')
-        html = html.replace('class="dl-panel active"', 'class="dl-panel"')
-        # 添加 active 到最新版本
-        html = html.replace(
-            f'<button class="dl-tab" role="tab"',
-            f'<button class="dl-tab active" role="tab" aria-selected="true" aria-controls="panel-{latest_ver}" tabindex="0"',
-            1
-        )
-        html = html.replace(
-            f'<div class="dl-panel" role="tabpanel" id="panel-{latest_ver}"',
-            f'<div class="dl-panel active" role="tabpanel" id="panel-{latest_ver}"',
-            1
-        )
-        print(f"[INFO] {latest_ver} 已存在，更新 active 状态")
-        return html
 
     # 1. 移除所有现有的 active tab（保留其他 tab）
     html = html.replace('class="dl-tab active"', 'class="dl-tab"')
@@ -226,8 +208,9 @@ def update_download_html(html, blocks, dates):
     # 2. 移除所有现有的 active dl-panel（保留其他 panel）
     html = html.replace('class="dl-panel active"', 'class="dl-panel"')
 
-    # 3. 删除旧最新版本（v1.17）的 dl-panel 和 dl-tab（整块，保持缩进）
-    if old_latest:
+    # 3. 删除旧最新版本（v1.17）的 tab 和 panel（如果存在）
+    old_latest = "v1.17"
+    if old_latest in existing_tab_versions:
         # 删除旧最新版本的 tab（整行）
         tab_line_pattern = f'<button[^>]*data-ver="{old_latest}"[^>]*>.*?</button>'
         m = re.search(tab_line_pattern, html, re.S)
@@ -241,102 +224,90 @@ def update_download_html(html, blocks, dates):
             html = html[:line_start] + html[line_end:]
             print(f"[OK] 已删除旧最新版本 {old_latest} 的 tab 行")
 
+    if old_latest in existing_panel_versions:
         # 删除旧最新版本的 panel（整块）
-        if old_latest in existing_versions:
-            panel_start_pattern = f'<div class="dl-panel"[^>]*data-panel="{old_latest}"'
-            m = re.search(panel_start_pattern, html)
-            if m:
-                div_start = m.start()
-                line_start = html.rfind('\n', 0, div_start) + 1
-                depth = 0
-                pos = div_start
-                while pos < len(html):
-                    if html[pos:pos+5] == '<div ':
-                        depth += 1
-                    elif html[pos:pos+6] == '</div>':
-                        depth -= 1
-                        if depth == 0:
-                            div_end = pos + 6
-                            next_line = html.find('\n', div_end)
-                            if next_line >= 0:
-                                next_line += 1
-                            else:
-                                next_line = len(html)
-                            html = html[:line_start] + html[next_line:]
-                            print(f"[OK] 已删除旧最新版本 {old_latest} 的 panel 块")
-                            break
-                    pos += 1
+        panel_start_pattern = f'<div class="dl-panel"[^>]*data-panel="{old_latest}"'
+        m = re.search(panel_start_pattern, html)
+        if m:
+            div_start = m.start()
+            line_start = html.rfind('\n', 0, div_start) + 1
+            depth = 0
+            pos = div_start
+            while pos < len(html):
+                if html[pos:pos+5] == '<div ':
+                    depth += 1
+                elif html[pos:pos+6] == '</div>':
+                    depth -= 1
+                    if depth == 0:
+                        div_end = pos + 6
+                        next_line = html.find('\n', div_end)
+                        if next_line >= 0:
+                            next_line += 1
+                        else:
+                            next_line = len(html)
+                        html = html[:line_start] + html[next_line:]
+                        print(f"[OK] 已删除旧最新版本 {old_latest} 的 panel 块")
+                        break
+                pos += 1
 
-    # 4. 重建 chlog-panels（changelog 部分）
-    panels_start = html.find('class="chlog-panels"')
-    if panels_start >= 0:
-        # 找到 chlog-panels 的结束位置
-        search_from = panels_start
-        last_panel = html.find('data-panel="v1.01"', search_from)
-        if last_panel >= 0:
-            # 找到最后一个 chlog-panel 的结束 div
-            end_div = html.find('</div>', last_panel)
-            if end_div >= 0:
-                # 找到 chlog-panels 容器的结束 div（需要跳过 chg-body 和 chlog-panel 的关闭标签）
-                chlog_panels_end = html.find('</div>', end_div + 6)  # 跳过 chg-body 的 </div>
-                if chlog_panels_end >= 0:
-                    # 重建 chlog-panels 内容
-                    chlog_panels_content = []
-                    for ver in ALL_VERSIONS:
-                        if ver not in blocks:
-                            continue
-                        body = version_body_html(blocks, ver)
-                        is_active = ' active' if ver == latest_ver else ''
-                        chlog_panels_content.append(
-                            f'              <div class="chlog-panel{is_active}" data-panel="{ver}">\n{body}\n              </div>'
-                        )
-                    new_chlog_panels = '\n'.join(chlog_panels_content)
-
-                    # 替换
-                    html = html[:panels_start + len('class="chlog-panels"')] + '>\n' + new_chlog_panels + '\n            </div>' + html[chlog_panels_end + 6:]
-
-    # 5. 添加最新版本 tab（在第一个 tab 之前，设为 active）
-    tab_pattern = r'(<button[^>]*data-ver="[^"]*"[^>]*>)'
-    match = re.search(tab_pattern, html)
-    if match:
-        # 确保前面有正确的缩进
-        insert_pos = match.start()
-        # 检查前面的字符是否是缩进空格
-        prefix = html[:insert_pos]
-        if prefix and not prefix.endswith('\n'):
-            # 前面没有换行，需要添加
-            insert_pos = html.rfind('\n', 0, insert_pos) + 1
-        v_tab = f'          <button class="dl-tab active" role="tab" aria-selected="true" aria-controls="panel-{latest_ver}" tabindex="0" data-ver="{latest_ver}">{latest_ver}</button>\n'
-        html = html[:insert_pos] + v_tab + html[insert_pos:]
-        print(f"[OK] 已添加最新版本 {latest_ver} 的 tab")
-
-    # 6. 添加最新版本 dl-panel（在第一个 panel 之前，设为 active）
-    panel_pattern = r'(<div class="dl-panel"[^>]*>)'
-    match = re.search(panel_pattern, html)
-    if match:
-        insert_pos = match.start()
-        # 检查前面的字符是否是缩进空格
-        prefix = html[:insert_pos]
-        if prefix and not prefix.endswith('\n'):
-            insert_pos = html.rfind('\n', 0, insert_pos) + 1
-        v_panel = (
-            '            <div class="dl-panel active" role="tabpanel" '
-            f'id="panel-{latest_ver}" data-panel="{latest_ver}">'
-            f'\n              <h3 class="dl-ver">下载 {latest_ver} '
-            '<span style="font-size:14px;opacity:.75;font-weight:500;">'
-            f'（最新 · {latest_date} · {size_mb} MB）</span></h3>'
-            '\n              <p class="meta">'
-            '<span>📦 单文件 exe</span>'
-            '<span>💾 5.06 MB</span>'
-            '<span>🪟 Win 10 / 11</span>'
-            '<span>🔓 开源免费</span></p>'
-            f'\n              <a class="btn btn-primary" href="./{exe_name}" download>'
-            f'⬇️ 下载 {exe_name}</a>'
-            f'\n              <div class="hash">SHA256: {sha}</div>'
-            '\n            </div>\n'
+    # 4. 检查最新版本是否已有 panel，如果没有则添加
+    if latest_ver not in existing_panel_versions:
+        # 找到第一个 dl-panel 的位置，在其前面插入最新版本 panel
+        panel_pattern = r'(<div class="dl-panel"[^>]*>)'
+        match = re.search(panel_pattern, html)
+        if match:
+            insert_pos = match.start()
+            prefix = html[:insert_pos]
+            if prefix and not prefix.endswith('\n'):
+                insert_pos = html.rfind('\n', 0, insert_pos) + 1
+            v_panel = (
+                '            <div class="dl-panel active" role="tabpanel" '
+                f'id="panel-{latest_ver}" data-panel="{latest_ver}">'
+                f'\n              <h3 class="dl-ver">下载 {latest_ver} '
+                '<span style="font-size:14px;opacity:.75;font-weight:500;">'
+                f'（最新 · {latest_date} · {size_mb} MB）</span></h3>'
+                '\n              <p class="meta">'
+                '<span>📦 单文件 exe</span>'
+                '<span>💾 5.06 MB</span>'
+                '<span>🪟 Win 10 / 11</span>'
+                '<span>🔓 开源免费</span></p>'
+                f'\n              <a class="btn btn-primary" href="./{exe_name}" download>'
+                f'⬇️ 下载 {exe_name}</a>'
+                f'\n              <div class="hash">SHA256: {sha}</div>'
+                '\n            </div>\n'
+            )
+            html = html[:insert_pos] + v_panel + html[insert_pos:]
+            print(f"[OK] 已添加最新版本 {latest_ver} 的 panel")
+    else:
+        # 已有 panel，只需要设置 active
+        html = html.replace(
+            f'<div class="dl-panel" role="tabpanel" id="panel-{latest_ver}"',
+            f'<div class="dl-panel active" role="tabpanel" id="panel-{latest_ver}"',
+            1
         )
-        html = html[:insert_pos] + v_panel + html[insert_pos:]
-        print(f"[OK] 已添加最新版本 {latest_ver} 的 panel")
+        print(f"[OK] 已设置最新版本 {latest_ver} 的 panel 为 active")
+
+    # 5. 检查最新版本是否已有 tab，如果没有则添加
+    if latest_ver not in existing_tab_versions:
+        # 找到第一个 dl-tab 的位置，在其前面插入最新版本 tab
+        tab_pattern = r'(<button[^>]*data-ver="[^"]*"[^>]*>)'
+        match = re.search(tab_pattern, html)
+        if match:
+            insert_pos = match.start()
+            prefix = html[:insert_pos]
+            if prefix and not prefix.endswith('\n'):
+                insert_pos = html.rfind('\n', 0, insert_pos) + 1
+            v_tab = f'          <button class="dl-tab active" role="tab" aria-selected="true" aria-controls="panel-{latest_ver}" tabindex="0" data-ver="{latest_ver}">{latest_ver}</button>\n'
+            html = html[:insert_pos] + v_tab + html[insert_pos:]
+            print(f"[OK] 已添加最新版本 {latest_ver} 的 tab")
+    else:
+        # 已有 tab，只需要设置 active
+        html = html.replace(
+            f'<button class="dl-tab" role="tab"',
+            f'<button class="dl-tab active" role="tab" aria-selected="true" aria-controls="panel-{latest_ver}" tabindex="0"',
+            1
+        )
+        print(f"[OK] 已设置最新版本 {latest_ver} 的 tab 为 active")
 
     return html
 
