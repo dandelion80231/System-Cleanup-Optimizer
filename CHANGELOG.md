@@ -2,23 +2,11 @@
 
 本项目所有重要变更记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/)。
 
+---
 
-## [v1.18] - 2026-08-31
+## [v1.17] - 2026-08-30
 
-> 相对 v1.17 的源码变更（3 个提交，1 个文件，+43 / −18 行）：修复 Geek Uninstaller 下载卡死、优化便携版安装路径、改用 ZIP 加速下载。
-
-### 🐛 修复
-- **Geek Uninstaller 下载卡死修复**：为 `SoftwareInstall.cs` 新增 `ReadTimeoutMs` 和 `DownloadTimeout` 可配置字段，通过 Builder API（`.ReadTimeoutMs()` / `.DownloadTimeout()`）按软件条目独立设置。Geek Uninstaller 配置为总超时 900 秒 + 读空闲超时 120 秒；原默认值为总超时 320 秒 + 读空闲超时 60 秒，面对 Geek 服务器极慢速（~12 KB/s，7.5 MB 文件需 ~10 分钟）时反复超时失败。此修复同样让其他未来可能遇到慢速服务器的软件条目可灵活调整超时参数。
-- **Geek Uninstaller 便携版路径优化**：便携版默认安装路径从 `%LOCALAPPDATA%\CpqSystemTool\Portable\{id}\` 改为桌面根目录，用户打开电脑即可看到，无需翻找深层目录。同步更新 `KnownExePaths` 检测路径，确保安装后可正确识别为"已安装"。
-- **Geek Uninstaller 下载加速**：改用官方 ZIP 包（3.2MB）替代裸 EXE（7.5MB），下载时间减少约 60%。同时添加 SHA256 校验（来源：Chocolatey 官方包公布的 checksum），增强文件完整性验证。超时参数从 900 秒调整为 120 秒（ZIP 包体积小，120 秒足够）。
-
-### ♻️ 项目卫生
-- **禁止上传 src.zip 到 Release**：src.zip 是项目内嵌资源（嵌入 exe 供「导出源码」功能使用），不是 Release 资产。Release 仅上传 exe + README.md。
-
-
-
-
-> 相对 v1.16 的源码变更（15 个提交，73 个文件，+8163 / −1913 行）：背景编辑器大规模迭代（HSV 色轮性能优化、颜色格式显示、对比度检查、网格光斑拖拽）、配置管理页重构（导出源码功能）、探针工程重构（独立 HttpClient、TLS 1.2/1.3、UA 池轮换）、App.xaml 异常处理前置、src.zip 防呆机制。
+> 相对 v1.16.1 的源码变更（15 个提交，73 个文件，+8163 / −1913 行）：背景编辑器大规模迭代（HSV 色轮性能优化、颜色格式显示、对比度检查、网格光斑拖拽）、配置管理页重构（导出源码功能）、探针工程重构（独立 HttpClient、TLS 1.2/1.3、UA 池轮换）、App.xaml 异常处理前置、src.zip 防呆机制。
 
 ### ✨ 新增
 - **背景编辑器功能扩展（v1.17）**：
@@ -45,6 +33,10 @@
 - **BackgroundSettings 颜色解析修复**：修复 `#RGBA` 4 位格式展开顺序错误（原注释说 ARGB 但实际展开为 RRGGBBAA，与 CSS `#RRGGBBAA` 8 位分支的读取顺序不一致）；Offset 越界钳制到 `[0,1]`，避免 `new GradientStop(...)` 抛 `ArgumentException`。
 - **背景设置 JSON 反序列化健壮性提升**：原 `catch { }` 静默吞掉一切异常，脏 JSON 只表现为「设置莫名回到默认值」且无从排查；改为 `Debug.WriteLine` 输出带上下文的诊断信息。
 
+### 🔧 变更 / 策略
+- **配置管理页重构（v1.17）**：
+  - **导出源码功能**：新增「📦 导出源码」按钮，点击后弹出 FolderBrowserDialog 选择保存目录，从程序集嵌入资源读取 `src.zip`，解压到 `系统清理与优化工具_源码` 文件夹。
+  - **背景图设置优化**：路径输入框+浏览按钮+应用按钮同一行；恢复默认背景按钮移至右上角；提示文字缩短。
   - **预览区裁剪优化**：`bgCard` 和 `logClip` 都加 `ClipToBounds = true`，防止最大化时子内容溢出 + 缩小时残留大尺寸渲染缓存。
   - **日志框固定高度**：改为 60px 固定高度贴底，不再占用 Star 行，避免透明空白区。
 - **src.zip 防呆机制（v1.17）**：在 `CpqSystemTool.csproj` 新增 MSBuild 任务 `CheckSrcZipFreshness`，构建前比对 src.zip 与最新源文件的时间戳；过期则报 warning，借本项目「交付构建必须 0 warning」的门禁，强制在构建前先重生成 `src.zip`。
@@ -81,7 +73,16 @@
 - 建立长期记忆规则：禁止在交付目录保留无版本号副本；清理 `.bak*` 备份、`.log` 日志、`.bak_*` 临时目录。
 - Git commit: e60ec39 chore: 清理备份文件和日志
 
+---
 
+## [v1.16.1] - 2026-08-30
+
+### 🐛 软件安装下载修复
+- **Geek Uninstaller 等便携软件下载卡住**：`DownloadAsync` 改用 `Downloader.DownloadAsync`，开启 `useProxyFallback: true`（系统代理 → 直连 → Watt Toolkit 本地代理依次尝试），最多重试 3 次、间隔 5 秒，解决代理环境下直连失败导致永久挂起的问题。
+- **便携版支持自定义安装目录**：`IsPortable` 单文件分支（如 Geek Uninstaller）优先使用用户指定的 `customDir`，不再硬编码 `%LOCALAPPDATA%\CpqSystemTool\Portable\<id>\`。
+- **保留 Referer 支持**：`Downloader.DownloadAsync` 新增可选 `referer` 参数，`SoftwareInstall.DownloadAsync` 透传 `SoftwareDef.Referer`，确保哔哩哔哩等需要 Referer 头的软件仍可正常下载。
+
+---
 
 ## [v1.16] - 2026-08-22
 
@@ -131,6 +132,7 @@
 - **更新状态锁（P1）**：「检查更新」「下载更新」加 `_checkingUpdate` / `_downloadingUpdate` 状态锁 + 按钮禁用联动——并发触发不再竞态写更新地址 / 重复弹下载框。
 - **UI 提醒（P2）**：「关闭系统还原」优化项下方常驻提示「⚠ 关闭系统还原后，危险操作将失去还原点兜底」；配置目录不可写时首次弹窗告知（含路径），不再静默失败。
 
+---
 
 ## [v1.12] - 2026-08-21
 
@@ -144,6 +146,7 @@
 - **后台线程 Dispatcher 调用全部加兜底**：全项目甄别 35 处 `Dispatcher.Invoke/BeginInvoke`，其中 32 处后台线程调用（下载进度回调、Appx/软件页 ThreadPool 加载、Defender/防火墙状态刷新、还原点列表、内存分析、系统事件线程等）统一补 `try { } catch { /* 窗口已关闭，忽略 */ }`——后台任务运行中关闭窗口不再因 Dispatcher 关停抛未处理异常导致进程终止（延续 v1.11 的 RunInBg 修复，封死剩余面）。
 - **消除全部 `.Result`（sync-over-async）**：9 处阻塞等待全部改造——ChocolateyResolver 解析链、SoftwareInstall 下载/安装/页面解析链真 async 化（`TryResolveAsync`/`DownloadAsync`/`ResolveAsync`/`InstallAsync`），ProbeBrowserHost 已 await 完成取值改 `GetAwaiter().GetResult()`；全项目 `.Result` 清零，消除死锁隐患。
 
+---
 
 ## [v1.11] - 2026-08-20
 
@@ -170,6 +173,7 @@
 - **Config 路径集中**：4 处 `BaseDirectory\Config` 硬编码 → `AppPaths.ConfigDir`。
 - **HttpClient 静态单例复用**：4 处「用完即弃」`new HttpClient` → 共享单例，消除 socket TIME_WAIT 堆积；请求级超时（CTS）与 UA/Referer 注入，探针专用单例保留。
 
+---
 
 ## [v1.10] - 2026-08-18
 
@@ -191,13 +195,11 @@
 - **PDH 回退进一步加固（避免「全有或全无」）**：`TryQueryUseCountsPdh` 改为**逐计数器容错**——某计数器名在本 Windows 版本不存在（如旧版无 Standby 细分）时仅跳过该计数器、零值填充其余有效值，只要关键计数器「可用内存(Available)」成功即采用真实数据，不再因单个计数器缺失而丢弃其余 10 个有效值；全部读取失败时仍正确回退到降级视图。
 - **异常处理不静默造假数据**：`GetUseCounts` 的 `catch` 与「全部回退失败」路径统一置 `IsDegraded = true`，即使 `overview == null` 连降级视图都构造不出，也确保 UI 走「数据不可用」灰色占位 + 清晰提示，绝不把全 0 当成真实内存拆解渲染（占比条消失 / 明细显示 0 B）。
 
-- **软件安装下载修复**：`DownloadAsync` 改用 `Downloader.DownloadAsync`，开启 `useProxyFallback: true`（系统代理 → 直连 → Watt Toolkit 本地代理依次尝试），最多重试 3 次、间隔 5 秒，解决代理环境下直连失败导致永久挂起的问题。
-- **便携版支持自定义安装目录**：`IsPortable` 单文件分支（如 Geek Uninstaller）优先使用用户指定的 `customDir`，不再硬编码 `%LOCALAPPDATA%\CpqSystemTool\Portable\<id>\`。
-- **保留 Referer 支持**：`Downloader.DownloadAsync` 新增可选 `referer` 参数，`SoftwareInstall.DownloadAsync` 透传 `SoftwareDef.Referer`，确保哔哩哔哩等需要 Referer 头的软件仍可正常下载。
 ### 🔧 发布后跟进（v1.10 即时修补）
 - **内存拆解「使用中为 0」+ 天文数字 GB（根因修复）**：`Modules/MemoryAnalyzer.cs` 的 PDH 格式常量 `PDH_FMT_LARGE` 被误写成 `0x00000200`（该值实为 `PDH_FMT_DOUBLE`）。代码据此请求 DOUBLE 格式却又用 `cv.longValue`（64 位整数）读取，把 IEEE-754 double 的二进制位当成整数读 → 出现数十亿 GB 的假数据；进而「可用 + 已修改」远大于总物理内存，使「使用中 = 总 − 可用 − 已修改」被钳为 0。修复：补 `PDH_FMT_DOUBLE = 0x00000200` 并将 `PDH_FMT_LARGE` 改正为 `0x00000400`，`fmt` 现在真正请求 LARGE 格式、`longValue` 读取合法 → 「使用中」显示真实值、各项字节数回归正常量级。
 - **内存优化「点了没反应」**：「清空备用列表 / 清空所有进程工作集」两个按钮执行后未重新分析内存，拆解视图一直冻结，误以为优化无效（RAMMap 清理后即可瞬间看到变化）。修复：两个 `RunInBg` 调用补充第 4 参 `onDoneUi = () => DoMemoryAnalyze(pb, applyUi)`，在后台优化完成后于 UI 线程自动重新抓取并刷新「内存使用拆解」视图，效果即时可见。
 
+---
 
 ## [v1.09] - 2026-08-18
 
@@ -209,6 +211,7 @@
 
 ### ♻️ 变更 / 策略
 
+---
 
 ## [v1.08] - 2026-08-17
 
@@ -221,6 +224,7 @@
 - **检查更新改为从官网 version.json 获取新版本**：原检查更新从 GitHub Releases API 拉取 `tag_name`，现改为读取官网根 `version.json` 的 `version`/`name`/`url` 字段，普通用户无需访问 GitHub、下载更快；版本比较与「下载更新」弹窗逻辑保持不变。
 - **官网安装包统一改为中文名**：官网托管与下载页全部 exe 由 `System-Cleanup-Optimizer_vX.XX.exe` 改为 `系统清理与优化工具_vX.XX.exe`（v1.01–v1.08），`version.json` 的 `name`/`url` 同步使用中文名；GitHub Release 资产保留英文名 `System-Cleanup-Optimizer_v1.08.exe`（规避 gh 中文文件名截断）。
 
+---
 
 ## [v1.07] - 2026-08-17
 
@@ -233,6 +237,7 @@
 ### ♻️ 变更 / 策略
 - **统一全部 ComboBox 深/浅色自适应**：新增 `UiShapes.ApplyComboBoxTheme`，以自定义 ControlTemplate（闭合框 + 下拉弹层均引用主题键）+ ComboBoxItem 样式，让 7 个 ComboBox（版本切换目标 / Office 版本 / Edge 频道 / 驱动引擎 / 分组 / 软件分类 / 风险等级）的背景、字体、边框与下拉弹层（含选中/悬浮态）统一跟随深/浅色主题笔刷，替代默认跟随系统色的 Aero2 模板（深模式下弹层为刺眼白底）；弹层刻意关闭 AllowsTransparency 以复用默认 ComboBox 的非置顶行为，避免重新引入浮层问题。
 
+---
 
 ## [v1.06] - 2026-08-16
 
@@ -257,6 +262,7 @@
 - **WebView2 探针依赖下载改为 API 自身异步卸载**：`WebView2ProbeDeps.EnsureWebView2ProbeDeps` 重构为 `EnsureWebView2ProbeDepsAsync`（真正异步、下载走线程池、可 await），`ProbeBrowserHost.InitAsync` 与 `CheckWebView2ReadyAsync` 改为直接 `await`，不再依赖「调用方用 Task.Run 包裹」的约定来避免 UI 冻结；保留同步兼容包装供后台线程（RunInBg）调用方使用，全程 `ConfigureAwait(false)` 无死锁风险。
 - **抽取 `UiShapes.MakeTextWithArrowGrid`**：消除「管理依赖」「全部分类」两处下拉按钮重复的「文字 + 右侧箭头」2 列 Grid 构造，统一由共享方法生成（布局与原先完全一致）。
 
+---
 
 ## [v1.05] - 2026-08-14
 
@@ -296,6 +302,7 @@
 ### 📄 文档 / 合规
 - **驱动清理模块许可证澄清**：上游 Driver Store Explorer（RAPR）实际采用 GPL v2 许可（与本项目 Apache-2.0 不兼容）。经核查本仓库未包含其任何源代码，驱动清理为基于 Windows 原生 `SetupAPI` / `PnPUtil` / `DISM` 的独立实现，仅界面列布局与行为设计受其启发。已将 README / NOTICE 措辞修正为「参考 / 独立实现」，并在 NOTICE 补充「第三方来源与致谢」（非隶属、非衍生声明）。本澄清不影响 Apache-2.0 许可合规性。
 
+---
 
 ## [v1.04] - 2026-08-12
 
@@ -314,6 +321,7 @@
 - **更新下载代理回退增强**：`DownloadStringWithProxyFallback` / `DownloadFileWithProxyFallback` 依次尝试 系统代理 → 直连 → 本地常见回环代理端口 三层自动回退；`DownloadUpdate` 改为 `async/await` 替代原 `Task.Run` + `while(IsBusy) Sleep` 忙等轮询。
 - **版本号规范化（恢复两段式）**：v1.03 → v1.04，**统一回到本项目两段式惯例 `vX.YY`**（历史 v1.01 / v1.02 / v1.03 均为两段；上一版误用三段式 `v1.0.4` 导致「检查更新」段位错位误报「已高于线上」）。同步 csproj（1.0.4.0，内部程序集版本保持不变）/ `APP_VERSION`（`v1.04`）；交付文件名 `系统清理与优化工具_v1.04.exe`。`CompareVersion` 保留 `NormalizeVersion` 防御层（两段且第二段≤9 自动补 0），杜绝日后混用。
 
+---
 
 ## [v1.03] - 2026-08-11
 
@@ -331,6 +339,7 @@
 - **更新下载健壮性修复**：下载直链改由 GitHub API 返回的 `browser_download_url` 取得（避免本地拼中文资产名与线上实际英文名不一致导致 404）；下载增加系统代理 → 直连 → `127.0.0.1:26561` 三层自动回退，解决无代理环境下连接 GitHub CDN 失败的问题。
 - **版本号规范化**：v1.02 → v1.03，同步 6 处。
 
+---
 
 ## [v1.02] - 2026-08-11
 
@@ -351,6 +360,7 @@
 - **交付文件名带版本号**：`系统清理与优化工具_v1.02.exe`（保留 AssemblyName=中文名，仅部署文件名带版本，避免资源 URI 连锁修改）。
 - **代码审查确认**：Node + Playwright + Chromium 回退路径代码健康可用（本轮无代码改动，仅验证）。
 
+---
 
 ## [v1.01] - 2026-08-06
 
