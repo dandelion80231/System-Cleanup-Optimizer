@@ -198,6 +198,7 @@ def main():
 
     # ---- 3) 写 version.json / versions.json（本地真源，供 render_site 渲染其它页横幅）----
     ver_json_changed = False
+    vers_json_changed = False
     if os.path.isfile(args.version_json):
         vj = json.load(open(args.version_json, encoding="utf-8"))
         vj.update({

@@ -55,9 +55,10 @@ def check(path):
     else:
         if len(tabs) == 0:
             errs.append("没有任何版本")
-        elif tabs[0] != max(tabs, key=lambda s: [int(x) for x in s[1:].split('.')]):
-            # 最新版本应排首位（按版本号字典序末位最大者）
-            pass
+        else:
+            newest = max(tabs, key=lambda s: [int(x) for x in s[1:].split('.')])
+            if tabs[0] != newest:
+                errs.append("最新版本应排首位：首位=%s，最新=%s" % (tabs[0], newest))
     if not (len(at) == 1 and len(ap) == 1 and len(ag) == 1):
         errs.append("active 不唯一 tab=%d panel=%d chlog=%d" % (len(at), len(ap), len(ag)))
     elif not (at[0] == ap[0] == ag[0]):
