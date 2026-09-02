@@ -35,6 +35,8 @@ autosave.json
 backup/
 # 临时 diff 对比文件，不应提交
 cr_tmp/
+# 已废弃旧脚本目录（已从 GitHub 树移除，本地残留防误提交）
+tools/_deprecated/
 
 # 3rd-party deps
 node_modules/
