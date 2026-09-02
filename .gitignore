@@ -16,6 +16,10 @@ crash.log
 # Backups / temp
 *.bak
 *.bak.*
+# add_site_version.py 生成的带时间戳备份（download.html.bak-<时间戳>）
+*.bak-*
+# 临时沙箱测试目录
+_sandbox_test/
 nul
 
 # User runtime data / config

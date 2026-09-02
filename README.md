@@ -4,7 +4,7 @@
 >
 > **技术栈**: WPF (C# / .NET Framework 4.8) · 单文件 exe · 零安装 · 双击即跑 · 管理员权限自动提权
 >
-> **版本**: v1.18
+> **版本**: v1.17
 >
 > **项目主页**: [https://github.com/dandelion80231/System-Cleanup-Optimizer](https://github.com/dandelion80231/System-Cleanup-Optimizer)
 >
