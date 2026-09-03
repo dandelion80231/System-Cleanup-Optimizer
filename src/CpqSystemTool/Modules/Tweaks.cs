@@ -260,15 +260,17 @@ namespace CpqSystemTool
                 Desc = "关闭开始菜单的必应网络搜索与云搜索", Risk = "low",
                 Enable = log =>
                 {
-                    RegistryHelper.SetDword(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\Windows Search", "BingSearchEnabled", 0, log);
+                    // 修复A8：统一真相源，必应搜索走 PrivacyCore 的 HKCU\...\Search\BingSearchEnabled
+                    //（与隐私设置页一致，避免两页面对同一开关显示矛盾状态）
+                    PrivacyCore.DisableWebSearch(log);
                     RegistryHelper.SetDword(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\Windows Search", "AllowCloudSearch", 0, log);
                 },
                 Disable = log =>
                 {
-                    RegistryHelper.DeleteValue(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\Windows Search", "BingSearchEnabled", log);
+                    PrivacyCore.EnableWebSearch(log);
                     RegistryHelper.DeleteValue(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\Windows Search", "AllowCloudSearch", log);
                 },
-                State = () => RegistryHelper.GetDword(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\Windows Search", "BingSearchEnabled", 1) == 0
+                State = () => PrivacyCore.IsWebSearchDisabled()
             });
             // 注：adsid/startsuggest/typing/mrt/block_feature_update 已合并到独立「隐私设置页」，
             //     此处保留全局策略项 websearch/disable-ad-id/exclude_driver_wu 等，避免 HKLM 设置入口丢失。

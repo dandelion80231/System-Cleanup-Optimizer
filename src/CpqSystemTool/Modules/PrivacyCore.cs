@@ -17,7 +17,9 @@ namespace CpqSystemTool
         }
         public static void EnableCloudSearch(Action<string> log)
         {
-            RegistryHelper.DeleteKeyTree(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\Windows Search", log);
+            // 修复B2：仅删除本模块拥有的 AllowCloudSearch 值，保留同级兄弟键
+            //（Tweaks.cs 的 BingSearchEnabled / AllowCortana 等同位于 Windows Search 树下）
+            RegistryHelper.DeleteValue(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\Windows Search", "AllowCloudSearch", log);
             log("[OK] 已恢复云内容搜索");
         }
         public static bool IsCloudSearchDisabled()
@@ -131,7 +133,10 @@ namespace CpqSystemTool
         }
         public static void UnblockFeatureUpdate(Action<string> log)
         {
-            RegistryHelper.DeleteKeyTree(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate", log);
+            // 修复B2：仅删除本模块拥有的版本锁定值，保留兄弟子键 WindowsUpdate\AU
+            //（Updater.cs 的 NoAutoUpdate / AUOptions 同位于 WindowsUpdate 树下）
+            RegistryHelper.DeleteValue(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate", "TargetReleaseVersion", log);
+            RegistryHelper.DeleteValue(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate", "TargetReleaseVersionInfo", log);
             log("[OK] 已解除版本锁定");
         }
         public static bool IsFeatureUpdateBlocked()

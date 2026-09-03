@@ -273,8 +273,18 @@ namespace CpqSystemTool
             CleanDir("FontCache", @"%SystemRoot%\ServiceProfiles\LocalService\AppData\Local\FontCache", log);
             string fnt = Exec.ExpandEnv(@"%SystemRoot%\System32\FNTCACHE.DAT");
             if (File.Exists(fnt)) { try { File.Delete(fnt); } catch (Exception caughtEx) { LogIgnored(caughtEx);} }
-            Exec.RunCmd(new[] { "net", "start", "FontCache" }, log);
-            log("  [OK]");
+            int fstart = Exec.RunCmd(new[] { "net", "start", "FontCache" }, log);
+            if (fstart == 0)
+                log("  [OK] 字体服务已启动");
+            else
+            {
+                // net start 退出码非 0 可能是「已运行」或「启动失败」；以 sc query 实际状态为准，避免误报成功。
+                string fst = Exec.RunCmdGet(new[] { "sc", "query", "FontCache" }, log);
+                if (!string.IsNullOrEmpty(fst) && fst.IndexOf("RUNNING", StringComparison.OrdinalIgnoreCase) >= 0)
+                    log("  [OK] 字体服务已启动（此前已在运行）");
+                else
+                    log("  [FAIL] 字体服务启动失败（退出码 " + fstart + "，可能需要管理员权限，或在 services.msc 手动启动）");
+            }
         }
 
         internal static void EventLogs(Action<string> log)
@@ -916,8 +926,11 @@ namespace CpqSystemTool
         internal static void BigSpaceHiberfilOff(Action<string> log)
         {
             log("关闭休眠并删除 hiberfil.sys...");
-            Exec.RunCmd(new[] { "powercfg", "/hibernate", "off" }, log);
-            log("  [OK] 已关闭休眠（可释放与内存等量的磁盘空间）");
+            int hib = Exec.RunCmd(new[] { "powercfg", "/hibernate", "off" }, log);
+            if (hib == 0)
+                log("  [OK] 已关闭休眠（可释放与内存等量的磁盘空间）");
+            else
+                log("  [FAIL] 关闭休眠失败（退出码 " + hib + "，需要管理员权限，或休眠已关闭）");
         }
 
         internal static void BigSpaceMemoryDmp(Action<string> log)

@@ -357,7 +357,18 @@ namespace CpqSystemTool
             {
                 int idx = channelCombo.SelectedIndex;
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, l => EdgeCore.InstallEdge(channels[idx], l), "Edge " + displayNames[idx] + " 安装完成", () => pb.Visibility = Visibility.Collapsed);
+                // 原实现无条件报"安装完成"：Canary/SxS 频道的 InstallUrl 为 null（本工具不支持自动安装），
+                // InstallEdge 只打一行"不支持的频道"就返回，UI 却仍报成功（假成功）。
+                // 预检该频道是否支持自动安装（InstallUrl 非空），仅当 InstallEdge 真正会执行安装时才用成功文案，
+                // 否则在 onDoneUi 中覆盖为"未完成/不支持"。不改变 InstallEdge 签名。
+                bool supported = EdgeCore.FindChannel(channels[idx])?.InstallUrl != null;
+                RunInBg(log, l => EdgeCore.InstallEdge(channels[idx], l),
+                    "Edge " + displayNames[idx] + " 安装完成",
+                    () =>
+                    {
+                        pb.Visibility = Visibility.Collapsed;
+                        if (!supported) SetStatus("Edge " + displayNames[idx] + " 安装未完成：不支持的频道（详见日志）");
+                    });
             }, 100);
             installBtn.Margin = new Thickness(0);
             Grid.SetColumn(installBtn, 0);
@@ -366,7 +377,17 @@ namespace CpqSystemTool
             {
                 int idx = channelCombo.SelectedIndex;
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, l => EdgeCore.UninstallEdge(channels[idx], false, l), "Edge " + displayNames[idx] + " 卸载完成", () => pb.Visibility = Visibility.Collapsed);
+                // 原实现无条件报"卸载完成"：选 Canary/SxS 时 EdgeCore 只打一行"不支持的频道"就返回，
+                // 用户却看到成功提示（假成功）。改为把 UninstallEdge 的实际结果带回 UI，
+                // 只有真正执行了卸载动作才保留成功文案，否则在 onDoneUi 里覆盖为"未执行"。
+                bool attempted = false;
+                RunInBg(log, l => { attempted = EdgeCore.UninstallEdge(channels[idx], false, l); },
+                    "Edge " + displayNames[idx] + " 卸载完成",
+                    () =>
+                    {
+                        pb.Visibility = Visibility.Collapsed;
+                        if (!attempted) SetStatus("Edge " + displayNames[idx] + " 卸载未执行：不支持的频道（详见日志）");
+                    });
             }, 100);
             uninstallBtn.Margin = new Thickness(0);
             Grid.SetColumn(uninstallBtn, 2);

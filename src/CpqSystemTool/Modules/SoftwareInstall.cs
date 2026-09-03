@@ -125,9 +125,7 @@ namespace CpqSystemTool
                 {
                     foreach (var a in _d.InstallArgs)
                     {
-                        if (a.StartsWith("/D=", StringComparison.OrdinalIgnoreCase)) { _d.InstallDirSwitch = "/D="; break; }
-                        if (string.Equals(a, "/S", StringComparison.OrdinalIgnoreCase)) { _d.InstallDirSwitch = "/D="; break; }
-                        if (string.Equals(a, "/VERYSILENT", StringComparison.OrdinalIgnoreCase)) { _d.InstallDirSwitch = "/DIR="; break; }
+                        if (SoftwareDef.HasSilentArg(a, out string sw)) { _d.InstallDirSwitch = sw; break; }
                     }
                 }
             }
@@ -150,6 +148,22 @@ namespace CpqSystemTool
             /// <summary>显式指定自定义安装目录开关前缀（/D= 或 /DIR=）。自定义软件条目可借此覆盖构造器的自动推断。</summary>
             public Builder InstallDirSwitch(string sw) { _d.InstallDirSwitch = sw; return this; }
             public SoftwareDef Build() => _d;
+        }
+
+        /// <summary>
+        /// [C7] 判断单个安装参数是否代表可注入自定义目录的静默安装器，并返回对应目录开关前缀。
+        /// 供 Builder 自动推断与 InstallAsync 运行时推断两处复用，行为保持一致：
+        /// 含 /D=（NSIS）、/S（NSIS）、/VERYSILENT（Inno Setup → /DIR=）其一即识别。
+        /// 声明为 static 以便嵌套 Builder 与实例方法 InstallAsync 均可调用。
+        /// </summary>
+        private static bool HasSilentArg(string arg, out string installDirSwitch)
+        {
+            installDirSwitch = null;
+            if (string.IsNullOrEmpty(arg)) return false;
+            if (arg.StartsWith("/D=", StringComparison.OrdinalIgnoreCase)) { installDirSwitch = "/D="; return true; }
+            if (string.Equals(arg, "/S", StringComparison.OrdinalIgnoreCase)) { installDirSwitch = "/D="; return true; }
+            if (string.Equals(arg, "/VERYSILENT", StringComparison.OrdinalIgnoreCase)) { installDirSwitch = "/DIR="; return true; }
+            return false;
         }
 
         /// <summary>把任意来源的软件 ID 清洗为只含 [A-Za-z0-9_-] 的安全形式，防止路径穿越（..\ 逃逸 %TEMP%）。</summary>
@@ -213,11 +227,10 @@ namespace CpqSystemTool
             string installDirSwitch = InstallDirSwitch;
             if (string.IsNullOrEmpty(installDirSwitch))
             {
+                // [C7] 复用 HasSilentArg 推断安装器类型（与构造器逻辑一致，行为不变）
                 foreach (var a in args)
                 {
-                    if (a.StartsWith("/D=", StringComparison.OrdinalIgnoreCase)) { installDirSwitch = "/D="; break; }
-                    if (string.Equals(a, "/S", StringComparison.OrdinalIgnoreCase)) { installDirSwitch = "/D="; break; }
-                    if (string.Equals(a, "/VERYSILENT", StringComparison.OrdinalIgnoreCase)) { installDirSwitch = "/DIR="; break; }
+                    if (HasSilentArg(a, out string sw)) { installDirSwitch = sw; break; }
                 }
             }
             if (!string.IsNullOrEmpty(customDir) && !string.IsNullOrEmpty(installDirSwitch))
@@ -337,6 +350,18 @@ namespace CpqSystemTool
                         log("   [i] 未签名（" + Path.GetFileName(filePath) + "）：来源为官方直链，可放心安装（官方安装器通常未做 Authenticode 签名，仅无法校验文件完整性）");
                     else
                         log("   [i] 未签名（" + Path.GetFileName(filePath) + "）：无法校验完整性，请确认 " + Name + " 的下载来源可靠");
+
+                    // [B1] 缺失 SHA256：内建条目绝大多数未配置 Sha256，未签名 + 缺哈希时原来是「静默放行」。
+                    // 改为明确按条目告警（点名 Name/Id），绝不静默。非便携安装提升为强告警（被篡改风险更高），
+                    // 提醒用户务必确认来源可靠后再继续（注：强制「用户确认」对话框需 UI 层配合，本层仅给出醒目告警，
+                    // 真实阻断/二次确认请在调用方/设置中开启 StrictSignatureCheck 或后续接入确认弹窗）。
+                    if (string.IsNullOrEmpty(Sha256))
+                    {
+                        if (IsPortable)
+                            log("   [!] 缺少 SHA256 校验值（" + Name + " / " + Id + "）：便携版无法校验安装包完整性，请确认下载来源可信");
+                        else
+                            log("   [!!] 缺少 SHA256 校验值（" + Name + " / " + Id + "）：非便携安装无法校验安装包完整性，存在被篡改风险，请务必确认来源可靠后再安装");
+                    }
                     return true; // 保持改动前行为（无校验即放行），仅给出提示
                 case AuthenticodeVerifier.SigStatus.Invalid:
                     if (SoftwareInstall.StrictSignatureCheck)
@@ -579,14 +604,23 @@ namespace CpqSystemTool
             }
             catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
 
-            // 原路径（默认/32 位视图）没读到字符串值：可能是 64 位卸载项，用 64 位视图再读一次。
+            // 原路径（默认/32 位视图）没读到字符串值：
+            // 1) 可能是 64 位卸载项（路径不含 WOW6432Node），用 Registry64 再读一次。
+            // 2) 可能是 32 位卸载项（如微信/Steam/Edge 这类 x86 安装的应用，其卸载键在 HKLM\SOFTWARE\WOW6432Node…），
+            //    64 位进程默认视图打不开此键，须显式用 Registry32 兜底读取。
             RegistryHive hive;
             string sub;
-            if (TrySplitRegPath(keyPath, out hive, out sub)
-                && sub.IndexOf("SOFTWARE", StringComparison.OrdinalIgnoreCase) >= 0
-                && sub.IndexOf("WOW6432Node", StringComparison.OrdinalIgnoreCase) < 0)
+            if (TrySplitRegPath(keyPath, out hive, out sub))
             {
-                return ReadRegStringFromView(hive, sub, valueName, RegistryView.Registry64);
+                if (sub.IndexOf("SOFTWARE", StringComparison.OrdinalIgnoreCase) >= 0
+                    && sub.IndexOf("WOW6432Node", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    // 兜底 64 位视图
+                    var v64 = ReadRegStringFromView(hive, sub, valueName, RegistryView.Registry64);
+                    if (v64 != null) return v64;
+                }
+                // 兜底 32 位视图（适用于卸载项实际落在 WOW6432Node 的应用）
+                return ReadRegStringFromView(hive, sub, valueName, RegistryView.Registry32);
             }
             return null;
         }
@@ -605,7 +639,8 @@ namespace CpqSystemTool
 
         /// <summary>
         /// 获取已安装版本号。
-        /// 优先级：CheckInstalled 缓存的精确路径 → RegKey → RegKey2 → 关键词搜索（FindVersion）。
+        /// 优先级：CheckInstalled 缓存的精确路径 → RegKey → RegKey2 → 关键词搜索（FindVersion）
+        ///         → IsPortable 兜底（KnownExePaths 文件版本）。
         /// 返回版本号字符串；空串表示未获取到。
         /// </summary>
         public string GetInstalledVersion()
@@ -630,7 +665,98 @@ namespace CpqSystemTool
             }
 
             // 策略2：关键词搜索回退（遍历三个注册表根，匹配 DisplayName 后读版本）
-            return FindVersion(UninstallKeywords, AltKeywords);
+            var v2 = FindVersion(UninstallKeywords, AltKeywords);
+            if (!string.IsNullOrEmpty(v2)) return v2;
+
+            // 策略3（兜底，仅便携版）：IsPortable 标记的软件（如 Geek Uninstaller、aria2）
+            // 没有卸载注册表项，CheckInstalled 靠文件存在性判定已安装，版本号则从
+            // KnownExePaths 中取第一个存在的 exe 读 FileVersionInfo 作为 fallback。
+            // 新增便携版软件只需填 KnownExePaths，框架自动支持版本号显示。
+            if (IsPortable)
+            {
+                // 3a：已知 exe 路径列表直接读版本（Geek 单文件型）
+                foreach (var exe in KnownExePaths)
+                {
+                    if (string.IsNullOrEmpty(exe)) continue;
+                    try
+                    {
+                        if (System.IO.File.Exists(exe))
+                        {
+                            var finfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe);
+                            if (!string.IsNullOrEmpty(finfo.FileVersion)) return finfo.FileVersion;
+                        }
+                    }
+                    catch { /* 个别 exe 可能无版本资源，静默跳过 */ }
+                }
+
+                // 3b：多文件便携包（aria2 这类 zip 解压后有一整目录），找不到单 exe 时
+                // 遍历该包所有 exe 找第一个有 FileVersion 的。
+                // 先尝试从 ChocolateyId 或 Id 推断包目录名（桌面常见落点）。
+                // 精确匹配不存在时，自动扫描以 hint 开头的所有子目录（如 "aria2-1.37.0-win-64bit-build1"）。
+                var fallbackHints = new List<string>();
+                if (!string.IsNullOrEmpty(Id)) fallbackHints.Add(Id);
+                if (!string.IsNullOrEmpty(ChocolateyId) && ChocolateyId != Id) fallbackHints.Add(ChocolateyId);
+
+                var scannedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var hint in fallbackHints)
+                {
+                    var searchRoots = new[] {
+                        Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+                        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)
+                    };
+                    foreach (var root in searchRoots)
+                    {
+                        // 精确路径（单文件型，如 Geek）
+                        var exact = System.IO.Path.Combine(root, hint);
+                        if (scannedDirs.Add(exact) && System.IO.Directory.Exists(exact))
+                        {
+                            var ver = TryGetExeWithVersion(exact);
+                            if (ver != null) return ver;
+                        }
+                        // 精确路径不存在时，扫描 {root}\{hint}* 子目录（多文件便携包）
+                        if (!System.IO.Directory.Exists(exact) && System.IO.Directory.Exists(root))
+                        {
+                            try
+                            {
+                                foreach (var sub in System.IO.Directory.GetDirectories(root, hint + "*"))
+                                {
+                                    if (scannedDirs.Add(sub))
+                                    {
+                                        var ver = TryGetExeWithVersion(sub);
+                                        if (ver != null) return ver;
+                                    }
+                                }
+                            }
+                            catch { /* 目录枚举失败，继续 */ }
+                        }
+                    }
+                }
+            }
+            return "";
+        }
+
+        /// <summary>
+        /// 策略3b 辅助：遍历目录中所有 exe，返回第一个有 FileVersion 的版本号（null 表示没找到）。
+        /// 单文件便携版（Geek）走 3a，多文件便携包（aria2）走此方法。
+        /// </summary>
+        private static string TryGetExeWithVersion(string directory)
+        {
+            try
+            {
+                foreach (var f in System.IO.Directory.GetFiles(directory, "*.exe",
+                    System.IO.SearchOption.TopDirectoryOnly))
+                {
+                    try
+                    {
+                        var finfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(f);
+                        if (!string.IsNullOrEmpty(finfo.FileVersion)) return finfo.FileVersion;
+                    }
+                    catch { /* 单个文件读失败，继续 */ }
+                }
+            }
+            catch { /* 目录访问失败，继续 */ }
+            return null;
         }
 
         /// <summary>从指定注册表路径读取版本号，多值回退</summary>
@@ -721,13 +847,51 @@ namespace CpqSystemTool
                 if (Directory.Exists(outDir)) Directory.Delete(outDir, true);
                 ZipFile.ExtractToDirectory(zip, outDir);
                 var exe = Directory.GetFiles(outDir, "*.exe", SearchOption.AllDirectories);
-                if (exe.Length > 0) return exe[0];
+                if (exe.Length > 0)
+                {
+                    // [A3] 多 exe 压缩包（安装器 + 附带可再发行/辅助程序）时，取第一个 .exe 可能启动
+                    // 错误的安装器导致静默装错。用安全启发式优先选最可能的 setup 主安装器；
+                    // 仅在无任何更优匹配时才回退到 exe[0]。不改变返回类型与调用方。
+                    string best = PickSetupExe(exe);
+                    if (!string.IsNullOrEmpty(best)) return best;
+                }
                 var msi = Directory.GetFiles(outDir, "*.msi", SearchOption.AllDirectories);
                 if (msi.Length > 0) return msi[0];
                 log("   [!] 压缩包内未找到安装程序");
                 return null;
             }
             catch (Exception e) { log("   [!] 解压失败: " + e.Message); return null; }
+        }
+
+        /// <summary>
+        /// [A3] 从解压出的候选 exe 中选最可能的“主安装器”：
+        /// 1) 优先文件名含 "setup"/"install"（不区分大小写）；
+        /// 2) 若仍有多个候选，优先名字含当前软件 Id 或 Name 的；
+        /// 3) 否则回退第一个候选（等价于原 exe[0] 行为）。
+        /// </summary>
+        private string PickSetupExe(string[] exe)
+        {
+            if (exe == null || exe.Length == 0) return null;
+            if (exe.Length == 1) return exe[0];
+            var cands = new List<string>();
+            foreach (var f in exe)
+            {
+                string name = Path.GetFileName(f);
+                if (name.IndexOf("setup", StringComparison.OrdinalIgnoreCase) >= 0
+                    || name.IndexOf("install", StringComparison.OrdinalIgnoreCase) >= 0)
+                    cands.Add(f);
+            }
+            // 没有任何文件名带 setup/install 时，仍保留全部候选（避免误删真实安装器）
+            if (cands.Count == 0) cands.AddRange(exe);
+            if (cands.Count == 1) return cands[0];
+            // 仍有多个候选：优先能对应上本软件 Id/Name 的
+            foreach (var f in cands)
+            {
+                string name = Path.GetFileName(f);
+                if (!string.IsNullOrEmpty(Id) && name.IndexOf(Id, StringComparison.OrdinalIgnoreCase) >= 0) return f;
+                if (!string.IsNullOrEmpty(Name) && name.IndexOf(Name, StringComparison.OrdinalIgnoreCase) >= 0) return f;
+            }
+            return cands[0];
         }
 
         private bool RunInstaller(string path, string[] args, Action<string> log, int timeout)
@@ -1056,6 +1220,15 @@ namespace CpqSystemTool
             "输入法", "远程控制", DefaultCategory
         };
 
+        // TODO(v1.18): fill Sha256 for these 29 entries from release pipeline.
+        // 下列内建条目既有固定下载直链、又未配置 Sha256（且无 Chocolatey/PageResolver 运行时哈希来源），
+        // 目前安装时走「未签名→告警放行」路径，无法校验安装包完整性。请勿臆造哈希值，
+        // 应自各官方发布渠道/CI 发布流水线取得真实 SHA256 后回填 .Sha256(...)：
+        //   vcredist, edge, webview2, weixin, qq, steam, bandizip, wps, baidupan, thunder,
+        //   xshell, quark, tim, qqmusic, aliyunpan, weiyun, 123pan, onedrive, unlocker,
+        //   sogoupinyin, baidupinyin, wymusic, kgmusic, kwmusic, bilibili, txvideo, iqiyi, douyin, raylink
+        // （已含哈希的内建条目：geek；经 Chocolatey 运行时取哈希的：winrar, notepad3, xnview, potplayer,
+        //   7zip, everything, virtualbox, tortoisegit, aria2, git。）
         private static readonly List<SoftwareDef> SOFTWARE_LIST = new List<SoftwareDef>
         {
             // ---- 格式： SoftwareDef.Builder(id, name, desc, url, installArgs...).Risk().StoreId().AltKeywords().KnownExePaths().RegKey().RegKey2().Build() ----

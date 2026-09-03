@@ -98,123 +98,8 @@ namespace CpqSystemTool
                         // ========== 搜索/选择/批量操作栏（DockPanel：搜索框填满剩余，按钮右对齐） ==========
                         var toolBar = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
 
-                        // 分类筛选下拉（左对齐）：用 ToggleButton + Popup + ListBox 替代 ComboBox
-                        // 原因：ComboBox 默认模板未把 ScrollViewer.CanContentScroll 通过 TemplateBinding 接出来，
-                        // 导致物理滚动补丁不可靠，滚动时底部仍会出现空白行；ListBox 模板会 TemplateBind，因此可控。
-                        // 自定义 ToggleButton 模板：Border 承载背景 + IsMouseOver/IsChecked 触发器，
-                        // 悬浮色直接复用标准按钮的 ButtonHoverBrush 资源（DynamicResource，随主题切换），
-                        // 与「全选」等按钮悬浮色完全一致，避免之前用 _rowHover 偏暗导致的色差；
-                        // 选中态用 accent 更高不透明度的变体做区分（仍与主题一致）
-                        var catBtnTemplate = new ControlTemplate(typeof(ToggleButton));
-                        var catBtnBd = new FrameworkElementFactory(typeof(Border), "Bd");
-                        catBtnBd.SetBinding(Border.BackgroundProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(BackgroundProperty) });
-                        catBtnBd.SetBinding(Border.BorderBrushProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(BorderBrushProperty) });
-                        catBtnBd.SetBinding(Border.BorderThicknessProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(BorderThicknessProperty) });
-                        catBtnBd.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
-                        catBtnBd.SetBinding(Border.PaddingProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(PaddingProperty) });
-                        var catBtnCp = new FrameworkElementFactory(typeof(ContentPresenter));
-                        catBtnCp.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
-                        catBtnCp.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
-                        catBtnBd.AppendChild(catBtnCp);
-                        catBtnTemplate.VisualTree = catBtnBd;
-                        // 选中态填充：accent 更高不透明度，比 hover 更明显（仍与主题一致）
-                        var catSelectedBrush = _isDarkMode
-                            ? new SolidColorBrush(Color.FromArgb(0x73, 0x16, 0xE0, 0xBD))  // #16E0BD @ ~45%
-                            : new SolidColorBrush(Color.FromArgb(0x8C, 0x08, 0x91, 0x82)); // #089182 @ ~55%
-                        var catBtnHover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-                        catBtnHover.Setters.Add(new Setter(Border.BackgroundProperty, new DynamicResourceExtension("ButtonHoverBrush"), "Bd"));
-                        var catBtnChecked = new Trigger { Property = ToggleButton.IsCheckedProperty, Value = true };
-                        catBtnChecked.Setters.Add(new Setter(Border.BackgroundProperty, catSelectedBrush, "Bd"));
-                        catBtnTemplate.Triggers.Add(catBtnHover);
-                        catBtnTemplate.Triggers.Add(catBtnChecked);
-
-                        var catBtn = new ToggleButton
-                        {
-                            FontSize = 13,
-                            MinHeight = 34,
-                            Padding = new Thickness(6, 4, 6, 4),
-                            BorderBrush = _panelBorder,
-                            BorderThickness = new Thickness(1),
-                            Margin = new Thickness(0, 0, 8, 0),
-                            MinWidth = 100,
-                            HorizontalAlignment = HorizontalAlignment.Stretch,
-                            VerticalAlignment = VerticalAlignment.Center,
-                            HorizontalContentAlignment = HorizontalAlignment.Left,
-                            VerticalContentAlignment = VerticalAlignment.Center,
-                            Background = _isDarkMode ? Brushes.Transparent : _bgCard,
-                            Foreground = _textMain,
-                            Template = catBtnTemplate
-                        };
-                        // 按钮内容：文字 + 右侧下拉箭头，模拟 ComboBox 外观
-                        var catBtnText = new TextBlock { Text = "全部分类", FontSize = 13, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
-                        var catBtnContent = UiShapes.MakeTextWithArrowGrid(catBtnText, _textDim, minWidth: true);
-                        catBtn.Content = catBtnContent;
-
-                        var catList = new ListBox
-                        {
-                            FontSize = 13,
-                            BorderThickness = new Thickness(0),
-                            Background = Brushes.Transparent,
-                            Foreground = _textMain,
-                            Padding = new Thickness(0),
-                            MaxHeight = 280
-                        };
-                        VirtualizingPanel.SetIsVirtualizing(catList, false);
-                        catList.ItemsPanel = new ItemsPanelTemplate(new System.Windows.FrameworkElementFactory(typeof(StackPanel)));
-                        ScrollViewer.SetCanContentScroll(catList, false); // ListBox 模板会 TemplateBind，这里真正生效
-                        var catItemStyle = new Style(typeof(ListBoxItem));
-                        catItemStyle.Setters.Add(new Setter(Control.FontSizeProperty, 13.0));
-                        catItemStyle.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(8, 6, 4, 6)));
-                        catItemStyle.Setters.Add(new Setter(Control.VerticalContentAlignmentProperty, VerticalAlignment.Center));
-                        catItemStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Left));
-                        catItemStyle.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
-                        var catItemHover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-                        catItemHover.Setters.Add(new Setter(Control.BackgroundProperty, new DynamicResourceExtension("ButtonHoverBrush")));
-                        var catItemSelected = new Trigger { Property = ListBoxItem.IsSelectedProperty, Value = true };
-                        catItemSelected.Setters.Add(new Setter(Control.BackgroundProperty, catSelectedBrush));
-                        catItemStyle.Triggers.Add(catItemHover);
-                        catItemStyle.Triggers.Add(catItemSelected);
-                        catList.ItemContainerStyle = catItemStyle;
-                        catList.Items.Add("全部分类");
-                        foreach (var c in SoftwareInstall.SoftwareCategories) catList.Items.Add(c);
-                        catList.SelectedIndex = 0;
-
-                        var catPopupBorder = new Border
-                        {
-                            Background = _btnSecondaryBg,
-                            BorderBrush = _panelBorder,
-                            BorderThickness = new Thickness(1),
-                            CornerRadius = new CornerRadius(4),
-                            Child = catList
-                        };
-
-                        var catPopup = new Popup
-                        {
-                            PlacementTarget = catBtn,
-                            Placement = PlacementMode.Bottom,
-                            StaysOpen = false,
-                            AllowsTransparency = true,
-                            Child = catPopupBorder,
-                            MaxHeight = 280
-                        };
-                        // 修复：AllowsTransparency=true 会以独立顶层 HWND 承载并带 WS_EX_TOPMOST，
-                        // 导致下拉浮到最顶层。剥离该样式使其落到正常层级（与"管理依赖"下拉一致）。
-                        UiShapes.DisablePopupTopmost(catPopup);
-                        catPopup.Opened += (s, e) =>
-                        {
-                            catBtn.IsChecked = true;
-                            catPopup.Width = Math.Max(catBtn.ActualWidth, 100);
-                        };
-                        catPopup.Closed += (s, e) => catBtn.IsChecked = false;
-                        catBtn.Click += (s, e) => catPopup.IsOpen = !catPopup.IsOpen;
-                        catList.SelectionChanged += (s, e) =>
-                        {
-                            catBtnText.Text = catList.SelectedItem?.ToString() ?? "全部分类";
-                            catPopup.IsOpen = false;
-                        };
-
-                        DockPanel.SetDock(catBtn, Dock.Left);
-                        toolBar.Children.Add(catBtn);
+                        // 分类筛选下拉（左对齐）：抽到 BuildCategoryFilter，降低 BuildCommonSoftware 方法长度
+                        var (_, catList) = BuildCategoryFilter(toolBar);
 
                         // 右侧按钮（先 Dock，按添加顺序从右向左排列）
                         var btnUninstall = Btn("🗑 卸载选中", false, null, 110);
@@ -833,6 +718,130 @@ namespace CpqSystemTool
             });
 
             return root;
+        }
+
+        // 抽离自 BuildCommonSoftware（分类筛选下拉构建逻辑，原样搬移，不改动任何行为/闭包捕获）。
+        // 返回 (catBtn, catList)：catBtn 已加入传入的 toolBar；catList 供后续 ApplyFilter 等使用。
+        private (ToggleButton catBtn, ListBox catList) BuildCategoryFilter(DockPanel toolBar)
+        {
+            // 分类筛选下拉（左对齐）：用 ToggleButton + Popup + ListBox 替代 ComboBox
+            // 原因：ComboBox 默认模板未把 ScrollViewer.CanContentScroll 通过 TemplateBinding 接出来，
+            // 导致物理滚动补丁不可靠，滚动时底部仍会出现空白行；ListBox 模板会 TemplateBind，因此可控。
+            // 自定义 ToggleButton 模板：Border 承载背景 + IsMouseOver/IsChecked 触发器，
+            // 悬浮色直接复用标准按钮的 ButtonHoverBrush 资源（DynamicResource，随主题切换），
+            // 与「全选」等按钮悬浮色完全一致，避免之前用 _rowHover 偏暗导致的色差；
+            // 选中态用 accent 更高不透明度的变体做区分（仍与主题一致）
+            var catBtnTemplate = new ControlTemplate(typeof(ToggleButton));
+            var catBtnBd = new FrameworkElementFactory(typeof(Border), "Bd");
+            catBtnBd.SetBinding(Border.BackgroundProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(BackgroundProperty) });
+            catBtnBd.SetBinding(Border.BorderBrushProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(BorderBrushProperty) });
+            catBtnBd.SetBinding(Border.BorderThicknessProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(BorderThicknessProperty) });
+            catBtnBd.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+            catBtnBd.SetBinding(Border.PaddingProperty, new Binding { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent), Path = new PropertyPath(PaddingProperty) });
+            var catBtnCp = new FrameworkElementFactory(typeof(ContentPresenter));
+            catBtnCp.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
+            catBtnCp.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            catBtnBd.AppendChild(catBtnCp);
+            catBtnTemplate.VisualTree = catBtnBd;
+            // 选中态填充：accent 更高不透明度，比 hover 更明显（仍与主题一致）
+            var catSelectedBrush = _isDarkMode
+                ? new SolidColorBrush(Color.FromArgb(0x73, 0x16, 0xE0, 0xBD))  // #16E0BD @ ~45%
+                : new SolidColorBrush(Color.FromArgb(0x8C, 0x08, 0x91, 0x82)); // #089182 @ ~55%
+            var catBtnHover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+            catBtnHover.Setters.Add(new Setter(Border.BackgroundProperty, new DynamicResourceExtension("ButtonHoverBrush"), "Bd"));
+            var catBtnChecked = new Trigger { Property = ToggleButton.IsCheckedProperty, Value = true };
+            catBtnChecked.Setters.Add(new Setter(Border.BackgroundProperty, catSelectedBrush, "Bd"));
+            catBtnTemplate.Triggers.Add(catBtnHover);
+            catBtnTemplate.Triggers.Add(catBtnChecked);
+
+            var catBtn = new ToggleButton
+            {
+                FontSize = 13,
+                MinHeight = 34,
+                Padding = new Thickness(6, 4, 6, 4),
+                BorderBrush = _panelBorder,
+                BorderThickness = new Thickness(1),
+                Margin = new Thickness(0, 0, 8, 0),
+                MinWidth = 100,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Background = _isDarkMode ? Brushes.Transparent : _bgCard,
+                Foreground = _textMain,
+                Template = catBtnTemplate
+            };
+            // 按钮内容：文字 + 右侧下拉箭头，模拟 ComboBox 外观
+            var catBtnText = new TextBlock { Text = "全部分类", FontSize = 13, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
+            var catBtnContent = UiShapes.MakeTextWithArrowGrid(catBtnText, _textDim, minWidth: true);
+            catBtn.Content = catBtnContent;
+
+            var catList = new ListBox
+            {
+                FontSize = 13,
+                BorderThickness = new Thickness(0),
+                Background = Brushes.Transparent,
+                Foreground = _textMain,
+                Padding = new Thickness(0),
+                MaxHeight = 280
+            };
+            VirtualizingPanel.SetIsVirtualizing(catList, false);
+            catList.ItemsPanel = new ItemsPanelTemplate(new System.Windows.FrameworkElementFactory(typeof(StackPanel)));
+            ScrollViewer.SetCanContentScroll(catList, false); // ListBox 模板会 TemplateBind，这里真正生效
+            var catItemStyle = new Style(typeof(ListBoxItem));
+            catItemStyle.Setters.Add(new Setter(Control.FontSizeProperty, 13.0));
+            catItemStyle.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(8, 6, 4, 6)));
+            catItemStyle.Setters.Add(new Setter(Control.VerticalContentAlignmentProperty, VerticalAlignment.Center));
+            catItemStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Left));
+            catItemStyle.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
+            var catItemHover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+            catItemHover.Setters.Add(new Setter(Control.BackgroundProperty, new DynamicResourceExtension("ButtonHoverBrush")));
+            var catItemSelected = new Trigger { Property = ListBoxItem.IsSelectedProperty, Value = true };
+            catItemSelected.Setters.Add(new Setter(Control.BackgroundProperty, catSelectedBrush));
+            catItemStyle.Triggers.Add(catItemHover);
+            catItemStyle.Triggers.Add(catItemSelected);
+            catList.ItemContainerStyle = catItemStyle;
+            catList.Items.Add("全部分类");
+            foreach (var c in SoftwareInstall.SoftwareCategories) catList.Items.Add(c);
+            catList.SelectedIndex = 0;
+
+            var catPopupBorder = new Border
+            {
+                Background = _btnSecondaryBg,
+                BorderBrush = _panelBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Child = catList
+            };
+
+            var catPopup = new Popup
+            {
+                PlacementTarget = catBtn,
+                Placement = PlacementMode.Bottom,
+                StaysOpen = false,
+                AllowsTransparency = true,
+                Child = catPopupBorder,
+                MaxHeight = 280
+            };
+            // 修复：AllowsTransparency=true 会以独立顶层 HWND 承载并带 WS_EX_TOPMOST，
+            // 导致下拉浮到最顶层。剥离该样式使其落到正常层级（与"管理依赖"下拉一致）。
+            UiShapes.DisablePopupTopmost(catPopup);
+            catPopup.Opened += (s, e) =>
+            {
+                catBtn.IsChecked = true;
+                catPopup.Width = Math.Max(catBtn.ActualWidth, 100);
+            };
+            catPopup.Closed += (s, e) => catBtn.IsChecked = false;
+            catBtn.Click += (s, e) => catPopup.IsOpen = !catPopup.IsOpen;
+            catList.SelectionChanged += (s, e) =>
+            {
+                catBtnText.Text = catList.SelectedItem?.ToString() ?? "全部分类";
+                catPopup.IsOpen = false;
+            };
+
+            DockPanel.SetDock(catBtn, Dock.Left);
+            toolBar.Children.Add(catBtn);
+            return (catBtn, catList);
         }
 
         // =====================================================================

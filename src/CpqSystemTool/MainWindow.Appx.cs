@@ -127,15 +127,12 @@ namespace CpqSystemTool
             var btnToggleSel = Btn("□ 全选", false, null, 90);
             btnToggleSel.Click += (s, e) =>
             {
-                allSelected = !allSelected;
-                // 从 Border.Tag 直接取 CheckBox 引用（之前用 b.Child as Grid 是错的，Card.Child 是 StackPanel）
-                foreach (var b in cardsPanel.Children.OfType<Border>())
-                {
-                    if (b.Tag is System.Tuple<string, System.Windows.Controls.CheckBox> t)
-                        t.Item2.IsChecked = allSelected;
-                }
-                // emoji 和实际状态对应：未选 □ / 已选 ☑
-                btnToggleSel.Content = allSelected ? "☑ 取消全选" : "□ 全选";
+                // 从 Border.Tag 直接取 CheckBox 引用，统一交由 ToggleSelectAll 处理（□/☑ 约定）
+                ToggleSelectAll(
+                    cardsPanel.Children.OfType<Border>()
+                        .Select(b => (b.Tag as System.Tuple<string, System.Windows.Controls.CheckBox>)?.Item2)
+                        .Where(cb => cb != null),
+                    ref allSelected, btnToggleSel);
                 UpdateAppxSelCount();
             };
             toolBar.Children.Add(btnToggleSel);
@@ -617,13 +614,11 @@ namespace CpqSystemTool
                 int c = rowItems.Count(t => t.Item1.IsChecked == true);
                 UpdateSelStatus(c, rowItems.Count, "个包");
             }
-            var btnToggleRaw = Btn("📋 全选", false, null, 100);
+            var btnToggleRaw = Btn("□ 全选", false, null, 100);
             btnToggleRaw.HorizontalAlignment = HorizontalAlignment.Center;
             btnToggleRaw.Click += (s, e) =>
             {
-                rawAllSelected = !rawAllSelected;
-                foreach (var t in rowItems) t.Item1.IsChecked = rawAllSelected;
-                btnToggleRaw.Content = rawAllSelected ? "☐ 取消全选" : "📋 全选";
+                ToggleSelectAll(rowItems.Select(t => t.Item1), ref rawAllSelected, btnToggleRaw);
                 UpdateRawSelCount();
             };
             var btnUninstallSel = Btn("卸载选中", false, () =>
@@ -684,7 +679,7 @@ namespace CpqSystemTool
                     // 复位动态状态（与新建页面行为一致）：清空勾选、复位全选、清空日志、后台刷新列表
                     foreach (var t in rowItems) t.Item1.IsChecked = false;
                     rawAllSelected = false;
-                    btnToggleRaw.Content = "📋 全选";
+                    btnToggleRaw.Content = "□ 全选";
                     log.Clear();
                     RefreshList(false);
                 });
@@ -692,6 +687,15 @@ namespace CpqSystemTool
 
             BindRootHeightToViewport(root);
             return root;
+        }
+
+        // 统一的「全选/取消全选」切换：翻转状态位、勾选全部传入的 CheckBox、并将按钮文案切换为 □/☑ 约定。
+        // Appx 的两个面板（卡片视图 / 原始包视图）共用，避免重复且 emoji 不一致。
+        private void ToggleSelectAll(IEnumerable<System.Windows.Controls.CheckBox> boxes, ref bool allSelected, Button btn)
+        {
+            allSelected = !allSelected;
+            foreach (var cb in boxes) cb.IsChecked = allSelected;
+            btn.Content = allSelected ? "☑ 取消全选" : "□ 全选";
         }
     }
 }
