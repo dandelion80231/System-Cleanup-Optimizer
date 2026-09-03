@@ -180,7 +180,13 @@
    - 自动同步 `version.json` / `versions.json`（新版本 `is_latest=true`）。
    - ❌ 严禁 `tools/_deprecated/` 下 `add_v117_only.py`/`add_version_panel.py`/`create_v117_template.py`/`sync_changelog.py`（已实测全破坏布局）。
    - 历史版本英文包名逐步改中文名（重命名 site-dist 旧 exe 并同步旧面板链接）。
-3. **更新 `changelog.html`**：在 `.timeline` 顶部新增 `.tl-item`（版本号 + 日期 + 要点 `<ul>`），措辞与 `CHANGELOG.md` 该版本段一致。
+3. **更新 `changelog.html`（单一来源，禁止手抄）**：时间线由 `CHANGELOG.md` 经 `tools/sync_changelog_to_site.py` 重新生成，**不再手抄** `.tl-item` 内容。新流程：
+   ① 在仓库根 `CHANGELOG.md` 按既有格式新增/修改对应版本段（blockquote `> 相对 vX 的源码变更…` + `### 分类标题` + `- 条目`；二级缩进 `  - ` 会自动渲染为嵌套 `<ul>`，`---` 分隔线会被跳过）；
+   ② 运行 `python tools/sync_changelog_to_site.py --apply --render` 重新生成 `download.html` 右栏 `chlog-panel` 与 `changelog.html` 时间线（render 会顺带生成 `site-dist`）；
+   ③ 跑 Step 6 的 `validate_site.py` + `validate_html.py` 校验（div 平衡 + 三栏契约 + active 唯一 + 0 处 `<p>---</p>`）；
+   ④ 部署（Step 7）。
+   - ⚠️ 新版本若 `changelog.html` 尚无对应 `.tl-item`，需先补一个空骨架 `<div class="tl-item"><span class="ver">vX.XX</span><span class="date">YYYY-MM-DD</span><ul></ul></div>`（置于时间线顶部/对应位置），sync 会用 `CHANGELOG.md` 内容填满 `<ul>`；`download.html` 新增版本则用 `add_site_version.py`（Step 2）补三栏骨架。`sync` 只刷新**已存在**的面板/条目，不会凭空新建版本。
+   - 旧「手抄 changelog.html 要点 `<ul>`」做法已废弃——改 `CHANGELOG.md` 再 sync 即可，避免两处漂移。
 4. **（可选）同步功能页**：本版动了功能 / 模块时，同步 `features.html` 对应模块与 `index.html` 卡片（保持与 README 三处一致，见 Step 3）。
 5. **保持约定**：内部链接一律**无后缀**（`features` / `download` / `changelog` / `/`），不要写回 `xxx.html`——Cloudflare Pretty URLs 会对 `.html` 做 308 重定向拖慢切页；每页 `<head>` 保留对其他兄弟页的 `<link rel="prefetch">`。
 6. **校验（两步都跑）**：

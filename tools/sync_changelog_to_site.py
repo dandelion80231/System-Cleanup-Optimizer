@@ -89,74 +89,121 @@ def indent(text, n):
     return "\n".join((pad + ln if ln.strip() else ln) for ln in text.split("\n"))
 
 
-# download 面板：blockquote + h4 + ul
-def md_to_panel(body_lines):
-    out = []
-    in_ul = False
-    bq = []
+# ---------------------------------------------------------------------------
+# 共用：把 CHANGELOG 段落解析成嵌套节点树（blockquote / h4 / 列表项 + 子项）
+# 节点: {'kind': 'bq'|'h'|'item'|'p', 'text': str, 'children': [节点]}
+# 缩进两格的 `  - ` 二级列表项会被解析为父 `- ` 项的 children，渲染成嵌套 <ul>。
+# ---------------------------------------------------------------------------
+def _build_tree(body_lines):
+    root = []
+    stack = [(-1, root)]          # (indent, 目标子列表)
+    bq_buf = []
 
     def flush_bq():
-        if bq:
-            out.append("<blockquote>%s</blockquote>" % " ".join(bq).strip())
-            bq.clear()
-
-    def close_ul():
-        nonlocal in_ul
-        if in_ul:
-            out.append("</ul>")
-            in_ul = False
+        if bq_buf:
+            root.append({"kind": "bq", "text": " ".join(bq_buf).strip(), "children": []})
+            bq_buf.clear()
+            del stack[1:]
+            stack[0] = (-1, root)
 
     for raw in body_lines:
         line = raw.rstrip("\n")
         if line.startswith("> "):
-            bq.append(line[2:].strip())
+            flush_bq()
+            bq_buf.append(line[2:].strip())
             continue
         flush_bq()
-        if line.startswith("### "):
-            close_ul()
-            out.append("<h4>%s</h4>" % convert_inline(line[4:].strip()))
+        if line.strip() == "---":          # 跳过分隔线（否则降级成 <p>---</p>）
             continue
-        if line.startswith("- "):
-            if not in_ul:
-                out.append("<ul>")
-                in_ul = True
-            out.append("<li>%s</li>" % convert_inline(line[2:].strip()))
+        if line.startswith("### "):
+            del stack[1:]
+            stack[0] = (-1, root)
+            root.append({"kind": "h", "text": line[4:].strip(), "children": []})
+            continue
+        m = re.match(r"^(\s*)-\s+(.*)$", line)
+        if m:
+            indent = len(m.group(1))
+            text = m.group(2).strip()
+            while len(stack) > 1 and stack[-1][0] >= indent:
+                stack.pop()
+            parent_list = stack[-1][1]
+            node = {"kind": "item", "text": text, "children": []}
+            parent_list.append(node)
+            stack.append((indent, node["children"]))
             continue
         if line.strip() == "":
-            close_ul()
             continue
-        close_ul()
-        out.append("<p>%s</p>" % convert_inline(line.strip()))
+        # 普通段落行（极少见）：归为顶层 <p>
+        del stack[1:]
+        stack[0] = (-1, root)
+        root.append({"kind": "p", "text": line.strip(), "children": []})
     flush_bq()
-    close_ul()
+    return root
+
+
+def _render_items_panel(items):
+    out = ["<ul>"]
+    for n in items:
+        out.append("<li>%s" % convert_inline(n["text"]))
+        if n["children"]:
+            out.append(_render_items_panel(n["children"]))
+        out.append("</li>")
+    out.append("</ul>")
     return "\n".join(out)
 
 
-# timeline：扁平 <li>（blockquote 作 em 引导项，### 作 strong 分组项，- 作普通项）
+# download 面板：blockquote + h4 + ul（含嵌套 ul）
+def md_to_panel(body_lines):
+    tree = _build_tree(body_lines)
+    out = []
+    i = 0
+    while i < len(tree):
+        n = tree[i]
+        if n["kind"] == "bq":
+            out.append("<blockquote>%s</blockquote>" % convert_inline(n["text"]))
+        elif n["kind"] == "h":
+            out.append("<h4>%s</h4>" % convert_inline(n["text"]))
+        elif n["kind"] == "item":
+            grp = []
+            while i < len(tree) and tree[i]["kind"] == "item":
+                grp.append(tree[i])
+                i += 1
+            out.append(_render_items_panel(grp))
+            continue
+        else:  # p
+            out.append("<p>%s</p>" % convert_inline(n["text"]))
+        i += 1
+    return "\n".join(out)
+
+
+def _render_items_timeline(items):
+    out = ["<ul>"]
+    for n in items:
+        out.append("<li>%s" % convert_inline(n["text"]))
+        if n["children"]:
+            out.append(_render_items_timeline(n["children"]))
+        out.append("</li>")
+    out.append("</ul>")
+    return "\n".join(out)
+
+
+# timeline：扁平 <li>（blockquote 作 em 引导项，### 作 strong 分组项，- 作普通项，含嵌套 ul）
 def md_to_timeline(body_lines):
-    items = []
-    bq = []
-
-    def flush_bq():
-        if bq:
-            items.append("<li><em>%s</em></li>" % convert_inline(" ".join(bq).strip()))
-            bq.clear()
-
-    for raw in body_lines:
-        line = raw.rstrip("\n")
-        if line.startswith("> "):
-            bq.append(line[2:].strip())
-            continue
-        flush_bq()
-        if line.startswith("### "):
-            items.append("<li><strong>%s</strong></li>" % convert_inline(line[4:].strip()))
-            continue
-        if line.startswith("- "):
-            items.append("<li>%s</li>" % convert_inline(line[2:].strip()))
-            continue
-        # 空白/段落：timeline 内忽略
-    flush_bq()
-    return "\n".join(items)
+    tree = _build_tree(body_lines)
+    out = ["<ul>"]
+    for n in tree:
+        if n["kind"] == "bq":
+            out.append("<li><em>%s</em></li>" % convert_inline(n["text"]))
+        elif n["kind"] == "h":
+            out.append("<li><strong>%s</strong></li>" % convert_inline(n["text"]))
+        elif n["kind"] == "item":
+            out.append("<li>%s" % convert_inline(n["text"]))
+            if n["children"]:
+                out.append(_render_items_timeline(n["children"]))
+            out.append("</li>")
+        # p 在 timeline 内忽略（与旧行为一致）
+    out.append("</ul>")
+    return "\n".join(out)
 
 
 # ---------------------------------------------------------------------------
@@ -202,8 +249,8 @@ def sync_changelog(html, cmap):
         li = md_to_timeline(entry[1])
         inner = (
             '          <span class="ver">%s</span><span class="date">%s</span>\n'
-            "          <ul>\n%s\n          </ul>"
-        ) % (ver, date, indent(li, 12))
+            "%s"
+        ) % (ver, date, indent(li, 10))
         new_block = lines[i] + "\n" + inner + "\n" + lines[close]
         lines[i:close + 1] = new_block.split("\n")
         changes += 1
