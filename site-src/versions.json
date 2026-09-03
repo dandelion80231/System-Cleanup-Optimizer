@@ -8,6 +8,13 @@
       "is_latest": true
     },
     {
+      "version": "v1.18",
+      "date": "2026-08-31",
+      "size_mb": 5.08,
+      "sha256": "3e07cb4003722d2b924ad885d3b2b2f5f12984f740707b525b93b528d6fdfd0e",
+      "is_latest": false
+    },
+    {
       "version": "v1.17",
       "date": "2026-08-30",
       "size_mb": 5.06,
