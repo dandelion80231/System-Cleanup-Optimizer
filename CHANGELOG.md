@@ -4,6 +4,22 @@
 
 ---
 
+## [v1.19] - 2026-09-03
+
+> 相对 v1.17 的源码变更（基线 commit 1ab18c3 + 本轮 CHANGELOG 补充）：补齐 5 处已知缺陷（N1/A3/A4/A8/N2），并治理全项目 61 处空 `catch {}` / `catch (Exception) {}` 静默吞异常（改为 `DebugLog.Ignore(ex)` 记录日志，便于排查）。
+
+### 🐛 缺陷修复（5 项）
+- **N1 · Edge 更新注册表删除健壮性（EdgeCore.BlockEdgeUpdate）**：原 `DeleteSubKeyTree("", false)` 传入空子键名会在无此键时抛 `ArgumentException`，且本方法无 try/catch，异常会中断后续两条 `SetEdgePolicy` 策略写入（禁止更新可能不生效）。改为 `RegistryHelper.DeleteKeyTree`（内部 try/catch + 64/32 双视图 + 删后二次校验），保证策略写入一定执行，失败仅记日志。
+- **A3 · 安装器首选文件名识别（SoftwareInstall.ExtractFirstInstaller）**：原逻辑在多个候选 exe 时直接取体积最大者，可能误选体积最大的非安装程序（如卸载器 / 补丁）。新增 `PickSetupExe` 优先匹配文件名含 `setup`/`install` 者，其次按 `Id`/`Name` 匹配，兜底才回退首个候选，避免装错程序。
+- **A4 · Windows 激活状态判定精度（Activation.IsWindowsActivated）**：原 `outp.Contains("1")` 在 `cscript /dstatusall` 多行输出中任何行含 "1" 即误判为已激活。改为 `outp.Trim() == "1"`，仅当状态值恰为 "1" 才判定已激活，消除误报。
+- **A8 · 还原激活真实执行（VersionSwitch.RestoreActivation）**：原逻辑仅打印"请运行 slmgr /rilc"提示而未真正执行；改为调用 `Exec.RunCmd(new[] { "slmgr.vbs", "/rilc" }, log, capture: true)` 真实重装系统许可证、检查返回码，并在失败时给出密钥后 5 位提示与 HWID 回退建议。
+- **N2 · 卸载 Node 依赖动态状态（MainWindow.Maint）**：原 `RunInBg` 固定"完成"文案，无论实际删除成功/失败/未找到 probes 都显示完成，掩盖真实结果。从 cpq 移植 `RunInBgWithStatus`，按删除计数 / probes 是否存在动态给出「卸载完成 / 卸载未完成：N 项删除失败 / 未找到 probes 目录 / 无可卸载内容」状态。
+
+### ♻️ 质量打磨
+- **空 catch 治理（61 处）**：全项目 18 个文件共 61 处 `catch {}` / `catch (Exception) {}` 静默吞掉异常，改为 `catch (Exception ex) { DebugLog.Ignore(ex); }`，把异常记录到 `DebugLog` 便于事后排查（脏数据 / 路径异常不再无从追查）；WebView2 注入的 JavaScript 字符串内 `catch (e) {}` 保持原样（非 C# 代码，不应改动）。同步修复一处变量名冲突（CS0136）与 BOM 双重编码回归。
+
+---
+
 ## [v1.17] - 2026-08-30
 
 > 相对 v1.16.1 的源码变更（15 个提交，73 个文件，+8163 / −1913 行）：背景编辑器大规模迭代（HSV 色轮性能优化、颜色格式显示、对比度检查、网格光斑拖拽）、配置管理页重构（导出源码功能）、探针工程重构（独立 HttpClient、TLS 1.2/1.3、UA 池轮换）、App.xaml 异常处理前置、src.zip 防呆机制。
