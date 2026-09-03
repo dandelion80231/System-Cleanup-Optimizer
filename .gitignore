@@ -72,3 +72,6 @@ MEMORY_full.md
 pnputil_*.txt
 code_review_*.md
 site-dist/
+
+# 本地 exe 备份目录（发布修复时留档，不入库）
+.exe-backup-*/
