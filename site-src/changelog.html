@@ -58,7 +58,12 @@
         <div class="tl-item">
           <span class="ver">v1.19</span><span class="date">2026-09-03</span>
           <ul>
-          <li><em>相对 v1.17 的源码变更（基线 commit 1ab18c3 + 本轮 CHANGELOG 补充）：补齐 5 处已知缺陷（N1/A3/A4/A8/N2），并治理全项目 61 处空 <code>catch {}</code> / <code>catch (Exception) {}</code> 静默吞异常（改为 <code>DebugLog.Ignore(ex)</code> 记录日志，便于排查）。</em></li>
+          <li><em>相对 v1.17 的源码变更（基线 commit 1ab18c3 + 本轮 CHANGELOG 补充）：<strong>运行平台由 .NET Framework 4.8 迁移至 .NET 10（UI 框架仍为 WPF）</strong>，「导出源码」改为构建期自动打包；补齐 5 处已知缺陷（N1/A3/A4/A8/N2），并治理全项目 61 处空 <code>catch {}</code> / <code>catch (Exception) {}</code> 静默吞异常（改为 <code>DebugLog.Ignore(ex)</code> 记录日志，便于排查）。</em></li>
+          <li><strong>🚀 重大变更</strong></li>
+          <li><strong>运行平台迁移：.NET Framework 4.8 → .NET 10</strong>：目标框架由 <code>net48</code> 升级为 <code>net10.0-windows</code>，UI 框架保持 WPF 不变；显式 x64；<code>System.Management</code> / <code>System.ServiceProcess.ServiceController</code> 依赖升级至 10.0.0，WebView2 固定 1.0.2045.28。发布形态改为框架依赖单文件 exe（<code>PublishSingleFile</code>，约 6.5 MB）。
+          </li>
+          <li><strong>「导出源码」实现方案重构</strong>：旧方案将手工维护的 <code>src.zip</code> 作为嵌入资源，exe 体积多出约 960 KB，且 MSBuild 不会随源码变化自动重打包，导出的常是过时快照。新方案由 csproj 的 <code>GenerateSourcePackage</code> 目标在每次构建（BeforeBuild）从<strong>当前源码</strong>自动重打包并内嵌 <code>CpqSystemTool.srcpkg.zip</code>（约 0.82 MB），导出内容永远与本次构建一致；两张背景图刻意不入包（导出时经 <code>CpqExtractBackgroundsFromAssembly</code> 从运行中的程序集取回，导出结果完整可编译），WebView2 依赖 DLL 亦排除。文件夹发布另有 <code>CopySourceDisclosure</code> 目标把源码目录原样复制到发布目录 <code>src\CpqSystemTool</code>；运行时导出优先解包内嵌源，缺失时回退复制目录（<code>MainWindow.Config.cs</code>）。
+          </li>
           <li><strong>🐛 缺陷修复（5 项）</strong></li>
           <li><strong>N1 · Edge 更新注册表删除健壮性（EdgeCore.BlockEdgeUpdate）</strong>：原 <code>DeleteSubKeyTree("", false)</code> 传入空子键名会在无此键时抛 <code>ArgumentException</code>，且本方法无 try/catch，异常会中断后续两条 <code>SetEdgePolicy</code> 策略写入（禁止更新可能不生效）。改为 <code>RegistryHelper.DeleteKeyTree</code>（内部 try/catch + 64/32 双视图 + 删后二次校验），保证策略写入一定执行，失败仅记日志。
           </li>
