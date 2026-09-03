@@ -1,11 +1,18 @@
 {
   "versions": [
     {
+      "version": "v1.19",
+      "date": "2026-09-03",
+      "size_mb": 6.17,
+      "sha256": "9ccb46521289fd2fbc60e19e05f582c6d3bd790387b48199489cf2fd1ef8e1a4",
+      "is_latest": true
+    },
+    {
       "version": "v1.17",
       "date": "2026-08-30",
       "size_mb": 5.06,
       "sha256": "61293df5eceb813e235b7e567b7323e743583f64480ce6cdfc74e9eece0cf7ce",
-      "is_latest": true
+      "is_latest": false
     },
     {
       "version": "v1.16",
