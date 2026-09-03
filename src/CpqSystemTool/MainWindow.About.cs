@@ -214,7 +214,7 @@ namespace CpqSystemTool
             douyinBox.MouseDoubleClick += (s, e) =>
             {
                 douyinBox.SelectAll();
-                try { Clipboard.SetText(douyinBox.Text); SetStatus("抖音号已复制到剪贴板"); } catch { }
+                try { Clipboard.SetText(douyinBox.Text); SetStatus("抖音号已复制到剪贴板"); } catch (Exception ex) { DebugLog.Ignore(ex); }
             };
             Grid.SetRow(douyinBox, 1); Grid.SetColumn(douyinBox, 1);
             devGrid.Children.Add(douyinBox);
@@ -269,7 +269,7 @@ namespace CpqSystemTool
             emailBox.MouseDoubleClick += (s, e) =>
             {
                 emailBox.SelectAll();
-                try { Clipboard.SetText(emailBox.Text); SetStatus("邮箱已复制到剪贴板"); } catch { }
+                try { Clipboard.SetText(emailBox.Text); SetStatus("邮箱已复制到剪贴板"); } catch (Exception ex) { DebugLog.Ignore(ex); }
             };
             Grid.SetRow(emailBox, 2); Grid.SetColumn(emailBox, 1);
             devGrid.Children.Add(emailBox);
@@ -435,6 +435,8 @@ namespace CpqSystemTool
         // 且 Proxy=null 在 .NET Framework 里仍会继承 IE/系统代理 → 用空 WebProxy 显式表达"不使用任何代理"。
         private class WebClientWithTimeout : System.Net.WebClient
         {
+            [System.ComponentModel.Browsable(false)]
+            [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
             public int TimeoutMs { get; set; } = 10000;
             protected override System.Net.WebRequest GetWebRequest(Uri uri)
             {
@@ -622,7 +624,7 @@ namespace CpqSystemTool
                     SetStatus($"新版本已保存：{dlg.FileName}");
                     if (MessageBox.Show("下载完成，是否打开所在文件夹？", "下载完成", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
                     {
-                        try { System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{dlg.FileName}\""); } catch { }
+                        try { System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{dlg.FileName}\""); } catch (Exception ex) { DebugLog.Ignore(ex); }
                     }
                 }
                 catch (System.Exception ex)

@@ -197,7 +197,7 @@ namespace CpqSystemTool
                     catch { /* 单个设备失败忽略，继续下一个 */ }
                 }
             }
-            catch { }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
             finally
             {
                 if (devInfoSet != IntPtr.Zero && devInfoSet != SETUP_INVALID_HANDLE)
@@ -430,7 +430,7 @@ namespace CpqSystemTool
                     if (!string.IsNullOrWhiteSpace(className))
                         d.ClassDescription = className;
                 }
-                catch { }
+                catch (Exception ex) { DebugLog.Ignore(ex); }
             }
 
             // 最终兜底：对仍保留英文 ClassDescription 的项套用我们自己的映射。
@@ -467,7 +467,7 @@ namespace CpqSystemTool
                         if (!prefixDates.ContainsKey(prefix))
                             prefixDates[prefix] = di.CreationTime;
                     }
-                    catch { }
+                    catch (Exception ex) { DebugLog.Ignore(ex); }
                 }
             }
             catch { return; }
@@ -606,9 +606,9 @@ namespace CpqSystemTool
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex) { DebugLog.Ignore(ex); }
             }
-            catch { }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
             return map;
         }
 
@@ -858,7 +858,7 @@ namespace CpqSystemTool
                 var win = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
                 repo = Path.Combine(win, "System32", "DriverStore", "FileRepository");
             }
-            catch { }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
 
             if (string.IsNullOrEmpty(repo) || !Directory.Exists(repo))
             {
@@ -875,7 +875,7 @@ namespace CpqSystemTool
                     var name = Path.GetFileName(dir);
                     if (!TryExtractInfPrefix(name, out var prefix)) continue;
                     try { prefixSizes[prefix] = prefixSizes.TryGetValue(prefix, out var s) ? s + DirSize(dir) : DirSize(dir); }
-                    catch { }
+                    catch (Exception ex) { DebugLog.Ignore(ex); }
                 }
             }
             catch (Exception ex) { log?.Invoke("[!] 扫描驱动存储失败：" + ex.Message); }
@@ -895,10 +895,10 @@ namespace CpqSystemTool
                 foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
                 {
                     try { total += new FileInfo(f).Length; }
-                    catch { }
+                    catch (Exception ex) { DebugLog.Ignore(ex); }
                 }
             }
-            catch { }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
             return total;
         }
 

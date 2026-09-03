@@ -166,7 +166,7 @@ namespace CpqSystemTool
                     return Color.FromArgb(a, r, g, b);
                 }
             }
-            catch { }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
             return Colors.Transparent;
         }
 
@@ -277,7 +277,7 @@ namespace CpqSystemTool
             }
             catch (Exception ex)
             {
-                // 修复：原先 catch{} 静默吞掉一切异常，脏 JSON 只表现为「设置莫名回到默认值」且无从排查。
+                // 修复：原先 catch (Exception ex) { DebugLog.Ignore(ex); } 静默吞掉一切异常，脏 JSON 只表现为「设置莫名回到默认值」且无从排查。
                 // 保留「单个字段出错仍返回可用实例」的兼容行为，但输出带上下文的诊断信息。
                 DebugLog.Ignore(ex);
                 System.Diagnostics.Debug.WriteLine("[BackgroundSettings.FromJson] 解析失败，已回退默认值。JSON 长度=" + (json == null ? -1 : json.Length));

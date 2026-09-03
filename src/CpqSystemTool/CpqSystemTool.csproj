@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net48</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <AssemblyName>系统清理与优化工具</AssemblyName>
     <RootNamespace>CpqSystemTool</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -18,28 +18,23 @@
     <AssemblyProduct>系统清理与优化工具</AssemblyProduct>
     <AssemblyDescription>面向 Windows 10/11 的一体化系统清理、优化与维护工具</AssemblyDescription>
     <AssemblyCopyright>Copyright © 2026</AssemblyCopyright>
-    <AssemblyVersion>1.0.17.0</AssemblyVersion>
-    <FileVersion>1.0.17.0</FileVersion>
-    <InformationalVersion>1.0.17.0</InformationalVersion>
+    <AssemblyVersion>1.0.19.0</AssemblyVersion>
+    <FileVersion>1.0.19.0</FileVersion>
+    <InformationalVersion>1.0.19.0</InformationalVersion>
     <!-- 显式 x64：Windows 10/11 无 32 位版本，且 64 位进程可加载 64 位 WebView2 Runtime -->
     <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="[1.0.2045.28, 1.0.2045.28]" />
+    <PackageReference Include="System.Management" Version="10.0.0" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <Reference Include="System.Net.Http" />
-    <Reference Include="System.Management" />
-    <Reference Include="System.ServiceProcess" />
-    <Reference Include="System.IO.Compression" />
-    <Reference Include="System.IO.Compression.FileSystem" />
-    <Reference Include="System.Windows.Forms" />
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.Runtime.Serialization" />
-    <Reference Include="Microsoft.VisualBasic" />
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
   </ItemGroup>
 
   <ItemGroup>
@@ -47,7 +42,6 @@
     <Resource Include="brush.png" />
     <Resource Include="background.png" />
     <Resource Include="background-light.png" />
-    <EmbeddedResource Include="src.zip" />
     <EmbeddedResource Include="Resources\Skus\**\*.xrm-ms" />
     <!-- About 页更新日志单一事实来源：嵌入仓库根 CHANGELOG.md，运行时解析渲染，避免与硬编码文本脱节 -->
     <EmbeddedResource Include="..\..\CHANGELOG.md" LogicalName="CHANGELOG.md" />
@@ -55,80 +49,85 @@
 
   <!--
     ===========================================================================
-    src.zip 防呆（2026-08-30 新增）
+    源码披露包（v1.19 起不再内嵌 src.zip）
     ===========================================================================
-    背景：src.zip 是「导出源码」功能用的内嵌资源（见 MainWindow.Config.cs 的导出源码按钮）。
-    它和 .cs 源文件之间**没有任何 MSBuild 依赖关系** —— MSBuild 只负责把磁盘上现成的
-    src.zip 字节嵌进程序集，既不感知源文件变化、也不会自动重打包。所以改了源码之后
-    dotnet build / 重新生成都不会刷新它，exe 里的一直是某个历史快照。
-
-    实际踩到的坑：2026-08-30 发现 src.zip 停在 v1.16 发布时（130 vs 128 条目），
-    整个「自定义背景编辑器」子系统（BackgroundSettings.cs / BackgroundSettingsDialog.cs）
-    以及 Modules/AtomicFile.cs 都不在里面，而 StoreSearchWindow.cs（早已删除）反而还在。
-    —— 即：用户点「导出源码」拿到的是一个月前的代码。
-
-    对策：每次构建前比对 src.zip 与最新源文件的时间戳，过期就报 warning。
-    借本项目「交付构建必须 0 warning」的门禁，强制在构建前先重生成，杜绝再次静默过期。
-
-    重生成命令（tools/ 下，需先做，再做交付构建）：
-        python tools/regen_src_zip.py
-    该脚本会排除 bin/obj/.vs/packages/.git、src.zip 自身，以及 *.bak* / *.tmp / *.log
-    等编辑器与脚本留下的备份文件；并额外纳入仓库根 README.md。
+    旧方案把 src.zip 作为 EmbeddedResource 嵌进 exe，导致：
+      1) exe 体积增加约 960KB；
+      2) src.zip 是历史快照，MSBuild 不会随源码变化自动重打包，导出的是过时代码。
+    新方案：文件夹发布（PublishSingleFile != true）时，把「源码目录」原样复制到
+    输出目录的 src/CpqSystemTool，用户点击「导出源码」时由 MainWindow.Config.cs
+    直接复制这些真实文件。单文件发布不复制。
+    注：单文件发布的「导出源码」由下方 GenerateSourcePackage 生成的内嵌包承担，不受本目标影响。
     ===========================================================================
   -->
-  <UsingTask TaskName="CheckSrcZipFreshness"
-             TaskFactory="RoslynCodeTaskFactory"
-             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
-    <ParameterGroup>
-      <SrcZipPath ParameterType="System.String" Required="true" />
-      <SourceFiles ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
-    </ParameterGroup>
-    <Task>
-      <Using Namespace="System" />
-      <Using Namespace="System.IO" />
-      <Code Type="Fragment" Language="cs">
-        <![CDATA[
-        if (!File.Exists(SrcZipPath))
-        {
-            Log.LogError("src.zip 不存在，无法嵌入源码披露包：" + SrcZipPath);
-            return false;
-        }
-
-        var zipTime = File.GetLastWriteTimeUtc(SrcZipPath);
-        string newestPath = null;
-        var newestTime = DateTime.MinValue;
-
-        foreach (var item in SourceFiles)
-        {
-            var p = item.GetMetadata("FullPath");
-            if (string.IsNullOrEmpty(p) || !File.Exists(p)) continue;
-            var t = File.GetLastWriteTimeUtc(p);
-            if (t > newestTime) { newestTime = t; newestPath = p; }
-        }
-
-        if (newestPath != null && newestTime > zipTime)
-        {
-            Log.LogWarning(
-                "src.zip 已过期：内嵌的「导出源码」包停留在 " + zipTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
-                + "，但源文件 " + Path.GetFileName(newestPath)
-                + " 已于 " + newestTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + " 修改。"
-                + " MSBuild 不会自动重打包 src.zip，请先执行：python tools/regen_src_zip.py");
-        }
-        // 不要写结尾的 return true：RoslynCodeTaskFactory 会自行追加，
-        // 这里再写一次会被判定为不可达代码（CS0162），白白污染「0 warning」门禁。
-        ]]>
-      </Code>
-    </Task>
-  </UsingTask>
-
-  <Target Name="CheckSrcZipFreshness" BeforeTargets="BeforeBuild">
+  <Target Name="CopySourceDisclosure" AfterTargets="Publish">
+    <PropertyGroup>
+      <_SrcDisclosureSrc>$(MSBuildProjectDirectory)\..\..\src\CpqSystemTool</_SrcDisclosureSrc>
+      <_SrcDisclosureReadme>$(MSBuildProjectDirectory)\..\..\README.md</_SrcDisclosureReadme>
+    </PropertyGroup>
     <ItemGroup>
-      <!-- 与 tools/regen_src_zip.py 的收录范围保持一致：源码 + 根 README.md，排除构建产物与备份文件 -->
-      <_SrcZipInputs Include="**\*.cs;**\*.xaml;$(MSBuildProjectDirectory)\..\..\README.md"
-                     Exclude="bin\**;obj\**;.vs\**;packages\**;**\*.bak.*;**\*.bak;**\*.tmp;**\*.log;**\*.orig" />
+      <_SrcDisclosureFiles Include="$(_SrcDisclosureSrc)\**\*"
+                           Exclude="$(_SrcDisclosureSrc)\bin\**;$(_SrcDisclosureSrc)\obj\**;$(_SrcDisclosureSrc)\.vs\**;$(_SrcDisclosureSrc)\.git\**;$(_SrcDisclosureSrc)\packages\**;**\*.bak*;**\*.tmp;**\*.log;**\*.user;**\*.suo" />
     </ItemGroup>
-    <CheckSrcZipFreshness SrcZipPath="$(MSBuildProjectDirectory)\src.zip"
-                          SourceFiles="@(_SrcZipInputs)" />
+    <Copy SourceFiles="@(_SrcDisclosureFiles)"
+          DestinationFiles="@(_SrcDisclosureFiles->'$(PublishDir)src\CpqSystemTool\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(_SrcDisclosureSrc)') And '$(PublishSingleFile)' != 'true' And '$(PublishDir)' != ''" />
+    <Copy SourceFiles="$(_SrcDisclosureReadme)"
+          DestinationFiles="$(PublishDir)src\CpqSystemTool\README.md"
+          Condition="Exists('$(_SrcDisclosureReadme)') And '$(PublishSingleFile)' != 'true' And '$(PublishDir)' != ''" />
+  </Target>
+
+  <!--
+    ===========================================================================
+    源码披露包：构建期自动生成并内嵌（v1.19 起，内嵌体积约 0.82MB）
+    ===========================================================================
+    为什么在 BeforeBuild 生成：
+      MSBuild 的 EmbeddedResource 不会随源码变化自动重打包，旧方案手工维护 src.zip
+      导致 exe 里内嵌的是历史快照、导出的是过时代码。改为 BeforeBuild 每次构建都从
+      当前源码重新打包，内嵌内容永远与本次构建一致。
+
+    为什么排除两张背景图（background.png / background-light.png，合计 2.21MB，占包 73%）：
+      它们本来就以 <Resource> 形式嵌在程序集内（窗口背景即读它），在源码包里再存一份
+      是重复。导出时由 MainWindow.Config.cs 的 CpqExtractBackgroundsFromAssembly 用
+      Application.GetResourceStream 从运行中的程序集取回，导出结果依然完整可编译。
+
+    为什么排除 Microsoft.Web.WebView2.Core.dll：NuGet 依赖，不属于源码披露范围。
+    ===========================================================================
+  -->
+  <Target Name="GenerateSourcePackage" BeforeTargets="BeforeBuild">
+    <PropertyGroup>
+      <_SrcPkgRoot>$(MSBuildProjectDirectory)\..\..</_SrcPkgRoot>
+      <_SrcPkgSrc>$(_SrcPkgRoot)\src\CpqSystemTool</_SrcPkgSrc>
+      <_SrcPkgStage>$(IntermediateOutputPath)srcpkg\</_SrcPkgStage>
+      <_SrcPkgZip>$(IntermediateOutputPath)CpqSystemTool.srcpkg.zip</_SrcPkgZip>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_SrcPkgFiles Include="$(_SrcPkgSrc)\**\*"
+                    Exclude="$(_SrcPkgSrc)\bin\**;$(_SrcPkgSrc)\obj\**;$(_SrcPkgSrc)\.vs\**;$(_SrcPkgSrc)\.git\**;$(_SrcPkgSrc)\packages\**;$(_SrcPkgSrc)\background.png;$(_SrcPkgSrc)\background-light.png;$(_SrcPkgSrc)\Microsoft.Web.WebView2.Core.dll;**\*.bak*;**\*.tmp;**\*.log;**\*.user;**\*.suo" />
+    </ItemGroup>
+
+    <RemoveDir Directories="$(_SrcPkgStage)" Condition="Exists('$(_SrcPkgStage)')" />
+    <Copy SourceFiles="@(_SrcPkgFiles)"
+          DestinationFiles="@(_SrcPkgFiles->'$(_SrcPkgStage)src\CpqSystemTool\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="false"
+          Condition="Exists('$(_SrcPkgSrc)')" />
+    <Copy SourceFiles="$(_SrcPkgRoot)\README.md"
+          DestinationFiles="$(_SrcPkgStage)README.md"
+          Condition="Exists('$(_SrcPkgRoot)\README.md')" />
+
+    <ZipDirectory SourceDirectory="$(_SrcPkgStage)"
+                  DestinationFile="$(_SrcPkgZip)"
+                  Overwrite="true"
+                  Condition="Exists('$(_SrcPkgStage)')" />
+
+    <ItemGroup Condition="Exists('$(_SrcPkgZip)')">
+      <EmbeddedResource Include="$(_SrcPkgZip)">
+        <LogicalName>CpqSystemTool.srcpkg.zip</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
   </Target>
 
 </Project>
+

@@ -2773,7 +2773,7 @@ namespace CpqSystemTool
                     t.Start();
                 }
             }
-            catch { }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
         }
 
         // WCAG 相对亮度 + 对比度

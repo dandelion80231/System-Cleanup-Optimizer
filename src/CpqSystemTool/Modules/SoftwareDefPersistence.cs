@@ -330,13 +330,13 @@ namespace CpqSystemTool
 
                 if (!ReplaceExecutableAtomically(exePath, newPath))
                     System.Diagnostics.Debug.WriteLine("[CpqSystemTool] ApplyPendingBake 替换失败(已回滚): 主程序仍为原 exe, json 保持真相源");
-                try { if (File.Exists(pending)) File.Delete(pending); } catch { }
+                try { if (File.Exists(pending)) File.Delete(pending); } catch (Exception ex) { DebugLog.Ignore(ex); }
             }
             catch (Exception ex)
             {
                 // 固化失败：保留 json 为真相源，删除 pending 避免反复失败
                 System.Diagnostics.Debug.WriteLine("[CpqSystemTool] ApplyPendingBake 失败(已忽略): " + ex.Message);
-                try { if (File.Exists(pending)) File.Delete(pending); } catch { }
+                try { if (File.Exists(pending)) File.Delete(pending); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
             }
         }
 
@@ -358,7 +358,7 @@ namespace CpqSystemTool
 
             // 回退：带时间戳备份（失败不阻断），再两步改名。
             string bak = exePath + ".bak_" + DateTime.Now.ToString("yyyyMMddHHmmss");
-            try { File.Copy(exePath, bak, true); } catch { }
+            try { File.Copy(exePath, bak, true); } catch (Exception ex) { DebugLog.Ignore(ex); }
 
             string old = exePath + ".old";
             bool movedToOld = false;
@@ -371,7 +371,7 @@ namespace CpqSystemTool
 
                 if (!MoveFileEx(newPath, exePath, MOVEFILE_WRITE_THROUGH))
                     return false; // 新 exe 移不到位，finally 回滚 old→exe
-                try { File.Delete(old); } catch { }
+                try { File.Delete(old); } catch (Exception ex) { DebugLog.Ignore(ex); }
                 return true;
             }
             finally

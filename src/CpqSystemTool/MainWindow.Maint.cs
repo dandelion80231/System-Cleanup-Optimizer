@@ -254,11 +254,16 @@ namespace CpqSystemTool
                     "系统 PATH 中的 Node（如有）不会受影响。",
                     "卸载 Node 依赖", MessageBoxButton.YesNo, MessageBoxImage.Question);
                 if (confirm != MessageBoxResult.Yes) return;
-                RunInBg(logBox, logf =>
+                // 原实现无条件打印"卸载完成"、状态栏也固定显示"卸载完成"——
+                // 两个目录全部删除失败时仍报成功，属假成功（与 A1/A2 同类）。
+                int delDeleted = 0, delMissing = 0, delFailed = 0;
+                bool probesMissing = false;
+                RunInBgWithStatus(logBox, logf =>
                 {
                     var probesDir = ResolveProbesDir();
                     if (probesDir == null)
                     {
+                        probesMissing = true;
                         logf("[!] 未找到 probes 目录");
                         return;
                     }
@@ -270,14 +275,25 @@ namespace CpqSystemTool
                             if (Directory.Exists(d))
                             {
                                 Directory.Delete(d, true);
+                                delDeleted++;
                                 logf("[✓] 已删除：" + d);
                             }
-                            else logf("[*] 目录不存在，跳过：" + d);
+                            else { delMissing++; logf("[*] 目录不存在，跳过：" + d); }
                         }
-                        catch (Exception ex) { logf("[!] 删除失败：" + d + " — " + ex.Message); }
+                        catch (Exception ex) { delFailed++; logf("[!] 删除失败：" + d + " — " + ex.Message); }
                     }
-                    logf("[✓] Node 本地依赖卸载完成。");
-                }, "卸载完成", null);
+                    if (delFailed > 0)
+                        logf("[!] 卸载未完成：" + delFailed + " 个目录删除失败"
+                             + (delDeleted > 0 ? "，" + delDeleted + " 个已删除" : "") + "，详见上方日志。");
+                    else if (delDeleted > 0)
+                        logf("[✓] Node 本地依赖卸载完成（已删除 " + delDeleted + " 个目录"
+                             + (delMissing > 0 ? "，" + delMissing + " 个本就不存在" : "") + "）。");
+                    else
+                        logf("[*] 未发现可卸载的本地依赖（" + delMissing + " 个目录均不存在）。");
+                }, () => probesMissing ? "未找到 probes 目录"
+                       : delFailed > 0 ? "卸载未完成：" + delFailed + " 项删除失败"
+                       : delDeleted > 0 ? "卸载完成"
+                       : "无可卸载内容", null);
             });
             var wvHeader = MakeMenuHeader("WebView2 Runtime（系统 Edge）（检测中…）");
             var wvInstall = MakeMenuItem("安装 / 升级 / 修复", depsPopup, () =>

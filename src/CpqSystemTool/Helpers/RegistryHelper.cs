@@ -333,7 +333,7 @@ namespace CpqSystemTool
                         return Convert.ToInt32(v) == onValue;
                     }
                 }
-                catch { }
+                catch (Exception ex) { DebugLog.Ignore(ex); }
             }
             return false;
         }
@@ -441,7 +441,7 @@ namespace CpqSystemTool
                 using (var p = Process.Start(psi))
                 {
                     if (p == null) { log("  [!] 无法启动: " + exe); return -1; }
-                    if (!p.WaitForExit(timeoutMs)) { try { p.Kill(); } catch { } }
+                    if (!p.WaitForExit(timeoutMs)) { try { p.Kill(); } catch (Exception ex) { DebugLog.Ignore(ex); } }
                     return p.ExitCode;
                 }
             }

@@ -502,7 +502,7 @@ namespace CpqSystemTool
                                     using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\CpqSystemTool"))
                                         customDir = k?.GetValue("InstallPath") as string;
                                 }
-                                catch { }
+                                catch (Exception ex) { DebugLog.Ignore(ex); }
                                 // InstallAsync 为真异步（内部下载/解析不再阻塞）；此处后台线程同步等待其完成：
                                 // 无 SynchronizationContext，GetAwaiter().GetResult() 无死锁且异常同步传播（RunInBg 的 try/catch 可捕获，
                                 // 不用 async void lambda —— 其异常会逃逸到 ThreadPool 触发 UnhandledException 崩溃）。
@@ -740,7 +740,7 @@ namespace CpqSystemTool
                                 using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\CpqSystemTool"))
                                     saved = k?.GetValue("InstallPath") as string;
                             }
-                            catch { }
+                            catch (Exception ex) { DebugLog.Ignore(ex); }
                             string label;
                             Brush bg, border, fg;
                             FontWeight fw;

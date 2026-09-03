@@ -35,15 +35,31 @@
 
 ## 2. 构建与部署
 
-- ⚠️ **构建前先重新生成嵌入源码包 `src.zip`**：用当前 `src/CpqSystemTool/` 源码（排除 `bin`/`obj`/`.vs` 及旧 `src.zip` 自身）重新打包，确保 exe 内嵌的「导出源码」与版本一致。`dotnet build` 不会自动重打包，`src.zip` 是手动维护的嵌入资源（v1.0.4 曾因漏此步，发布后 exe 内源码包仍是 v1.02）。
-  - ⚠️ **打包时一并纳入仓库根 `README.md`**：复制 `D:\电脑桌面\cpq\README.md` 到打包根目录（与 `App.xaml`/`Modules/` 同级），让「导出源码」目录自带功能介绍，用户下载 exe 后也能在导出包里看到 README（v1.04 起新增此要求；此前用户反馈 exe / 导出源码包都不含功能介绍）。
+- ⚠️ **【v1.19 起】`src.zip` 已废弃并从仓库删除**：旧方案把手工维护的 `src.zip` 嵌进 exe，它是历史快照（会导出过时代码）。现改为 csproj `GenerateSourcePackage` 目标在**每次构建时自动**重新打包当前源码并内嵌（详见下方「发布」小节）。因此**构建前无需、也不能再手工生成 src.zip**；`tools/regen_src_zip.py` 已成孤儿脚本，可删除。
+  - 「导出源码」在**单文件 exe 的任意位置均可使用**（内嵌包自包含），**不再依赖同级 `src/` 目录**。`-Folder` 文件夹构建现已非必需，仅作额外冗余（会再附带一份源码目录）。
 - 构建（全局 nuget sources 为空，必须显式加源），目标 **0 错 0 警**：
   ```
   cd src\CpqSystemTool
   dotnet build CpqSystemTool.csproj -c Release --source https://api.nuget.org/v3/index.json
   ```
-- 部署：构建产出 `bin\Release\net48\系统清理与优化工具.exe` → 覆盖目标 `系统清理与优化工具_vX.XX.exe` → **SHA256 校验 源=目标 一致**。
-- 占用只停 `系统清理与优化工具` 进程（占用时才停，不误伤其它进程）。
+- **发布（默认单文件 exe，与历史分发形态一致）**：用脚本 `tools/publish.ps1` 产出**单文件 exe** `publish_single_vX.XX\系统清理与优化工具.exe`（框架依赖单文件，与历史 `系统清理与优化工具_vX.XX.exe` 同形态）：
+  ```
+  powershell -ExecutionPolicy Bypass -File tools/publish.ps1 -Version vX.XX            # 框架依赖单文件，体积小（默认分发物）
+  powershell -ExecutionPolicy Bypass -File tools/publish.ps1 -Version vX.XX -SelfContained   # 自包含单文件，免装 .NET 运行时，体积大
+  ```
+  - ⚠️ **【v1.19 起】源码披露包改为「构建期内嵌」**（csproj `GenerateSourcePackage` 目标，`BeforeTargets="BeforeBuild"`）：每次构建都把当前源码重新打包成 `CpqSystemTool.srcpkg.zip` 内嵌，**体积小（约 0.83MB）且永远是当前源码**（旧方案手工维护 `src.zip`，内嵌的是历史快照、会导出过时代码）。
+    - **刻意排除两张背景图**（`background.png` / `background-light.png`，合计 2.21MB，占包体积 73%）：它们本来就以 `<Resource>` 嵌在程序集内，导出时由 `MainWindow.Config.cs` 的 `CpqExtractBackgroundsFromAssembly` 用 `Application.GetResourceStream` 从运行中的程序集取回——不重复占体积，导出结果依然完整可编译。
+    - 同时排除 `bin/obj/.vs/.git/packages` 与 `Microsoft.Web.WebView2.Core.dll`（NuGet 依赖，非源码披露范围）。
+    - 效果：**单文件 exe 在任意位置运行都能导出源码**（不再依赖同级 `src/`）。导出逻辑优先解包内嵌包，失败才回退到目录复制（文件夹发布/仓库内运行）。
+    - 已实测：内嵌包 0.83MB（64 `.cs` + 56 `.xrm-ms` + README），exe 5.64MB → 6.47MB，导出结果含 64 `.cs` + 2 `.xaml` + 1 `.csproj` + 56 授权 + 2 背景图 + README。
+  - （可选，非必需）`-Folder` 产**文件夹构建**（不传 PublishSingleFile，csproj `CopySourceDisclosure` 额外把源码复制到 `src/CpqSystemTool` 作冗余），再 `-Zip` 可连带打包：
+    ```
+    powershell -ExecutionPolicy Bypass -File tools/publish.ps1 -Version vX.XX -Folder        # 文件夹构建，导出可用
+    powershell -ExecutionPolicy Bypass -File tools/publish.ps1 -Version vX.XX -Folder -Zip   # 文件夹构建 + zip 包
+    ```
+  - 产出校验：脚本确认 exe 存在、打印 exe 的 SHA256；`-Folder` 模式额外确认 `src\CpqSystemTool` 含 .cs 文件。
+- **分发**：网站/Release 托管的是**单个 exe** `系统清理与优化工具_vX.XX.exe`（由 `publish_single_vX.XX\系统清理与优化工具.exe` 按版本重命名而来），**不是文件夹 zip**。
+  - 占用只停 `系统清理与优化工具` 进程（占用时才停，不误伤其它进程）。
 
 ---
 
@@ -64,7 +80,7 @@
 
 ## 4. GitHub Release 创建
 
-- ⚠️ **创建 Release / 打 tag 之前，必须已完成第 2 步的 `src.zip` 重建并 push 到远程**：GitHub 自动生成的 `Source code (zip)` / `Source code (tar.gz)` 是基于创建 Release 时的 tag commit 快照生成的，**不会随后续 commit 自动刷新**。若 src.zip 重建晚于 Release 创建，自动 source zip 里的 `src.zip` 仍是旧版（v1.04 曾因此出现「导出源码包不含 README.md」的过期问题）。若已发生，按第 5 步上传 `System-Cleanup-Optimizer_vX.XX_src.zip` 资产补救。
+- ⚠️ **创建 Release / 打 tag 之前，源码须已提交并 push 到远程**（若需「导出源码」功能对下载者可用，先用 `tools/publish.ps1 -Version vX.XX -Folder` 产出含最新 `src/` 的文件夹构建）：GitHub 自动生成的 `Source code (zip)` / `Source code (tar.gz)` 是基于创建 Release 时的 tag commit 快照生成的，**不会随后续 commit 自动刷新**。若发生过期，按第 5 步上传 `System-Cleanup-Optimizer_vX.XX_src.zip` 资产补救。
 - 标题：`系统清理与优化工具 vX.XX`（与历史 release 命名一致，勿只写 `vX.XX`）。
 - 附言：取自 `CHANGELOG.md` 对应版本段（可提取该段到临时 notes 文件，用 `gh release create ... --notes-file`）。
 - 标记 **Latest**。
@@ -115,7 +131,7 @@
 
 ⚠️ **正确做法（更新现有 tag，非新建）：**
 
-> ⚠️ **若本轮源码有变更（bug 修复、About/CHANGELOG 改动等），须先 `regen_src_zip.py` 重生成并提交 `src.zip`、再重建并部署 exe**，然后才移动 tag——否则新 tag 指向 commit 内嵌的源码披露包与提交版 `src.zip` 不一致（本次 v1.05 一致性教训）。`regen_src_zip.py` 位于仓库 `tools/`，仅打包 `src/CpqSystemTool/` + 根 `README.md`。
+> ⚠️ **若本轮源码有变更（bug 修复、About/CHANGELOG 改动等），须先 `tools/publish.ps1 -Version vX.XX` 重建单文件 exe（需要导出可用则加 `-Folder`）、再部署 exe**，然后才移动 tag。`publish.ps1` 位于仓库 `tools/`。
 
 1. 先把 `CHANGELOG.md` 对应版本段补齐（🐛 修复 / ♻️ 打磨 等），提交到 `master`（得到新 HEAD，如 `2cc5e01`）。
 2. 移动现有 tag 到新 HEAD 并强制推送：

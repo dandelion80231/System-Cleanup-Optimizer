@@ -61,11 +61,11 @@ namespace CpqSystemTool
                     Array.Sort(dirs, (a, b) => b.Split(Path.DirectorySeparatorChar).Length.CompareTo(a.Split(Path.DirectorySeparatorChar).Length));
                     foreach (var dir in dirs)
                     {
-                        try { Directory.Delete(dir, false); } catch { }
+                        try { Directory.Delete(dir, false); } catch (Exception ex) { DebugLog.Ignore(ex); }
                     }
-                    try { Directory.Delete(path, true); Directory.CreateDirectory(path); } catch { }
+                    try { Directory.Delete(path, true); Directory.CreateDirectory(path); } catch (Exception ex) { DebugLog.Ignore(ex); }
                 }
-                catch { }
+                catch (Exception ex) { DebugLog.Ignore(ex); }
                 // 兜底：用 PowerShell 静默再清一次（-EA 0 抑制被占用错误）
                 Exec.RunPowerShell("Get-ChildItem -Path " + Exec.QuotePS(path + "\\*") + " -Recurse -Force -EA 0 | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -Recurse -EA 0 }", _ => { });
                 // 兜底后再校验：目录已清空才算成功，否则如实返回 false（调用方据此报「部分残留」）
@@ -154,12 +154,12 @@ namespace CpqSystemTool
                 Parallel.ForEach<string, long>(limited, () => 0L,
                     (f, state, local) =>
                     {
-                        try { local += new FileInfo(f).Length; } catch { }
+                        try { local += new FileInfo(f).Length; } catch (Exception ex) { DebugLog.Ignore(ex); }
                         return local;
                     },
                     local => Interlocked.Add(ref total, local));
             }
-            catch { }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
             return total;
         }
 

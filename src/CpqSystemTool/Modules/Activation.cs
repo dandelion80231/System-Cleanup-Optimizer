@@ -36,7 +36,7 @@ namespace CpqSystemTool
             try
             {
                 string outp = Exec.RunPowerShellGet("(Get-WmiObject -Class SoftwareLicensingProduct -Filter \"PartialProductKey is not null AND LicenseIsAddon = false\").LicenseStatus", null);
-                return outp != null && outp.Contains("1");
+                return outp != null && outp.Trim() == "1";
             }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Activation.IsWindowsActivated 失败: " + ex.Message); return false; }
         }

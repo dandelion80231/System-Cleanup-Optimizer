@@ -721,13 +721,51 @@ namespace CpqSystemTool
                 if (Directory.Exists(outDir)) Directory.Delete(outDir, true);
                 ZipFile.ExtractToDirectory(zip, outDir);
                 var exe = Directory.GetFiles(outDir, "*.exe", SearchOption.AllDirectories);
-                if (exe.Length > 0) return exe[0];
+                if (exe.Length > 0)
+                {
+                    // [A3] 多 exe 压缩包（安装器 + 附带可再发行/辅助程序）时，取第一个 .exe 可能启动
+                    // 错误的安装器导致静默装错。用安全启发式优先选最可能的 setup 主安装器；
+                    // 仅在无任何更优匹配时才回退到 exe[0]。不改变返回类型与调用方。
+                    string best = PickSetupExe(exe);
+                    if (!string.IsNullOrEmpty(best)) return best;
+                }
                 var msi = Directory.GetFiles(outDir, "*.msi", SearchOption.AllDirectories);
                 if (msi.Length > 0) return msi[0];
                 log("   [!] 压缩包内未找到安装程序");
                 return null;
             }
             catch (Exception e) { log("   [!] 解压失败: " + e.Message); return null; }
+        }
+
+        /// <summary>
+        /// [A3] 从解压出的候选 exe 中选最可能的“主安装器”：
+        /// 1) 优先文件名含 "setup"/"install"（不区分大小写）；
+        /// 2) 若仍有多个候选，优先名字含当前软件 Id 或 Name 的；
+        /// 3) 否则回退第一个候选（等价于原 exe[0] 行为）。
+        /// </summary>
+        private string PickSetupExe(string[] exe)
+        {
+            if (exe == null || exe.Length == 0) return null;
+            if (exe.Length == 1) return exe[0];
+            var cands = new List<string>();
+            foreach (var f in exe)
+            {
+                string name = Path.GetFileName(f);
+                if (name.IndexOf("setup", StringComparison.OrdinalIgnoreCase) >= 0
+                    || name.IndexOf("install", StringComparison.OrdinalIgnoreCase) >= 0)
+                    cands.Add(f);
+            }
+            // 没有任何文件名带 setup/install 时，仍保留全部候选（避免误删真实安装器）
+            if (cands.Count == 0) cands.AddRange(exe);
+            if (cands.Count == 1) return cands[0];
+            // 仍有多个候选：优先能对应上本软件 Id/Name 的
+            foreach (var f in cands)
+            {
+                string name = Path.GetFileName(f);
+                if (!string.IsNullOrEmpty(Id) && name.IndexOf(Id, StringComparison.OrdinalIgnoreCase) >= 0) return f;
+                if (!string.IsNullOrEmpty(Name) && name.IndexOf(Name, StringComparison.OrdinalIgnoreCase) >= 0) return f;
+            }
+            return cands[0];
         }
 
         private bool RunInstaller(string path, string[] args, Action<string> log, int timeout)
@@ -772,7 +810,7 @@ namespace CpqSystemTool
                     waited += pollMs;
                     if (waited >= timeoutMs)
                     {
-                        try { p.Kill(); } catch { }
+                        try { p.Kill(); } catch (Exception ex) { DebugLog.Ignore(ex); }
                         log("   [!] 安装超时（>" + (timeoutMs / 1000) + " 秒），已强制终止。");
                         return false;
                     }
@@ -1539,7 +1577,7 @@ namespace CpqSystemTool
                 if (pFile != IntPtr.Zero)
                 {
                     data.dwStateAction = WTD_STATEACTION_CLOSE;
-                    try { WinVerifyTrust(IntPtr.Zero, WintrustActionGenericVerifyV2, ref data); } catch { }
+                    try { WinVerifyTrust(IntPtr.Zero, WintrustActionGenericVerifyV2, ref data); } catch (Exception ex) { DebugLog.Ignore(ex); }
                     Marshal.DestroyStructure(pFile, typeof(WinTrustFileInfo)); // 释放 StructureToPtr 为 pcwszFilePath 分配的非托管字符串
                     Marshal.FreeHGlobal(pFile);
                 }

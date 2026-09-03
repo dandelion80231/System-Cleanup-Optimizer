@@ -425,7 +425,7 @@ namespace CpqSystemTool
                         var it = items.FirstOrDefault(x => x.Name == displayName || x.PackageName == uninstallTarget);
                         nowInstalled = it != null && !string.IsNullOrEmpty(it.FullName);
                     }
-                    catch { }
+                    catch (Exception ex) { DebugLog.Ignore(ex); }
                     try { Dispatcher.Invoke(() =>
                     {
                         var parent = (Panel)card.Parent;

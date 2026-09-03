@@ -148,7 +148,7 @@ namespace CpqSystemTool
                             if (expected > 0 && downloaded != expected)
                             {
                                 string incomplete = "下载不完整：预期 " + expected + " 字节，实际 " + downloaded + " 字节（连接被中断，已删除不完整文件）";
-                                try { if (File.Exists(destPath)) File.Delete(destPath); } catch { }
+                                try { if (File.Exists(destPath)) File.Delete(destPath); } catch (Exception ex) { DebugLog.Ignore(ex); }
                                 return incomplete;
                             }
                             if (total > 0) progress?.Invoke(100); // 仅在确知总长度且校验通过后补发收尾信号

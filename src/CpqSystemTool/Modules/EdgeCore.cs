@@ -732,7 +732,14 @@ namespace CpqSystemTool
             Exec.RunCmd(new[] { "cmd", "/c", "rd /S /Q \"%ProgramFiles(x86)%\\Microsoft\\EdgeUpdate\\\"" }, log);
 
             // 删除更新注册表
-            using (var k3 = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate", true)) k3?.DeleteSubKeyTree("", false);
+            // 旧写法 DeleteSubKeyTree("", false) 传入空子键名会抛 ArgumentException，
+            // 而本方法此前无 try/catch，异常会直接中断下面两条 SetEdgePolicy 的写入。
+            // 改用 RegistryHelper.DeleteKeyTree：内部 try/catch + 64/32 双视图 + 删后二次校验，
+            // 保证策略写入一定执行，且失败只记日志不影响后续步骤。
+            // 删除失败（如 DACL 拒绝）时记一行告警，不要静默吞掉 —— 组策略仍会写入，
+            // 但日志必须如实反映，避免"显示已禁止、实际键还在"的假成功。
+            if (!RegistryHelper.DeleteKeyTree(Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate", log))
+                log("  [!] EdgeUpdate 注册表键未能完全删除（组策略仍会写入，不影响禁止更新生效）");
 
             // 阻止 Edge 启动增强（同时写 HKCU 与 HKLM，确保任一 hive 下都生效）
             RegistryHelper.SetEdgePolicy("StartupBoostEnabled", 0, log);

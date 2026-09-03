@@ -721,7 +721,7 @@ namespace CpqSystemTool
                 };
                 var sp = new StackPanel();
                 bool initial = false;
-                try { initial = getState(); } catch { }
+                try { initial = getState(); } catch (Exception ex) { DebugLog.Ignore(ex); }
                 var chk = new System.Windows.Controls.CheckBox
                 {
                     Content = title,

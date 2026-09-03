@@ -28,10 +28,10 @@ namespace CpqSystemTool
         private static void KillTree(System.Diagnostics.Process p)
         {
             int pid = 0;
-            try { pid = p.Id; } catch { }   // 进程可能早已退出，取 Id 会抛
+            try { pid = p.Id; } catch (Exception ex) { DebugLog.Ignore(ex); }   // 进程可能早已退出，取 Id 会抛
 
-            try { p.Kill(); } catch { }              // 终止直接子进程（可能已退出，忽略异常）
-            try { p.WaitForExit(5000); } catch { }   // 等其真正退出，之后读取 ExitCode 才不会抛
+            try { p.Kill(); } catch (Exception ex) { DebugLog.Ignore(ex); }              // 终止直接子进程（可能已退出，忽略异常）
+            try { p.WaitForExit(5000); } catch (Exception ex) { DebugLog.Ignore(ex); }   // 等其真正退出，之后读取 ExitCode 才不会抛
 
             if (pid <= 0) return;
             try
@@ -50,7 +50,7 @@ namespace CpqSystemTool
                     if (tk != null) tk.WaitForExit(5000);   // 等清理完成，避免孙进程尚未结束就返回
                 }
             }
-            catch { }   // taskkill 失败（进程已退出/权限不足）不影响主流程
+            catch (Exception ex) { DebugLog.Ignore(ex); }   // taskkill 失败（进程已退出/权限不足）不影响主流程
         }
 
         public static string ExpandEnv(string p)

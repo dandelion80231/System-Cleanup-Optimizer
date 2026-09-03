@@ -176,10 +176,10 @@ namespace CpqSystemTool
             {
                 _form?.BeginInvoke(new Action(() =>
                 {
-                    try { _form?.Close(); } catch { }
+                    try { _form?.Close(); } catch (Exception ex) { DebugLog.Ignore(ex); }
                 }));
             }
-            catch { }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
             return false;
         }
 
@@ -362,8 +362,8 @@ namespace CpqSystemTool
                 if (!string.IsNullOrEmpty(uri))
                     _captured.Add(new CandidateUrl { Url = uri, Strategy = "download" });
             }
-            catch { }
-            try { e.Cancel = true; } catch { }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
+            try { e.Cancel = true; } catch (Exception ex) { DebugLog.Ignore(ex); }
         }
 
         private void OnCdpResponse(object sender, CoreWebView2DevToolsProtocolEventReceivedEventArgs e)
@@ -570,11 +570,11 @@ namespace CpqSystemTool
     };
     const clickMatching = () => {
       const triggers = collectMatches();
-      for (const m of triggers) { try { m.dispatchEvent(new MouseEvent('mouseover',{bubbles:true})); } catch(e){} }
+      for (const m of triggers) { try { m.dispatchEvent(new MouseEvent('mouseover',{bubbles:true})); } catch (e) {} }
       let matches = collectMatches();
       matches.sort((x,y)=>(winRe.test((x.innerText||'')+(x.getAttribute('aria-label')||''))?-1:0)-(winRe.test((y.innerText||'')+(y.getAttribute('aria-label')||''))?-1:0));
       let n=0;
-      for (const m of matches) { if (n>=12) break; n++; try { m.click(); } catch(e){} }
+      for (const m of matches) { if (n>=12) break; n++; try { m.click(); } catch (e) {} }
     };
     clickMatching();
     document.querySelectorAll('a[href]').forEach(a=>{ if (/\.exe/i.test(a.href)) add(a.href,'anchor'); });
@@ -606,11 +606,11 @@ namespace CpqSystemTool
     exes(document.documentElement.outerHTML).forEach(u => add(u,'anchor'));
 " + skipBlock + @"
     // 资源链接扫描：每个元素单独 try，避免单个坏节点拖垮整段。
-    document.querySelectorAll('[href],[src]').forEach(el=>{ try{ if(el.href) push(el.href); }catch(e){} try{ if(el.src) push(el.src); }catch(e){} });
-    document.querySelectorAll('*').forEach(el=>{ try{ for (const a of el.attributes) { if (/^data-(href|url|src|download|file|link)$/i.test(a.name)) push(a.value); } }catch(e){} });
+    document.querySelectorAll('[href],[src]').forEach(el=>{ try{ if(el.href) push(el.href); }catch (e) {} try{ if(el.src) push(el.src); }catch (e) {} });
+    document.querySelectorAll('*').forEach(el=>{ try{ for (const a of el.attributes) { if (/^data-(href|url|src|download|file|link)$/i.test(a.name)) push(a.value); } }catch (e) {} });
     // 扫描 script 文本：单独 try；注意此前此行多了一个右括号导致整段脚本语法错误、
     // WebView2 返回 null（浏览器探针整体失效），现已修正为 const m + if(m) 安全遍历。
-    document.querySelectorAll('script').forEach(s=>{ try { const m = (s.textContent||'').match(/https?:\/\/[^\s""'<>()\\]+/gi); if (m) m.forEach(push); } catch(e){} });
+    document.querySelectorAll('script').forEach(s=>{ try { const m = (s.textContent||'').match(/https?:\/\/[^\s""'<>()\\]+/gi); if (m) m.forEach(push); } catch (e) {} });
     [...set].forEach(u=>{ if (/\.(exe|msi|zip)(\?|$)/i.test(u)) add(u,'anchor'); if (/\/(download|setup|client|install(er)?)(\b|\?|\.)/i.test(u)) add(u,'network'); });
   } catch(e) {
     // 整体兜底：任何未预期异常都返回已收集结果，绝不抛 null。WebView2 对异常返回 null 字符串，会令整段脚本被丢弃。
@@ -792,13 +792,13 @@ namespace CpqSystemTool
             {
                 _form?.BeginInvoke(new Action(() =>
                 {
-                    try { _form?.Close(); } catch { }
+                    try { _form?.Close(); } catch (Exception ex) { DebugLog.Ignore(ex); }
                 }));
             }
-            catch { }
-            try { if (_thread != null && _thread.IsAlive) _thread.Join(2000); } catch { }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
+            try { if (_thread != null && _thread.IsAlive) _thread.Join(2000); } catch (Exception ex) { DebugLog.Ignore(ex); }
             // 清理本次使用的临时用户数据目录（避免残留缓存/锁文件累积导致后续初始化挂起）
-            try { if (!string.IsNullOrEmpty(_userDataDir) && Directory.Exists(_userDataDir)) Directory.Delete(_userDataDir, true); } catch { }
+            try { if (!string.IsNullOrEmpty(_userDataDir) && Directory.Exists(_userDataDir)) Directory.Delete(_userDataDir, true); } catch (Exception ex) { DebugLog.Ignore(ex); }
         }
     }
 }

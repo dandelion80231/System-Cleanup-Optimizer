@@ -189,7 +189,7 @@ namespace CpqSystemTool
                 System.Func<string, Func<bool>, Action<bool, Action<string>>, System.Windows.Controls.CheckBox> mkTog = (label, getState, setter) =>
                 {
                     bool initial = false;
-                    try { initial = getState(); } catch { }
+                    try { initial = getState(); } catch (Exception ex) { DebugLog.Ignore(ex); }
                     var chk = new System.Windows.Controls.CheckBox
                     {
                         Content = label,
