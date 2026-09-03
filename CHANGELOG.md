@@ -20,6 +20,20 @@
 
 ---
 
+## [v1.18] - 2026-08-31
+
+> 相对 v1.17 的源码变更（3 提交，1 文件，+43 / −18 行）：修复 Geek Uninstaller 下载卡死、优化便携版安装路径、改用 ZIP 加速下载；并规范 Release 资产（禁止上传 src.zip）。
+
+### 🐛 修复
+- **Geek Uninstaller 下载卡死修复（SoftwareInstall）**：为 `SoftwareInstall.cs` 新增 `ReadTimeoutMs` / `DownloadTimeout` 可配置字段，Geek 配置总超时 900s + 读空闲 120s，应对极慢速服务器（~12 KB/s）反复超时失败。
+- **便携版路径优化**：默认安装路径由 `%LOCALAPPDATA%\CpqSystemTool\Portable\{id}\` 改为桌面根目录，打开即可见；同步更新 `KnownExePaths` 检测路径。
+- **Geek 下载加速**：改用官方 ZIP 包（3.2 MB）替代裸 EXE（7.5 MB），下载时间减少约 60%，并加 SHA256 校验（来源 Chocolatey 官方 checksum），超时由 900s 调为 120s。
+
+### ♻️ 项目卫生
+- **禁止上传 src.zip 到 Release**：`src.zip` 为内嵌资源（供「导出源码」使用），不是 Release 资产；Release 仅上传 exe + README.md。
+
+---
+
 ## [v1.17] - 2026-08-30
 
 > 相对 v1.16.1 的源码变更（15 个提交，73 个文件，+8163 / −1913 行）：背景编辑器大规模迭代（HSV 色轮性能优化、颜色格式显示、对比度检查、网格光斑拖拽）、配置管理页重构（导出源码功能）、探针工程重构（独立 HttpClient、TLS 1.2/1.3、UA 池轮换）、App.xaml 异常处理前置、src.zip 防呆机制。
