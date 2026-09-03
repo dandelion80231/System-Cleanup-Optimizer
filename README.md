@@ -2,9 +2,9 @@
 
 > 面向 Windows 10/11 的一体化系统清理、优化与维护工具。
 >
-> **技术栈**: WPF (C# / .NET Framework 4.8) · 单文件 exe · 零安装 · 双击即跑 · 管理员权限自动提权
+> **技术栈**: WPF (C# / .NET 10) · 单文件 exe · 零安装 · 双击即跑 · 管理员权限自动提权
 >
-> **版本**: v1.17
+> **版本**: v1.19
 >
 > **项目主页**: [https://github.com/dandelion80231/System-Cleanup-Optimizer](https://github.com/dandelion80231/System-Cleanup-Optimizer)
 >
@@ -77,7 +77,7 @@
 ### 系统要求
 
 - **操作系统**: Windows 10 1903+ 或 Windows 11
-- **运行时**: .NET Framework 4.8（系统自带，无需额外安装）
+- **运行时**: .NET 10（已内嵌于单文件 exe，无需额外安装）
 - **权限**: 多数功能需管理员权限，程序会自动请求 UAC 提权
 
 > [!CAUTION]
@@ -87,9 +87,12 @@
 
 ### 下载与运行
 
-1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cpq-system-tool.pages.dev/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.17.exe`）。
+1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cpq-system-tool.pages.dev/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.19.exe`）。
 2. 双击运行即可，**无需安装**。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入单文件 exe。
 3. 首次使用建议：先创建系统还原点，再进行优化配置。
+
+> 当前版本 `系统清理与优化工具_v1.19.exe`：6,794,631 字节（约 6.48 MB），SHA256：
+> `FDB3CC8470B707C87202F249AED8A88715EB6B355900B974DE4AD5E360003696`
 
 ### 通用操作约定
 
@@ -625,8 +628,8 @@ CpqSystemTool.csproj         # SDK-style 项目
 
 ### 环境要求
 
-- **编译器**: .NET SDK 6.0+ 或 Visual Studio 2022 +「.NET 桌面开发」工作负载
-- **目标运行时**: .NET Framework 4.8（Windows 10/11 自带）
+- **编译器**: .NET SDK 10.0+ 或 Visual Studio 2022 +「.NET 桌面开发」工作负载
+- **目标运行时**: .NET 10（net10.0-windows，内嵌于单文件 exe）
 
 ### 构建命令
 
@@ -636,12 +639,12 @@ cd src\CpqSystemTool
 build.bat
 # 方式二：直接使用 dotnet 命令
 dotnet build -c Release
-# 输出文件: bin\Release\net48\系统清理与优化工具.exe
+# 输出文件: bin\Release\net10.0-windows\系统清理与优化工具.exe
 ```
 
 ### 分发
 
-只需分发单个 `系统清理与优化工具_v1.17.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
+只需分发单个 `系统清理与优化工具_v1.19.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
 
 ---
 
@@ -666,6 +669,24 @@ dotnet build -c Release
 激活功能涉及系统授权变更，请遵守当地法律法规及 Microsoft 许可条款。内置微软 SKU 许可令牌（`*.xrm-ms`）仅用于本机版本切换所需的证书安装。
 
 使用本工具所产生的一切后果由使用者自行承担。
+
+---
+
+## 版本更新记录
+
+最新版本为 **v1.19**（.NET 10 构建，2026-09-03）。各版本完整变更见 [CHANGELOG.md](CHANGELOG.md)。
+
+### v1.19（2026-09-03）
+
+- 缺陷修复 5 项：Edge 更新注册表删除健壮性（BlockEdgeUpdate 不再因空子键名中断后续策略写入）、安装器首选文件名识别（PickSetupExe 优先匹配 setup/install，避免误选非安装程序）、Windows 激活状态判定精度（仅状态值恰为 "1" 才判已激活）、还原激活真实执行（RestoreActivation 真正重装系统许可证）、维护工具 Node 依赖卸载动态状态（按删除结果给出真实状态）。
+- 质量打磨：全项目 61 处空 `catch {}` 静默吞异常改为 `DebugLog.Ignore(ex)` 记录日志，便于排查；同步修复变量名冲突（CS0136）与 BOM 双重编码回归。
+
+### v1.18（2026-08-31）
+
+- 修复 Geek Uninstaller 下载卡死（新增可配置读/总超时，应对极慢速服务器）。
+- 便携版默认安装路径改为桌面根目录，打开即可见。
+- Geek 下载改用官方 ZIP 包，下载时间减少约 60% 并加 SHA256 校验。
+- 规范 Release 资产：禁止上传 src.zip，Release 仅含 exe + README.md。
 
 ---
 
