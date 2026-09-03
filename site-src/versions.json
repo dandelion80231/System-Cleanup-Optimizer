@@ -3,15 +3,15 @@
     {
       "version": "v1.19",
       "date": "2026-09-03",
-      "size_mb": 6.17,
-      "sha256": "9ccb46521289fd2fbc60e19e05f582c6d3bd790387b48199489cf2fd1ef8e1a4",
+      "size_mb": 6.48,
+      "sha256": "FDB3CC8470B707C87202F249AED8A88715EB6B355900B974DE4AD5E360003696",
       "is_latest": true
     },
     {
       "version": "v1.18",
       "date": "2026-08-31",
       "size_mb": 5.08,
-      "sha256": "3e07cb4003722d2b924ad885d3b2b2f5f12984f740707b525b93b528d6fdfd0e",
+      "sha256": "B7520E28E1B81E28946D0CECBF981884E0B49FABB4AC1D3032E90E22CB259496",
       "is_latest": false
     },
     {
