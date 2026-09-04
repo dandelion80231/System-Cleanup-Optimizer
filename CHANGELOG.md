@@ -2,7 +2,19 @@
 
 本项目所有重要变更记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/)。
 
----
+
+## [v1.18] - 2026-08-31
+
+> 相对 v1.17 的源码变更（3 提交，1 文件，+43 / −18 行）：修复 Geek Uninstaller 下载卡死、优化便携版安装路径、改用 ZIP 加速下载；并规范 Release 资产（禁止上传 src.zip）。
+
+### 🐛 修复
+- **Geek Uninstaller 下载卡死修复（SoftwareInstall）**：为 `SoftwareInstall.cs` 新增 `ReadTimeoutMs` / `DownloadTimeout` 可配置字段，Geek 配置总超时 900s + 读空闲 120s，应对极慢速服务器（~12 KB/s）反复超时失败。
+- **便携版路径优化**：默认安装路径由 `%LOCALAPPDATA%\CpqSystemTool\Portable\{id}\` 改为桌面根目录，打开即可见；同步更新 `KnownExePaths` 检测路径。
+- **Geek 下载加速**：改用官方 ZIP 包（3.2 MB）替代裸 EXE（7.5 MB），下载时间减少约 60%，并加 SHA256 校验（来源 Chocolatey 官方 checksum），超时由 900s 调为 120s。
+
+### ♻️ 项目卫生
+- **禁止上传 src.zip 到 Release**：`src.zip` 为内嵌资源（供「导出源码」使用），不是 Release 资产；Release 仅上传 exe + README.md。
+
 
 ## [v1.17] - 2026-08-30
 
@@ -73,7 +85,6 @@
 - 建立长期记忆规则：禁止在交付目录保留无版本号副本；清理 `.bak*` 备份、`.log` 日志、`.bak_*` 临时目录。
 - Git commit: e60ec39 chore: 清理备份文件和日志
 
----
 
 ## [v1.16.1] - 2026-08-30
 
@@ -82,7 +93,6 @@
 - **便携版支持自定义安装目录**：`IsPortable` 单文件分支（如 Geek Uninstaller）优先使用用户指定的 `customDir`，不再硬编码 `%LOCALAPPDATA%\CpqSystemTool\Portable\<id>\`。
 - **保留 Referer 支持**：`Downloader.DownloadAsync` 新增可选 `referer` 参数，`SoftwareInstall.DownloadAsync` 透传 `SoftwareDef.Referer`，确保哔哩哔哩等需要 Referer 头的软件仍可正常下载。
 
----
 
 ## [v1.16] - 2026-08-22
 
@@ -96,12 +106,15 @@
 - **UI 联动**：修改后 ComboBox 实时同步注册表状态；手动切换即写注册表（选「默认」恢复出厂）。
 - **注意事项**：实验性功能可能不稳定，逐项开启并在 edge://flags 可随时重置；修改需重启 Edge 生效（一键按钮已内置强制重启）。
 
+## [v1.15] - 2026-08-21
+
 > 相对 v1.14 的源码变更：修复侧边栏「配置管理」在标准窗口下被截断的问题——按钮区改为 Grid Star 行均分 + ScrollViewer 滚动兜底。
 
 ### 🎨 UI / 布局修复
 - **侧边栏导航均分占满**：导航按钮由固定高度改为 `Grid` 16 行 Star **平均分配**全部可用空间，标准窗口（740 高）下 16 项正好占满、无底部空白、无滚动条；窗口最大化时每项自动变高。
 - **矮窗口滚动兜底**：按钮区包 `ScrollViewer`（`VerticalScrollBarVisibility=Auto`），窗口被压缩（小屏 / 高 DPI 缩放）时出现细滚动条，全部导航项仍可达；标题 / 副标题固定顶部不随滚动。
 - 按钮文字垂直居中，行内图标 + 文本视觉更整齐。
+
 
 ## [v1.14] - 2026-08-21
 
@@ -132,7 +145,6 @@
 - **更新状态锁（P1）**：「检查更新」「下载更新」加 `_checkingUpdate` / `_downloadingUpdate` 状态锁 + 按钮禁用联动——并发触发不再竞态写更新地址 / 重复弹下载框。
 - **UI 提醒（P2）**：「关闭系统还原」优化项下方常驻提示「⚠ 关闭系统还原后，危险操作将失去还原点兜底」；配置目录不可写时首次弹窗告知（含路径），不再静默失败。
 
----
 
 ## [v1.12] - 2026-08-21
 
@@ -146,7 +158,6 @@
 - **后台线程 Dispatcher 调用全部加兜底**：全项目甄别 35 处 `Dispatcher.Invoke/BeginInvoke`，其中 32 处后台线程调用（下载进度回调、Appx/软件页 ThreadPool 加载、Defender/防火墙状态刷新、还原点列表、内存分析、系统事件线程等）统一补 `try { } catch { /* 窗口已关闭，忽略 */ }`——后台任务运行中关闭窗口不再因 Dispatcher 关停抛未处理异常导致进程终止（延续 v1.11 的 RunInBg 修复，封死剩余面）。
 - **消除全部 `.Result`（sync-over-async）**：9 处阻塞等待全部改造——ChocolateyResolver 解析链、SoftwareInstall 下载/安装/页面解析链真 async 化（`TryResolveAsync`/`DownloadAsync`/`ResolveAsync`/`InstallAsync`），ProbeBrowserHost 已 await 完成取值改 `GetAwaiter().GetResult()`；全项目 `.Result` 清零，消除死锁隐患。
 
----
 
 ## [v1.11] - 2026-08-20
 
@@ -173,7 +184,6 @@
 - **Config 路径集中**：4 处 `BaseDirectory\Config` 硬编码 → `AppPaths.ConfigDir`。
 - **HttpClient 静态单例复用**：4 处「用完即弃」`new HttpClient` → 共享单例，消除 socket TIME_WAIT 堆积；请求级超时（CTS）与 UA/Referer 注入，探针专用单例保留。
 
----
 
 ## [v1.10] - 2026-08-18
 
@@ -199,7 +209,6 @@
 - **内存拆解「使用中为 0」+ 天文数字 GB（根因修复）**：`Modules/MemoryAnalyzer.cs` 的 PDH 格式常量 `PDH_FMT_LARGE` 被误写成 `0x00000200`（该值实为 `PDH_FMT_DOUBLE`）。代码据此请求 DOUBLE 格式却又用 `cv.longValue`（64 位整数）读取，把 IEEE-754 double 的二进制位当成整数读 → 出现数十亿 GB 的假数据；进而「可用 + 已修改」远大于总物理内存，使「使用中 = 总 − 可用 − 已修改」被钳为 0。修复：补 `PDH_FMT_DOUBLE = 0x00000200` 并将 `PDH_FMT_LARGE` 改正为 `0x00000400`，`fmt` 现在真正请求 LARGE 格式、`longValue` 读取合法 → 「使用中」显示真实值、各项字节数回归正常量级。
 - **内存优化「点了没反应」**：「清空备用列表 / 清空所有进程工作集」两个按钮执行后未重新分析内存，拆解视图一直冻结，误以为优化无效（RAMMap 清理后即可瞬间看到变化）。修复：两个 `RunInBg` 调用补充第 4 参 `onDoneUi = () => DoMemoryAnalyze(pb, applyUi)`，在后台优化完成后于 UI 线程自动重新抓取并刷新「内存使用拆解」视图，效果即时可见。
 
----
 
 ## [v1.09] - 2026-08-18
 
@@ -211,7 +220,6 @@
 
 ### ♻️ 变更 / 策略
 
----
 
 ## [v1.08] - 2026-08-17
 
@@ -224,7 +232,6 @@
 - **检查更新改为从官网 version.json 获取新版本**：原检查更新从 GitHub Releases API 拉取 `tag_name`，现改为读取官网根 `version.json` 的 `version`/`name`/`url` 字段，普通用户无需访问 GitHub、下载更快；版本比较与「下载更新」弹窗逻辑保持不变。
 - **官网安装包统一改为中文名**：官网托管与下载页全部 exe 由 `System-Cleanup-Optimizer_vX.XX.exe` 改为 `系统清理与优化工具_vX.XX.exe`（v1.01–v1.08），`version.json` 的 `name`/`url` 同步使用中文名；GitHub Release 资产保留英文名 `System-Cleanup-Optimizer_v1.08.exe`（规避 gh 中文文件名截断）。
 
----
 
 ## [v1.07] - 2026-08-17
 
@@ -237,7 +244,6 @@
 ### ♻️ 变更 / 策略
 - **统一全部 ComboBox 深/浅色自适应**：新增 `UiShapes.ApplyComboBoxTheme`，以自定义 ControlTemplate（闭合框 + 下拉弹层均引用主题键）+ ComboBoxItem 样式，让 7 个 ComboBox（版本切换目标 / Office 版本 / Edge 频道 / 驱动引擎 / 分组 / 软件分类 / 风险等级）的背景、字体、边框与下拉弹层（含选中/悬浮态）统一跟随深/浅色主题笔刷，替代默认跟随系统色的 Aero2 模板（深模式下弹层为刺眼白底）；弹层刻意关闭 AllowsTransparency 以复用默认 ComboBox 的非置顶行为，避免重新引入浮层问题。
 
----
 
 ## [v1.06] - 2026-08-16
 
@@ -262,7 +268,6 @@
 - **WebView2 探针依赖下载改为 API 自身异步卸载**：`WebView2ProbeDeps.EnsureWebView2ProbeDeps` 重构为 `EnsureWebView2ProbeDepsAsync`（真正异步、下载走线程池、可 await），`ProbeBrowserHost.InitAsync` 与 `CheckWebView2ReadyAsync` 改为直接 `await`，不再依赖「调用方用 Task.Run 包裹」的约定来避免 UI 冻结；保留同步兼容包装供后台线程（RunInBg）调用方使用，全程 `ConfigureAwait(false)` 无死锁风险。
 - **抽取 `UiShapes.MakeTextWithArrowGrid`**：消除「管理依赖」「全部分类」两处下拉按钮重复的「文字 + 右侧箭头」2 列 Grid 构造，统一由共享方法生成（布局与原先完全一致）。
 
----
 
 ## [v1.05] - 2026-08-14
 
@@ -302,7 +307,6 @@
 ### 📄 文档 / 合规
 - **驱动清理模块许可证澄清**：上游 Driver Store Explorer（RAPR）实际采用 GPL v2 许可（与本项目 Apache-2.0 不兼容）。经核查本仓库未包含其任何源代码，驱动清理为基于 Windows 原生 `SetupAPI` / `PnPUtil` / `DISM` 的独立实现，仅界面列布局与行为设计受其启发。已将 README / NOTICE 措辞修正为「参考 / 独立实现」，并在 NOTICE 补充「第三方来源与致谢」（非隶属、非衍生声明）。本澄清不影响 Apache-2.0 许可合规性。
 
----
 
 ## [v1.04] - 2026-08-12
 
@@ -321,7 +325,6 @@
 - **更新下载代理回退增强**：`DownloadStringWithProxyFallback` / `DownloadFileWithProxyFallback` 依次尝试 系统代理 → 直连 → 本地常见回环代理端口 三层自动回退；`DownloadUpdate` 改为 `async/await` 替代原 `Task.Run` + `while(IsBusy) Sleep` 忙等轮询。
 - **版本号规范化（恢复两段式）**：v1.03 → v1.04，**统一回到本项目两段式惯例 `vX.YY`**（历史 v1.01 / v1.02 / v1.03 均为两段；上一版误用三段式 `v1.0.4` 导致「检查更新」段位错位误报「已高于线上」）。同步 csproj（1.0.4.0，内部程序集版本保持不变）/ `APP_VERSION`（`v1.04`）；交付文件名 `系统清理与优化工具_v1.04.exe`。`CompareVersion` 保留 `NormalizeVersion` 防御层（两段且第二段≤9 自动补 0），杜绝日后混用。
 
----
 
 ## [v1.03] - 2026-08-11
 
@@ -339,7 +342,6 @@
 - **更新下载健壮性修复**：下载直链改由 GitHub API 返回的 `browser_download_url` 取得（避免本地拼中文资产名与线上实际英文名不一致导致 404）；下载增加系统代理 → 直连 → `127.0.0.1:26561` 三层自动回退，解决无代理环境下连接 GitHub CDN 失败的问题。
 - **版本号规范化**：v1.02 → v1.03，同步 6 处。
 
----
 
 ## [v1.02] - 2026-08-11
 
@@ -360,7 +362,6 @@
 - **交付文件名带版本号**：`系统清理与优化工具_v1.02.exe`（保留 AssemblyName=中文名，仅部署文件名带版本，避免资源 URI 连锁修改）。
 - **代码审查确认**：Node + Playwright + Chromium 回退路径代码健康可用（本轮无代码改动，仅验证）。
 
----
 
 ## [v1.01] - 2026-08-06
 

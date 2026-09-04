@@ -4,7 +4,10 @@
 >
 > **技术栈**: WPF (C# / .NET Framework 4.8) · 单文件 exe · 零安装 · 双击即跑 · 管理员权限自动提权
 >
-> **版本**: v1.17
+> **版本**: v1.18
+
+> 当前版本 `系统清理与优化工具_v1.18.exe`：5,327,360 字节（约 5.08 MB），SHA256：
+> `B7520E28E1B81E28946D0CECBF981884E0B49FABB4AC1D3032E90E22CB259496`
 >
 > **项目主页**: [https://github.com/dandelion80231/System-Cleanup-Optimizer](https://github.com/dandelion80231/System-Cleanup-Optimizer)
 >
@@ -87,7 +90,7 @@
 
 ### 下载与运行
 
-1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cpq-system-tool.pages.dev/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.17.exe`）。
+1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cpq-system-tool.pages.dev/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.18.exe`）。
 2. 双击运行即可，**无需安装**。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入单文件 exe。
 3. 首次使用建议：先创建系统还原点，再进行优化配置。
 
@@ -641,7 +644,7 @@ dotnet build -c Release
 
 ### 分发
 
-只需分发单个 `系统清理与优化工具_v1.17.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
+只需分发单个 `系统清理与优化工具_v1.18.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
 
 ---
 
@@ -658,6 +661,16 @@ dotnet build -c Release
 详见项目内的 [NOTICE](NOTICE) 文件。
 
 ---
+
+## 版本更新记录
+
+最新版本为 **v1.18**（.NET Framework 4.8 构建，2026-08-31）。各版本完整变更见 [CHANGELOG.md](CHANGELOG.md)。
+
+### v1.18（2026-08-31）
+- **Geek Uninstaller 下载卡死修复**：新增可配置超时字段，Geek 配置总超时 + 读空闲双保险。
+- **便携版路径优化**：默认安装路径改为桌面根目录，打开即可见。
+- **Geek 下载加速**：改用官方 ZIP 包替代裸 EXE，下载时间减少约 60%，并加 SHA256 校验。
+- **项目卫生**：规范 Release 资产（仅 exe + README.md，禁止上传 src.zip）。
 
 ## 免责声明
 
