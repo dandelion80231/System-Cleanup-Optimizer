@@ -378,6 +378,18 @@ namespace CpqSystemTool
         }
 
         private void RunInBg(TextBox log, Action<Action<string>> work, string done = "完成", Action onDoneUi = null)
+            => RunInBgCore(log, work, () => done, onDoneUi);
+
+        /// <summary>
+        /// 与 RunInBg 相同，但状态栏文案由回调在任务结束后动态决定。
+        /// 用于「结果可能部分失败」的任务——固定文案会在失败时也显示"完成"，构成假成功
+        /// （参见 MainWindow.Maint.cs 的「卸载本地依赖」与「清理探针缓存」）。
+        /// 回调在 UI 线程上执行，可安全读取任务中统计的计数变量。
+        /// </summary>
+        private void RunInBgWithStatus(TextBox log, Action<Action<string>> work, Func<string> done, Action onDoneUi = null)
+            => RunInBgCore(log, work, done, onDoneUi);
+
+        private void RunInBgCore(TextBox log, Action<Action<string>> work, Func<string> done, Action onDoneUi = null)
         {
             log?.Dispatcher.Invoke(() => { log.Visibility = Visibility.Visible; log.Clear(); });
             var disp = Dispatcher;
@@ -393,7 +405,7 @@ namespace CpqSystemTool
                 try
                 {
                     work(logf);
-                    safeUi(() => { SetStatus(done); onDoneUi?.Invoke(); });
+                    safeUi(() => { SetStatus(done?.Invoke() ?? "完成"); onDoneUi?.Invoke(); });
                 }
                 catch (Exception ex)
                 {

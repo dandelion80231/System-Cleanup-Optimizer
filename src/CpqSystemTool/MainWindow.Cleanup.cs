@@ -27,10 +27,11 @@ namespace CpqSystemTool
         private static readonly List<CleanupItemDef> CleanupCatalog = new List<CleanupItemDef>
         {
             // ---- 缓存文件 ----
-            new CleanupItemDef { Id="thumb", Name="缩略图缓存", Desc="thumbcache_*.db", Category="缓存文件", DefaultChecked=true, Action=log=>CleanupExt.RunSelected(new[]{"thumb"},log) },
-            new CleanupItemDef { Id="d3d", Name="D3D着色器缓存", Desc="DirectX 着色器缓存", Category="缓存文件", DefaultChecked=true, Action=log=>CleanupExt.RunSelected(new[]{"d3d"},log) },
-            new CleanupItemDef { Id="term", Name="终端缓存", Desc="Windows Terminal 缓存", Category="缓存文件", DefaultChecked=false, Action=log=>CleanupExt.RunSelected(new[]{"term"},log) },
-            new CleanupItemDef { Id="prefetch", Name="预读取文件", Desc="Prefetch 预读取", Category="缓存文件", DefaultChecked=true, Action=log=>CleanupExt.RunSelected(new[]{"prefetch"},log) },
+            // C4: 以下 5 项（thumb/d3d/term/prefetch/winsxs）的 Name/Desc 统一引用 CleanupExt.Items，新增项只需改 CleanupExt.Items 一处
+            new CleanupItemDef { Id="thumb", Name=CleanupExt.Items.First(x=>x.Id=="thumb").Name, Desc=CleanupExt.Items.First(x=>x.Id=="thumb").Desc, Category="缓存文件", DefaultChecked=true, Action=log=>CleanupExt.RunSelected(new[]{"thumb"},log) },
+            new CleanupItemDef { Id="d3d", Name=CleanupExt.Items.First(x=>x.Id=="d3d").Name, Desc=CleanupExt.Items.First(x=>x.Id=="d3d").Desc, Category="缓存文件", DefaultChecked=false, Action=log=>CleanupExt.RunSelected(new[]{"d3d"},log) },
+            new CleanupItemDef { Id="term", Name=CleanupExt.Items.First(x=>x.Id=="term").Name, Desc=CleanupExt.Items.First(x=>x.Id=="term").Desc, Category="缓存文件", DefaultChecked=false, Action=log=>CleanupExt.RunSelected(new[]{"term"},log) },
+            new CleanupItemDef { Id="prefetch", Name=CleanupExt.Items.First(x=>x.Id=="prefetch").Name, Desc=CleanupExt.Items.First(x=>x.Id=="prefetch").Desc, Category="缓存文件", DefaultChecked=false, Action=log=>CleanupExt.RunSelected(new[]{"prefetch"},log) },
             new CleanupItemDef { Id="edge_cache", Name="Edge/Chrome 缓存", Desc="浏览器缓存文件", Category="缓存文件", DefaultChecked=true, Action=log=>{ Cleanup.CleanPath("Edge 缓存",@"%LocalAppData%\Microsoft\Edge\User Data\Default\Cache",log); Cleanup.CleanPath("Chrome 缓存",@"%LocalAppData%\Google\Chrome\User Data\Default\Cache",log); }},
             new CleanupItemDef { Id="font_cache", Name="字体缓存", Desc="系统字体缓存（需重启字体服务）", Category="缓存文件", DefaultChecked=false, Action=log=>Cleanup.FontCache(log) },
             new CleanupItemDef { Id="icon_cache", Name="图标缓存", Desc="系统图标缓存", Category="缓存文件", DefaultChecked=false, Action=log=>Cleanup.IconCache(log) },
@@ -45,7 +46,7 @@ namespace CpqSystemTool
             new CleanupItemDef { Id="wer_reports", Name="WER 错误报告", Desc="Windows 错误报告", Category="系统文件", DefaultChecked=true, Action=log=>Cleanup.CleanDir("WER 错误报告",@"%ProgramData%\Microsoft\Windows\WER",log) },
             new CleanupItemDef { Id="diagnosis", Name="诊断数据", Desc="系统诊断数据", Category="系统文件", DefaultChecked=true, Action=log=>Cleanup.CleanDir("诊断数据",@"%ProgramData%\Microsoft\Diagnosis",log) },
             new CleanupItemDef { Id="whesvc_diag", Name="Whesvc 诊断日志", Desc="Win健康状况服务本地性能追踪(可安全删，会再生)", Category="系统文件", DefaultChecked=false, Action=log=>Cleanup.WhesvcDiag(log) },
-            new CleanupItemDef { Id="winsxs_dism", Name="WinSxS 冗余(DISM)", Desc="DISM /ResetBase（耗时数分钟）", Category="系统文件", DefaultChecked=false, Action=log=>CleanupExt.RunSelected(new[]{"winsxs"},log) },
+            new CleanupItemDef { Id="winsxs_dism", Name=CleanupExt.Items.First(x=>x.Id=="winsxs").Name, Desc=CleanupExt.Items.First(x=>x.Id=="winsxs").Desc, Category="系统文件", DefaultChecked=false, Action=log=>CleanupExt.RunSelected(new[]{"winsxs"},log) },
 
             // ---- 更新残留（第二档：基本安全，旧安装包/更新缓存） ----
             new CleanupItemDef { Id="tier2_updatepkgs", Name="更新残留·安装包缓存", Desc="ClickOnce/Win更新P2P/应用自动更新缓存（下次更新会重下）", Category="更新残留", DefaultChecked=false, Action=log=>Cleanup.UpdatePkgTier2(log) },

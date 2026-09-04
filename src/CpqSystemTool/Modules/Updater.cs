@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Microsoft.Win32;
 
 namespace CpqSystemTool
 {
@@ -8,8 +9,11 @@ namespace CpqSystemTool
     /// </summary>
     internal static class Updater
     {
-        private const string WU_AU_KEY = @"HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU";
-        private const string WU_UX_KEY = @"HKLM\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings";
+        // 注册表路径（子键路径，不含 hive 前缀；hive 统一走 Registry.LocalMachine）。
+        // ★ 按仓库约定（见 Defender.cs / RegistryHelper.cs），所有注册表读写必须走 RegistryHelper，
+        //   由它使用 64 位视图写入、64/32 双视图读取/删除，避免 32 位视图（Wow6432Node）错读/残留。
+        private const string WU_AU_KEY = @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU";
+        private const string WU_UX_KEY = @"SOFTWARE\Microsoft\WindowsUpdate\UX\Settings";
 
         // (启用时启动类型, 禁用时启动类型)
         private static readonly Dictionary<string, Tuple<string, string>> UPDATE_SERVICES =
@@ -38,11 +42,12 @@ namespace CpqSystemTool
         {
             log("=== 禁用 Windows 更新 ===");
             log("1) 写入组策略：关闭自动更新...");
-            // 修正：原先丢弃 reg/sc/net 的退出码，写入失败也一律打印 [OK]。改为接收返回值后判定。
-            int rcNoAuto = Exec.RunCmd(new[] { "reg", "add", WU_AU_KEY, "/v", "NoAutoUpdate", "/t", "REG_DWORD", "/d", "1", "/f" }, log);
-            int rcAuOpt = Exec.RunCmd(new[] { "reg", "add", WU_AU_KEY, "/v", "AUOptions", "/t", "REG_DWORD", "/d", "2", "/f" }, log);
-            if (rcNoAuto == 0 && rcAuOpt == 0) log("   [OK]");
-            else log("   [FAIL] 组策略写入失败（NoAutoUpdate 退出码 " + rcNoAuto + "，AUOptions 退出码 " + rcAuOpt + "）");
+            // 修正：原先走 reg add 子进程，与仓库约定（必须走 RegistryHelper 的 32 位视图一致读写）不符；
+            // 改为 RegistryHelper.SetDword，写入 64 位视图、结果以 bool 判定，逻辑更清晰。NoAutoUpdate 写入不可破坏。
+            bool okNoAuto = RegistryHelper.SetDword(Registry.LocalMachine, WU_AU_KEY, "NoAutoUpdate", 1, log);
+            bool okAuOpt = RegistryHelper.SetDword(Registry.LocalMachine, WU_AU_KEY, "AUOptions", 2, log);
+            if (okNoAuto && okAuOpt) log("   [OK]");
+            else log("   [FAIL] 组策略写入失败（NoAutoUpdate=" + okNoAuto + "，AUOptions=" + okAuOpt + "）");
 
             log("2) 停用更新相关服务...");
             foreach (var kv in UPDATE_SERVICES)
@@ -69,8 +74,9 @@ namespace CpqSystemTool
         {
             log("=== 恢复 Windows 更新 ===");
             log("1) 清除组策略...");
-            Exec.RunCmd(new[] { "reg", "delete", WU_AU_KEY, "/v", "NoAutoUpdate", "/f" }, log);
-            Exec.RunCmd(new[] { "reg", "delete", WU_AU_KEY, "/v", "AUOptions", "/f" }, log);
+            // 改为 RegistryHelper.DeleteValue：同时清理 64/32 双视图，避免旧版残留（比 reg delete 更彻底）。
+            RegistryHelper.DeleteValue(Registry.LocalMachine, WU_AU_KEY, "NoAutoUpdate", log);
+            RegistryHelper.DeleteValue(Registry.LocalMachine, WU_AU_KEY, "AUOptions", log);
             log("   [OK]");
 
             log("2) 恢复更新服务为默认启动类型...");
@@ -98,8 +104,9 @@ namespace CpqSystemTool
         public static void UpdateStatus(Action<string> log)
         {
             log("=== 查看更新状态 ===");
-            string outp = Exec.RunCmdGet(new[] { "reg", "query", WU_AU_KEY, "/v", "NoAutoUpdate" }, log);
-            bool blocked = outp.IndexOf("NoAutoUpdate", StringComparison.Ordinal) >= 0 && outp.IndexOf("0x1", StringComparison.Ordinal) >= 0;
+            // reg query 文本解析改为 RegistryHelper 直接读 Dword（先 64 位再回退 32 位视图）。
+            int? noAuto = RegistryHelper.GetDwordOrNull(Registry.LocalMachine, WU_AU_KEY, "NoAutoUpdate");
+            bool blocked = noAuto.HasValue && noAuto.Value == 1;
             log("组策略 NoAutoUpdate : " + (blocked ? "已设 1（拦截中）" : "未设（未通过策略拦截）"));
 
             foreach (var svc in UPDATE_SERVICES.Keys)
@@ -117,36 +124,11 @@ namespace CpqSystemTool
                 log("服务 " + svc.PadRight(12) + " : " + st);
             }
 
-            string cap = Exec.RunCmdGet(new[] { "reg", "query", WU_UX_KEY, "/v", "FlightSettingsMaxPauseDays" }, log);
-            bool hasCap = cap.IndexOf("FlightSettingsMaxPauseDays", StringComparison.Ordinal) >= 0;
-            string capText;
-            if (hasCap)
-            {
-                // 解析 reg query 输出的实际 REG_DWORD 值（形如 0x2710 或十进制），不再硬编码 10000
-                int? capVal = null;
-                foreach (var line in cap.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
-                {
-                    if (line.IndexOf("FlightSettingsMaxPauseDays", StringComparison.Ordinal) < 0) continue;
-                    var parts = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                    for (int i = parts.Length - 1; i >= 0; i--)
-                    {
-                        var p = parts[i];
-                        if (p.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-                        {
-                            if (int.TryParse(p.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out int hv)) { capVal = hv; break; }
-                        }
-                        else if (int.TryParse(p, out int dv)) { capVal = dv; break; }
-                    }
-                    break;
-                }
-                capText = capVal.HasValue ? "已设为 " + capVal.Value + " 天" : "已设置（值无法解析）";
-            }
-            else
-            {
-                capText = "未设置（默认）";
-            }
-            string pf = Exec.RunCmdGet(new[] { "reg", "query", WU_UX_KEY, "/v", "PauseFeatureUpdates" }, log);
-            bool paused = pf.IndexOf("PauseFeatureUpdates", StringComparison.Ordinal) >= 0 && pf.IndexOf("0x1", StringComparison.Ordinal) >= 0;
+            // FlightSettingsMaxPauseDays：原本需解析 reg query 的 0x/十进制文本，现直接读整数，无解析失败分支。
+            int? cap = RegistryHelper.GetDwordOrNull(Registry.LocalMachine, WU_UX_KEY, "FlightSettingsMaxPauseDays");
+            string capText = cap.HasValue ? "已设为 " + cap.Value + " 天" : "未设置（默认）";
+            int? pf = RegistryHelper.GetDwordOrNull(Registry.LocalMachine, WU_UX_KEY, "PauseFeatureUpdates");
+            bool paused = pf.HasValue && pf.Value == 1;
             log("暂停上限(FlightSettingsMaxPauseDays) : " + capText);
             log("当前暂停状态 : " + (paused ? "已暂停（功能/质量更新）" : "未暂停"));
             log("（若策略未设、服务均为 AUTO/DEMAND 且未暂停，则更新未被拦截）");
@@ -157,23 +139,24 @@ namespace CpqSystemTool
         public static void AllowLongPause(Action<string> log)
         {
             log("=== 允许长期暂停更新（上限 10000 天）===");
-            Exec.RunCmd(new[] { "reg", "add", WU_UX_KEY, "/v", "FlightSettingsMaxPauseDays", "/t", "REG_DWORD", "/d", "10000", "/f" }, log);
+            // 全部改为 RegistryHelper：Dword 写 64 位视图，Sz（开始时间）用 SetSz。
+            RegistryHelper.SetDword(Registry.LocalMachine, WU_UX_KEY, "FlightSettingsMaxPauseDays", 10000, log);
             log("   [OK] 已把“暂停更新”上限设为 10000 天");
             string today = DateTime.Now.ToString("yyyy-MM-dd");
-            Exec.RunCmd(new[] { "reg", "add", WU_UX_KEY, "/v", "PauseFeatureUpdates", "/t", "REG_DWORD", "/d", "1", "/f" }, log);
-            Exec.RunCmd(new[] { "reg", "add", WU_UX_KEY, "/v", "PauseQualityUpdates", "/t", "REG_DWORD", "/d", "1", "/f" }, log);
-            Exec.RunCmd(new[] { "reg", "add", WU_UX_KEY, "/v", "PauseFeatureUpdatesStartTime", "/t", "REG_SZ", "/d", today, "/f" }, log);
-            Exec.RunCmd(new[] { "reg", "add", WU_UX_KEY, "/v", "PauseQualityUpdatesStartTime", "/t", "REG_SZ", "/d", today, "/f" }, log);
+            RegistryHelper.SetDword(Registry.LocalMachine, WU_UX_KEY, "PauseFeatureUpdates", 1, log);
+            RegistryHelper.SetDword(Registry.LocalMachine, WU_UX_KEY, "PauseQualityUpdates", 1, log);
+            RegistryHelper.SetSz(Registry.LocalMachine, WU_UX_KEY, "PauseFeatureUpdatesStartTime", today, log);
+            RegistryHelper.SetSz(Registry.LocalMachine, WU_UX_KEY, "PauseQualityUpdatesStartTime", today, log);
             log("   [OK] 已立即暂停功能更新与质量更新");
             log("完成。更新已暂停；可在「设置 → Windows 更新 → 高级选项」继续调整，或点「恢复 Windows 更新」解除暂停。");
         }
 
         private static void ClearPauseSettings(Action<string> log)
         {
-            Exec.RunCmd(new[] { "reg", "delete", WU_UX_KEY, "/v", "FlightSettingsMaxPauseDays", "/f" }, log);
+            RegistryHelper.DeleteValue(Registry.LocalMachine, WU_UX_KEY, "FlightSettingsMaxPauseDays", log);
             foreach (var v in new[] { "PauseFeatureUpdates", "PauseQualityUpdates", "PauseFeatureUpdatesStartTime", "PauseQualityUpdatesStartTime" })
             {
-                Exec.RunCmd(new[] { "reg", "delete", WU_UX_KEY, "/v", v, "/f" }, log);
+                RegistryHelper.DeleteValue(Registry.LocalMachine, WU_UX_KEY, v, log);
             }
         }
 
@@ -182,8 +165,8 @@ namespace CpqSystemTool
         {
             try
             {
-                string outp = Exec.RunCmdGet(new[] { "reg", "query", WU_AU_KEY, "/v", "NoAutoUpdate" }, null);
-                return outp.IndexOf("0x1", StringComparison.Ordinal) >= 0;
+                int? noAuto = RegistryHelper.GetDwordOrNull(Registry.LocalMachine, WU_AU_KEY, "NoAutoUpdate");
+                return noAuto.HasValue && noAuto.Value == 1;
             }
             catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
@@ -193,8 +176,8 @@ namespace CpqSystemTool
         {
             try
             {
-                string pf = Exec.RunCmdGet(new[] { "reg", "query", WU_UX_KEY, "/v", "PauseFeatureUpdates" }, null);
-                return pf.IndexOf("0x1", StringComparison.Ordinal) >= 0;
+                int? pf = RegistryHelper.GetDwordOrNull(Registry.LocalMachine, WU_UX_KEY, "PauseFeatureUpdates");
+                return pf.HasValue && pf.Value == 1;
             }
             catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }

@@ -70,7 +70,7 @@ namespace CpqSystemTool
 
             BuildUi();
             UpdateActionButtons();
-            UpdateSelStatus();
+            UpdateDriverSelStatus();
             // 注意：构造时不再自动 Refresh()。枚举由主窗口在「启动预加载」与「每次进入该页」时显式触发，
             // 以保证「进入页面即看到已加载数据，并每次进入都后台刷新」。
         }
@@ -267,8 +267,8 @@ namespace CpqSystemTool
             var selFactory = new FrameworkElementFactory(typeof(CheckBox));
             selFactory.SetValue(CheckBox.HorizontalAlignmentProperty, HorizontalAlignment.Center);
             selFactory.SetBinding(CheckBox.IsCheckedProperty, new Binding("Selected") { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged });
-            selFactory.AddHandler(CheckBox.CheckedEvent, new RoutedEventHandler((s, e) => UpdateSelStatus()));
-            selFactory.AddHandler(CheckBox.UncheckedEvent, new RoutedEventHandler((s, e) => UpdateSelStatus()));
+            selFactory.AddHandler(CheckBox.CheckedEvent, new RoutedEventHandler((s, e) => UpdateDriverSelStatus()));
+            selFactory.AddHandler(CheckBox.UncheckedEvent, new RoutedEventHandler((s, e) => UpdateDriverSelStatus()));
             selCol.CellTemplate = new DataTemplate { VisualTree = selFactory };
             _dg.Columns.Add(selCol);
 
@@ -421,14 +421,14 @@ namespace CpqSystemTool
         {
             foreach (var d in _drivers) d.Selected = v;
             _dg.Items.Refresh();
-            UpdateSelStatus();
+            UpdateDriverSelStatus();
         }
 
         private void SelectWhere(Func<DriverStore.DriverInfo, bool> pred, string statusFmt)
         {
             foreach (var d in _drivers) d.Selected = pred(d);
             _dg.Items.Refresh();
-            UpdateSelStatus();
+            UpdateDriverSelStatus();
             int n = _drivers.Count(x => x.Selected);
             _owner?.SetStatus(string.Format(statusFmt, n));
         }
@@ -468,7 +468,7 @@ namespace CpqSystemTool
         /// <summary>一键选中所有旧版驱动（删除时在役/启动关键仍会被护栏跳过）。</summary>
         private void SelectOld() => SelectWhere(d => d.IsOld, "已勾选 {0} 个旧版驱动包（在役/启动关键会在删除时被跳过保护）");
 
-        private void UpdateSelStatus()
+        private void UpdateDriverSelStatus()
         {
             int sel = _drivers.Count(x => x.Selected);
             int oldCnt = _drivers.Count(x => x.IsOld && !x.InUse);
@@ -489,7 +489,7 @@ namespace CpqSystemTool
             {
                 _drivers = list;
                 ApplyGrouping();
-                UpdateSelStatus();
+                UpdateDriverSelStatus();
             }); } catch { /* 窗口已关闭，忽略 */ }
         }
 

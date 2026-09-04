@@ -254,6 +254,7 @@ namespace CpqSystemTool
                     "系统 PATH 中的 Node（如有）不会受影响。",
                     "卸载 Node 依赖", MessageBoxButton.YesNo, MessageBoxImage.Question);
                 if (confirm != MessageBoxResult.Yes) return;
+                // 统计三种结果：汇总文案与状态栏必须如实反映实际结果。
                 // 原实现无条件打印"卸载完成"、状态栏也固定显示"卸载完成"——
                 // 两个目录全部删除失败时仍报成功，属假成功（与 A1/A2 同类）。
                 int delDeleted = 0, delMissing = 0, delFailed = 0;
@@ -312,22 +313,33 @@ namespace CpqSystemTool
             });
             var wvClean = MakeMenuItem("清理探针缓存", depsPopup, () =>
             {
-                RunInBg(logBox, logf =>
+                int cleaned = 0, cleanFailed = 0;
+                bool scanFailed = false;
+                RunInBgWithStatus(logBox, logf =>
                 {
                     var tmpRoot = Path.GetTempPath();
                     try
                     {
-                        int cleaned = 0;
                         foreach (var d in Directory.GetDirectories(tmpRoot, "CpqProbeWebView2*"))
                         {
                             try { Directory.Delete(d, true); cleaned++; }
-                            catch (Exception ex) { logf("[!] 清理失败：" + d + " — " + ex.Message); }
+                            catch (Exception ex) { cleanFailed++; logf("[!] 清理失败：" + d + " — " + ex.Message); }
                         }
-                        if (cleaned > 0) logf("[✓] 已清理 " + cleaned + " 个探针缓存目录。");
-                        else logf("[*] 未发现探针缓存目录。");
+                        // 原实现 else 分支无条件打印"未发现探针缓存目录"，但目录存在却全部删除失败时
+                        // 同样会落到该分支——那是与事实相反的假陈述，故把「有失败」单独区分出来。
+                        if (cleaned > 0)
+                            logf("[✓] 已清理 " + cleaned + " 个探针缓存目录"
+                                 + (cleanFailed > 0 ? "，" + cleanFailed + " 个失败" : "") + "。");
+                        else if (cleanFailed > 0)
+                            logf("[!] 未清理任何目录：" + cleanFailed + " 个探针缓存目录删除失败，详见上方日志。");
+                        else
+                            logf("[*] 未发现探针缓存目录。");
                     }
-                    catch (Exception ex) { logf("[!] 清理失败：" + ex.Message); }
-                }, "缓存清理完成", null);
+                    catch (Exception ex) { scanFailed = true; logf("[!] 清理失败：" + ex.Message); }
+                }, () => scanFailed ? "清理失败"
+                       : cleanFailed > 0 ? "清理未完成：" + cleanFailed + " 项失败"
+                       : cleaned > 0 ? "缓存清理完成"
+                       : "无缓存可清理", null);
             });
 
             menuPanel.Children.Add(nodeHeader);

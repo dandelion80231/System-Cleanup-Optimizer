@@ -10,20 +10,80 @@ namespace CpqSystemTool
 {
     public static class EdgeCore
     {
+        // =====================================================================
+        //  Edge 频道统一定义（唯一事实来源）
+        //  背景：此前 GetEdgeVersion（stable/beta/dev/canary/sxs 五个）、InstallEdge（三个）、
+        //  UninstallEdge（两个）各写一份 switch，三处支持范围互不一致。UI 上给了 5 个频道，
+        //  选 Canary/SxS 卸载时 EdgeCore 只打一行"未知频道"就返回，而 UI 仍无条件报"卸载完成"
+        //  （假成功）。现统一为下面这一张表，所有频道相关逻辑一律查表，新增频道只改这里。
+        // =====================================================================
+
+        /// <summary>单个 Edge 频道的注册表/显示/能力信息。</summary>
+        public sealed class EdgeChannelInfo
+        {
+            /// <summary>UI 传入的频道标识：stable / beta / dev / canary / sxs。</summary>
+            public string Key { get; private set; }
+            /// <summary>注册表 DisplayName，同时用于按名搜索版本与强制清理。</summary>
+            public string DisplayName { get; private set; }
+            /// <summary>HKLM 下该频道的卸载键完整路径。</summary>
+            public string UninstallKeyPath { get; private set; }
+            /// <summary>EdgeUpdate\Clients\{GUID}：读不到 UninstallString 时据此定位 setup.exe。</summary>
+            public string UpdateClientPath { get; private set; }
+            /// <summary>官方下载地址；null 表示本工具不支持自动安装该频道。</summary>
+            public string InstallUrl { get; private set; }
+            /// <summary>是否支持自动卸载。Canary/SxS 是当前用户级安装（不在 HKLM 系统级卸载键下），
+            /// 本工具的系统级卸载流程对其无效，故置 false，由调用方明确报"不支持"而非假成功。</summary>
+            public bool CanUninstall { get; private set; }
+
+            internal EdgeChannelInfo(string key, string displayName, string uninstallKeyPath,
+                                     string updateClientPath, string installUrl, bool canUninstall)
+            {
+                Key = key;
+                DisplayName = displayName;
+                UninstallKeyPath = uninstallKeyPath;
+                UpdateClientPath = updateClientPath;
+                InstallUrl = installUrl;
+                CanUninstall = canUninstall;
+            }
+        }
+
+        private const string UninstallKeyRoot = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\";
+        private const string UpdateClientsRoot = @"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\";
+
+        /// <summary>全部频道定义，顺序与 UI 下拉一致（stable/beta/dev/canary/sxs）。
+        /// 注意 EdgeUpdate 的 Clients GUID 每个频道各不相同——原实现里 Beta 误用了 Stable 的 GUID，
+        /// 会在读不到 UninstallString 时定位到 Stable 的 setup.exe（卸载 Beta 却动到 Stable）。</summary>
+        public static readonly EdgeChannelInfo[] EdgeChannels =
+        {
+            new EdgeChannelInfo("stable", "Microsoft Edge",        UninstallKeyRoot + "Microsoft Edge",        UpdateClientsRoot + "{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}", "https://c2rsetup.officeapps.live.com/c2r/downloadEdge.aspx?platform=Default&source=EdgeStablePage&Channel=Stable&language=zh-cn&brand=M100", true),
+            new EdgeChannelInfo("beta",   "Microsoft Edge Beta",   UninstallKeyRoot + "Microsoft Edge Beta",   UpdateClientsRoot + "{2CD8A007-E189-409D-A2C8-9AF4EF3C72AA}", "https://c2rsetup.edog.officeapps.live.com/c2r/downloadEdge.aspx?platform=Default&source=EdgeInsiderPage&Channel=Beta&language=zh-cn", true),
+            new EdgeChannelInfo("dev",    "Microsoft Edge Dev",    UninstallKeyRoot + "Microsoft Edge Dev",    UpdateClientsRoot + "{0D50BFEC-CD6A-4F9A-964C-C7416E3ACB10}", "https://c2rsetup.edog.officeapps.live.com/c2r/downloadEdge.aspx?platform=Default&source=EdgeInsiderPage&Channel=Dev&language=zh-cn", true),
+            new EdgeChannelInfo("canary", "Microsoft Edge Canary", UninstallKeyRoot + "Microsoft Edge Canary", UpdateClientsRoot + "{65C35B14-6C1D-4122-AC46-7148CC9D6497}", null, false),
+            new EdgeChannelInfo("sxs",    "Microsoft Edge SxS",    UninstallKeyRoot + "Microsoft Edge SxS",    null,                                                         null, false),
+        };
+
+        /// <summary>按频道标识查表；未知频道返回 null（调用方必须据此报错，不得当成功处理）。</summary>
+        public static EdgeChannelInfo FindChannel(string channel)
+        {
+            if (string.IsNullOrWhiteSpace(channel)) return null;
+            foreach (var c in EdgeChannels)
+                if (string.Equals(c.Key, channel, StringComparison.OrdinalIgnoreCase)) return c;
+            return null;
+        }
+
+        /// <summary>供日志提示用的可选频道列表，如 "stable/beta/dev/canary/sxs"。</summary>
+        private static string KnownChannelList()
+        {
+            return string.Join("/", EdgeChannels.Select(c => c.Key));
+        }
+
         // === 版本检测 ===
         public static string GetEdgeVersion(string channel)
         {
-            string subKey;
-            string displayName;
-            switch (channel)
-            {
-                case "stable": subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge";       displayName = "Microsoft Edge";       break;
-                case "beta":   subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Beta";  displayName = "Microsoft Edge Beta";  break;
-                case "dev":    subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Dev";   displayName = "Microsoft Edge Dev";   break;
-                case "canary": subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Canary"; displayName = "Microsoft Edge Canary"; break;
-                case "sxs":    subKey = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge SxS";  displayName = "Microsoft Edge SxS";   break;
-                default: return "未知";
-            }
+            var info = FindChannel(channel);
+            if (info == null) return "未知";
+            string subKey = info.UninstallKeyPath;
+            string displayName = info.DisplayName;
             try
             {
                 using (var key = Registry.LocalMachine.OpenSubKey(subKey))
@@ -277,7 +337,9 @@ namespace CpqSystemTool
             log("正在下载 WebView2 Runtime...");
             Exec.RunPowerShell("Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile \"$env:TEMP\\MicrosoftEdgeWebview2Setup.exe\"", log);
             log("正在安装 WebView2 Runtime...");
-            Exec.RunCmd(new[] { "cmd", "/c", $"\"{Environment.GetEnvironmentVariable("TEMP")}\\MicrosoftEdgeWebview2Setup.exe\"", "/silent", "/install" }, log);
+            // 不经 cmd：原写法 cmd /c "\"路径\"" 会被 Exec.QuoteCmd 把内层 " 翻倍成 ""，
+            // TEMP 含空格时 cmd 解析失败、安装静默 no-op。exe 直接作 args[0]（FileName，无需引号）。
+            Exec.RunCmd(new[] { Environment.GetEnvironmentVariable("TEMP") + "\\MicrosoftEdgeWebview2Setup.exe", "/silent", "/install" }, log);
             log("WebView2 Runtime 安装/升级完成");
 
             // 同步就地补上单文件分发所需的 WebView2 探针托管依赖（NuGet 运行时拉取）。
@@ -385,7 +447,9 @@ namespace CpqSystemTool
             int exitCode = -1;
             try
             {
-                exitCode = Exec.RunCmd(new[] { "cmd", "/c", $"\"{bootstrapper}\"", "/silent", "/install" }, log);
+                // 不经 cmd：bootstrapper 位于 exe 同目录（可能含空格），原写法的内层引号会被
+                // Exec.QuoteCmd 翻倍成 ""，cmd 无法解析路径 → 引导程序根本没跑起来。
+                exitCode = Exec.RunCmd(new[] { bootstrapper, "/silent", "/install" }, log);
             }
             catch (Exception caughtEx)
             {
@@ -566,42 +630,52 @@ namespace CpqSystemTool
         // === 安装 Edge ===
         public static void InstallEdge(string channel, Action<string> log)
         {
-            string url;
-            switch (channel)
+            var info = FindChannel(channel);
+            if (info == null)
             {
-                case "stable": url = "https://c2rsetup.officeapps.live.com/c2r/downloadEdge.aspx?platform=Default&source=EdgeStablePage&Channel=Stable&language=zh-cn&brand=M100"; break;
-                case "beta":   url = "https://c2rsetup.edog.officeapps.live.com/c2r/downloadEdge.aspx?platform=Default&source=EdgeInsiderPage&Channel=Beta&language=zh-cn"; break;
-                case "dev":    url = "https://c2rsetup.edog.officeapps.live.com/c2r/downloadEdge.aspx?platform=Default&source=EdgeInsiderPage&Channel=Dev&language=zh-cn"; break;
-                default: log("未知频道"); return;
+                log("不支持的频道: " + (string.IsNullOrEmpty(channel) ? "(空)" : channel)
+                    + "（可选: " + KnownChannelList() + "）");
+                return;
             }
+            if (string.IsNullOrEmpty(info.InstallUrl))
+            {
+                log("不支持的频道: " + info.DisplayName + " 没有可用的官方静默安装包，请前往微软 Insider 官网手动安装。");
+                return;
+            }
+            string url = info.InstallUrl;
             log($"正在下载 Edge {channel}...");
             Exec.RunPowerShell($"Invoke-WebRequest -Uri '{url}' -OutFile \"$env:TEMP\\MicrosoftEdgeSetup.exe\"", log);
             log("正在安装...");
-            Exec.RunCmd(new[] { "cmd", "/c", $"\"{Environment.GetEnvironmentVariable("TEMP")}\\MicrosoftEdgeSetup.exe\"", "/silent", "/install" }, log);
+            // 不要写成 cmd /c "\"路径\"" ——Exec.QuoteCmd 会把内层 " 翻倍成 ""，
+            // TEMP 含空格（如 C:\Users\张 三\AppData\Local\Temp）时 cmd 解析失败、安装静默 no-op。
+            // 直接把 exe 作为 args[0]（ProcessStartInfo.FileName，无需引号），参数各自独立传。
+            Exec.RunCmd(new[] { Environment.GetEnvironmentVariable("TEMP") + "\\MicrosoftEdgeSetup.exe", "/silent", "/install" }, log);
             log($"Edge {channel} 安装完成");
         }
 
         // === 卸载 Edge ===
-        public static void UninstallEdge(string channel, bool forceClean, Action<string> log)
+        /// <summary>卸载指定频道的 Edge。返回是否"确实执行了卸载动作"：
+        /// 频道未知或该频道不支持自动卸载时返回 false —— 调用方（UI）必须据此决定是否报"卸载完成"，
+        /// 不能像原实现那样无条件弹成功（选 Canary/SxS 时 EdgeCore 只打一行日志就返回，UI 却报卸载完成）。</summary>
+        public static bool UninstallEdge(string channel, bool forceClean, Action<string> log)
         {
-            string uninstallKeyPath;
-            string regPath;
-            string displayName;
-
-            switch (channel)
+            var info = FindChannel(channel);
+            if (info == null)
             {
-                case "stable":
-                    uninstallKeyPath = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge";
-                    regPath = @"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}";
-                    displayName = "Microsoft Edge";
-                    break;
-                case "beta":
-                    uninstallKeyPath = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge Beta";
-                    regPath = @"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}";
-                    displayName = "Microsoft Edge Beta";
-                    break;
-                default: log("未知频道"); return;
+                log("不支持的频道: " + (string.IsNullOrEmpty(channel) ? "(空)" : channel)
+                    + "（可选: " + KnownChannelList() + "）；已跳过，未执行任何卸载操作。");
+                return false;
             }
+            if (!info.CanUninstall || string.IsNullOrEmpty(info.UpdateClientPath))
+            {
+                log("不支持的频道: " + info.DisplayName + " 属于当前用户级安装（不在系统级卸载键下），"
+                    + "本工具的系统级卸载流程对其无效；已跳过，请在「设置 → 应用 → 已安装的应用」中卸载。");
+                return false;
+            }
+
+            string uninstallKeyPath = info.UninstallKeyPath;
+            string regPath = info.UpdateClientPath;
+            string displayName = info.DisplayName;
 
             log($"=== 卸载 Edge {channel} ===");
 
@@ -636,11 +710,24 @@ namespace CpqSystemTool
             {
                 log("未找到卸载信息，使用强制卸载");
                 ForceCleanupEdge(displayName, log);
-                return;
+                return true;
             }
 
             log("执行卸载命令: " + uninstallString);
-            Exec.RunCmd(new[] { "cmd", "/c", uninstallString }, log);
+            // uninstallString 是注册表里已成型的命令行（exe 路径本身带引号），
+            // 再包一层 cmd /c 交给 Exec.QuoteCmd 会把内层 " 翻倍成 ""：
+            //   "C:\Program Files (x86)\...\setup.exe" --uninstall
+            //   → cmd /c """C:\Program Files (x86)\...\setup.exe"" --uninstall"
+            // cmd 去掉首尾引号后剩下 ""C:\Program Files...""，路径被空格拆断，卸载静默失败。
+            // 故这里按 Windows 引号规则拆成 argv 直接启动 setup.exe，不再经 cmd 转手。
+            var argv = SplitCommandLine(uninstallString);
+            if (argv.Length == 0)
+            {
+                log("[!] 卸载命令无法解析，改用强制清理");
+                ForceCleanupEdge(displayName, log);
+                return true;
+            }
+            Exec.RunCmd(argv, log);
 
             if (forceClean)
             {
@@ -649,6 +736,51 @@ namespace CpqSystemTool
             }
 
             log($"Edge {channel} 卸载完成");
+            return true;
+        }
+
+        /// <summary>
+        /// 按 Windows 命令行引号规则把"已成型的命令行"拆成 argv（args[0]=可执行文件路径）。
+        /// 用途：注册表 UninstallString 自带引号，不能再交给 Exec.QuoteCmd 二次转义。
+        /// 规则：双引号成对开关引用状态；引用态内的 "" 表示一个字面双引号；引用态外的空格/制表符分隔参数。
+        /// </summary>
+        private static string[] SplitCommandLine(string commandLine)
+        {
+            var args = new List<string>();
+            if (string.IsNullOrWhiteSpace(commandLine)) return args.ToArray();
+            var sb = new StringBuilder();
+            bool inQuotes = false;
+            bool hasToken = false;
+            for (int i = 0; i < commandLine.Length; i++)
+            {
+                char c = commandLine[i];
+                if (c == '"')
+                {
+                    if (inQuotes && i + 1 < commandLine.Length && commandLine[i + 1] == '"')
+                    {
+                        sb.Append('"');   // "" → 一个字面双引号
+                        i++;
+                    }
+                    else inQuotes = !inQuotes;
+                    hasToken = true;      // 空引号 "" 也算一个（空）参数
+                }
+                else if (!inQuotes && (c == ' ' || c == '\t'))
+                {
+                    if (hasToken)
+                    {
+                        args.Add(sb.ToString());
+                        sb.Length = 0;
+                        hasToken = false;
+                    }
+                }
+                else
+                {
+                    sb.Append(c);
+                    hasToken = true;
+                }
+            }
+            if (hasToken) args.Add(sb.ToString());
+            return args.ToArray();
         }
 
         /// <summary>
@@ -672,13 +804,26 @@ namespace CpqSystemTool
         {
             // 防误删校验：删除前先把待删目录展开成真实路径并逐个校验 Edge 标识。
             // 必需的 Edge 安装目录校验不过 → 整体中止并记录日志；附属缓存目录校验不过 → 仅跳过该项。
-            var targets = new[]
-            {
-                new { Path = @"%ProgramFiles(x86)%\Microsoft\Edge",     Required = true  },
-                new { Path = @"%ProgramFiles(x86)%\Microsoft\EdgeCore", Required = true  },
-                new { Path = @"%LocalAppData%\Microsoft\Edge",          Required = true  },
-                new { Path = @"%ProgramFiles(x86)%\Microsoft\Temp",     Required = false }
-            };
+            // 按频道 identity 派生渠道专属目录名：DisplayName 形如 "Microsoft Edge" / "Microsoft Edge Beta" /
+            // "Microsoft Edge Dev"，去掉前缀 "Microsoft " 得到 "Edge" / "Edge Beta" / "Edge Dev"，
+            // 据此拼出该频道专属的安装/缓存目录，避免卸载 Beta/Dev 时误删 Stable 目录。
+            // 仅 Stable 频道（sub == "Edge"）额外清理 EdgeCore 与 Temp 残留子目录（Beta/Dev 无这些目录）。
+            string sub = (displayName != null ? displayName.Replace("Microsoft ", "") : "").Trim();
+            if (string.IsNullOrWhiteSpace(sub)) sub = "Edge";
+            bool isStable = string.Equals(sub, "Edge", StringComparison.OrdinalIgnoreCase);
+            var targets = isStable
+                ? new[]
+                {
+                    new { Path = @"%ProgramFiles(x86)%\Microsoft\Edge",     Required = true  },
+                    new { Path = @"%ProgramFiles(x86)%\Microsoft\EdgeCore", Required = true  },
+                    new { Path = @"%LocalAppData%\Microsoft\Edge",          Required = true  },
+                    new { Path = @"%ProgramFiles(x86)%\Microsoft\Temp",     Required = false }
+                }
+                : new[]
+                {
+                    new { Path = @"%ProgramFiles(x86)%\Microsoft\" + sub,   Required = true  },
+                    new { Path = @"%LocalAppData%\Microsoft\" + sub,        Required = true  }
+                };
             var dirs = new List<string>();
             foreach (var t in targets)
             {
@@ -693,8 +838,11 @@ namespace CpqSystemTool
             }
 
             // 清理安装目录
+            // rd 是 cmd 内置命令，必须经 cmd 执行；但待删路径要作为**独立参数**交给 Exec.QuoteCmd 加引号，
+            // 不能自己先拼好 "rd /S /Q \"路径\"" ——那样内层 " 会被 QuoteCmd 翻倍成 ""，
+            // 含空格的 Program Files 路径被拆断，rd 报错、目录实际没删掉。
             foreach (var d in dirs)
-                Exec.RunCmd(new[] { "cmd", "/c", "rd /S /Q \"" + d + "\"" }, log);
+                Exec.RunCmd(new[] { "cmd", "/c", "rd", "/S", "/Q", d }, log);
 
             // 清理注册表
             using (var k1 = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Clients\StartMenuInternet", true)) k1?.DeleteSubKeyTree(displayName, false);
@@ -729,7 +877,9 @@ namespace CpqSystemTool
             Exec.RunPowerShell("schtasks /delete /tn 'MicrosoftEdgeUpdateTask' /f 2>nul", log);
 
             // 删除更新目录
-            Exec.RunCmd(new[] { "cmd", "/c", "rd /S /Q \"%ProgramFiles(x86)%\\Microsoft\\EdgeUpdate\\\"" }, log);
+            // 同上：路径作为独立参数传，避免内层引号被 QuoteCmd 翻倍；
+            // 顺带去掉结尾的 '\'（对 rd 无意义，且会触发 QuoteCmd 的"结尾反斜杠 2n+1"转义分支）。
+            Exec.RunCmd(new[] { "cmd", "/c", "rd", "/S", "/Q", Exec.ExpandEnv(@"%ProgramFiles(x86)%\Microsoft\EdgeUpdate") }, log);
 
             // 删除更新注册表
             // 旧写法 DeleteSubKeyTree("", false) 传入空子键名会抛 ArgumentException，
