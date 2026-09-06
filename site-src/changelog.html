@@ -3,17 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>更新日志 — 系统清理与优化工具 v1.01 – {{VER}}</title>
-<meta name="description" content="系统清理与优化工具更新日志：v1.01 到 {{VER}} 的完整迭代记录，包括官网地址、检查更新改为官网 version.json、安装包统一中文名等。">
+<title>更新日志 — 系统清理与优化工具 v1.01 – v1.19</title>
+<meta name="description" content="系统清理与优化工具更新日志：v1.01 到 v1.19 的完整迭代记录，包括官网地址、检查更新改为官网 version.json、安装包统一中文名等。">
 <link rel="canonical" href="https://cpq-system-tool.pages.dev/changelog">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="系统清理与优化工具">
-<meta property="og:title" content="更新日志 — 系统清理与优化工具 v1.01 – {{VER}}">
-<meta property="og:description" content="系统清理与优化工具更新日志：v1.01 到 {{VER}} 的完整迭代记录，包括官网地址、检查更新改为官网 version.json、安装包统一中文名等。">
+<meta property="og:title" content="更新日志 — 系统清理与优化工具 v1.01 – v1.19">
+<meta property="og:description" content="系统清理与优化工具更新日志：v1.01 到 v1.19 的完整迭代记录，包括官网地址、检查更新改为官网 version.json、安装包统一中文名等。">
 <meta property="og:url" content="https://cpq-system-tool.pages.dev/changelog">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="更新日志 — 系统清理与优化工具 v1.01 – {{VER}}">
-<meta name="twitter:description" content="系统清理与优化工具更新日志：v1.01 到 {{VER}} 的完整迭代记录，包括官网地址、检查更新改为官网 version.json、安装包统一中文名等。">
+<meta name="twitter:title" content="更新日志 — 系统清理与优化工具 v1.01 – v1.19">
+<meta name="twitter:description" content="系统清理与优化工具更新日志：v1.01 到 v1.19 的完整迭代记录，包括官网地址、检查更新改为官网 version.json、安装包统一中文名等。">
 
 <meta name="keywords" content="更新日志,changelog,系统清理与优化工具,v1.10">
 <meta name="author" content="CpqSystemTool">
@@ -36,7 +36,7 @@
         <a href="download" data-page="download">下载</a>
         <a href="changelog" data-page="changelog">更新日志</a>
         <a href="about" data-page="about">关于</a>
-        <a class="nav-cta" href="download">下载 {{VER}}</a>
+        <a class="nav-cta" href="download">下载 v1.19</a>
       </div>
       <button class="nav-toggle" id="navToggle" aria-label="菜单">☰</button>
     </div>
@@ -55,31 +55,6 @@
   <section>
     <div class="container">
       <div class="timeline">
-        <div class="tl-item">
-          <span class="ver">v1.19</span><span class="date">2026-09-03</span>
-          <ul>
-          <li><em>相对 v1.17 的源码变更（基线 commit 1ab18c3 + 本轮 CHANGELOG 补充）：<strong>运行平台由 .NET Framework 4.8 迁移至 .NET 10（UI 框架仍为 WPF）</strong>，「导出源码」改为构建期自动打包；补齐 5 处已知缺陷（N1/A3/A4/A8/N2），并治理全项目 61 处空 <code>catch {}</code> / <code>catch (Exception) {}</code> 静默吞异常（改为 <code>DebugLog.Ignore(ex)</code> 记录日志，便于排查）。</em></li>
-          <li><strong>🚀 重大变更</strong></li>
-          <li><strong>运行平台迁移：.NET Framework 4.8 → .NET 10</strong>：目标框架由 <code>net48</code> 升级为 <code>net10.0-windows</code>，UI 框架保持 WPF 不变；显式 x64；<code>System.Management</code> / <code>System.ServiceProcess.ServiceController</code> 依赖升级至 10.0.0，WebView2 固定 1.0.2045.28。发布形态改为框架依赖单文件 exe（<code>PublishSingleFile</code>，约 6.5 MB）。
-          </li>
-          <li><strong>「导出源码」实现方案重构</strong>：旧方案将手工维护的 <code>src.zip</code> 作为嵌入资源，exe 体积多出约 960 KB，且 MSBuild 不会随源码变化自动重打包，导出的常是过时快照。新方案由 csproj 的 <code>GenerateSourcePackage</code> 目标在每次构建（BeforeBuild）从<strong>当前源码</strong>自动重打包并内嵌 <code>CpqSystemTool.srcpkg.zip</code>（约 0.82 MB），导出内容永远与本次构建一致；两张背景图刻意不入包（导出时经 <code>CpqExtractBackgroundsFromAssembly</code> 从运行中的程序集取回，导出结果完整可编译），WebView2 依赖 DLL 亦排除。文件夹发布另有 <code>CopySourceDisclosure</code> 目标把源码目录原样复制到发布目录 <code>src\CpqSystemTool</code>；运行时导出优先解包内嵌源，缺失时回退复制目录（<code>MainWindow.Config.cs</code>）。
-          </li>
-          <li><strong>🐛 缺陷修复（5 项）</strong></li>
-          <li><strong>N1 · Edge 更新注册表删除健壮性（EdgeCore.BlockEdgeUpdate）</strong>：原 <code>DeleteSubKeyTree("", false)</code> 传入空子键名会在无此键时抛 <code>ArgumentException</code>，且本方法无 try/catch，异常会中断后续两条 <code>SetEdgePolicy</code> 策略写入（禁止更新可能不生效）。改为 <code>RegistryHelper.DeleteKeyTree</code>（内部 try/catch + 64/32 双视图 + 删后二次校验），保证策略写入一定执行，失败仅记日志。
-          </li>
-          <li><strong>A3 · 安装器首选文件名识别（SoftwareInstall.ExtractFirstInstaller）</strong>：原逻辑在多个候选 exe 时直接取体积最大者，可能误选体积最大的非安装程序（如卸载器 / 补丁）。新增 <code>PickSetupExe</code> 优先匹配文件名含 <code>setup</code>/<code>install</code> 者，其次按 <code>Id</code>/<code>Name</code> 匹配，兜底才回退首个候选，避免装错程序。
-          </li>
-          <li><strong>A4 · Windows 激活状态判定精度（Activation.IsWindowsActivated）</strong>：原 <code>outp.Contains("1")</code> 在 <code>cscript /dstatusall</code> 多行输出中任何行含 "1" 即误判为已激活。改为 <code>outp.Trim() == "1"</code>，仅当状态值恰为 "1" 才判定已激活，消除误报。
-          </li>
-          <li><strong>A8 · 还原激活真实执行（VersionSwitch.RestoreActivation）</strong>：原逻辑仅打印"请运行 slmgr /rilc"提示而未真正执行；改为调用 <code>Exec.RunCmd(new[] { "slmgr.vbs", "/rilc" }, log, capture: true)</code> 真实重装系统许可证、检查返回码，并在失败时给出密钥后 5 位提示与 HWID 回退建议。
-          </li>
-          <li><strong>N2 · 卸载 Node 依赖动态状态（MainWindow.Maint）</strong>：原 <code>RunInBg</code> 固定"完成"文案，无论实际删除成功/失败/未找到 probes 都显示完成，掩盖真实结果。从 cpq 移植 <code>RunInBgWithStatus</code>，按删除计数 / probes 是否存在动态给出「卸载完成 / 卸载未完成：N 项删除失败 / 未找到 probes 目录 / 无可卸载内容」状态。
-          </li>
-          <li><strong>♻️ 质量打磨</strong></li>
-          <li><strong>空 catch 治理（61 处）</strong>：全项目 18 个文件共 61 处 <code>catch {}</code> / <code>catch (Exception) {}</code> 静默吞掉异常，改为 <code>catch (Exception ex) { DebugLog.Ignore(ex); }</code>，把异常记录到 <code>DebugLog</code> 便于事后排查（脏数据 / 路径异常不再无从追查）；WebView2 注入的 JavaScript 字符串内 <code>catch (e) {}</code> 保持原样（非 C# 代码，不应改动）。同步修复一处变量名冲突（CS0136）与 BOM 双重编码回归。
-          </li>
-          </ul>
-        </div>
         <div class="tl-item">
           <span class="ver">v1.18</span><span class="date">2026-08-31</span>
           <ul>

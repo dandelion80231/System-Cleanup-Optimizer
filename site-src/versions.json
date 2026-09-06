@@ -1,25 +1,11 @@
 {
   "versions": [
     {
-      "version": "v1.19",
-      "date": "2026-09-03",
-      "size_mb": 6.48,
-      "sha256": "CF69681FA11D987013B3333C9E1FB628D1BDB06A069FE61543D257AC83D0AB46",
-      "is_latest": true
-    },
-    {
-      "version": "v1.18",
-      "date": "2026-08-31",
-      "size_mb": 5.08,
-      "sha256": "411D0DCF7767347FC95C908FF4E1F126625BBF6353B4B8900A7B2D6E34532DD0",
-      "is_latest": false
-    },
-    {
       "version": "v1.17",
       "date": "2026-08-30",
       "size_mb": 5.06,
       "sha256": "61293df5eceb813e235b7e567b7323e743583f64480ce6cdfc74e9eece0cf7ce",
-      "is_latest": false
+      "is_latest": true
     },
     {
       "version": "v1.16",
