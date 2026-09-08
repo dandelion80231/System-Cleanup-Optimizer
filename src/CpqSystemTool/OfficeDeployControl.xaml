@@ -1,0 +1,121 @@
+﻿<UserControl x:Class="CpqSystemTool.OfficeDeployControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="_root">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="0,0,0,8">
+            <!-- 标题 -->
+            <TextBlock x:Name="TitleText"
+                       Text="选择要安装 / 修改的组件"
+                       FontSize="13" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextBrush}"
+                       Margin="0,0,0,8"/>
+
+            <!-- 组件网格 -->
+            <ItemsControl x:Name="ComponentsList" ItemsSource="{Binding Components, ElementName=_root}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <ToggleButton Style="{DynamicResource ComponentToggleStyle}"
+                                      IsChecked="{Binding IsSelected, Mode=TwoWay}">
+                            <StackPanel Width="140">
+                                <Image Source="{Binding IconPath}"
+                                       Height="40" Width="40"
+                                       Stretch="Uniform"
+                                       Margin="0,0,0,4"/>
+                                <TextBlock Text="{Binding DisplayName}"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource TextBrush}"
+                                           HorizontalAlignment="Center"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </ToggleButton>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- 选项行：架构 / 语言 / 打开 XML -->
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,4">
+                <TextBlock Text="架构：" FontSize="11"
+                           Foreground="{DynamicResource SubTextBrush}"
+                           VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <ComboBox x:Name="ArchCombo"
+                          SelectedItem="{Binding SelectedArchitecture, ElementName=_root}"
+                          MinWidth="80" Height="28" FontSize="11"
+                          Margin="0,0,12,0"/>
+
+                <TextBlock Text="语言：" FontSize="11"
+                           Foreground="{DynamicResource SubTextBrush}"
+                           VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <ComboBox x:Name="LangCombo"
+                          SelectedItem="{Binding SelectedLanguage, ElementName=_root}"
+                          MinWidth="80" Height="28" FontSize="11"
+                          Margin="0,0,12,0"/>
+
+                <Button x:Name="OpenXmlBtn" Content="📄 打开 XML"
+                        MinWidth="90" Height="28" FontSize="11"
+                        Margin="0,0,8,0"/>
+            </StackPanel>
+
+            <!-- ODT 路径行 -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                <TextBox x:Name="SetupPathBox"
+                         Width="400" Height="28" FontSize="11"
+                         Background="{DynamicResource BgBrush}"
+                         Foreground="{DynamicResource TextBrush}"
+                         BorderBrush="{DynamicResource BorderBrushKey}"
+                         BorderThickness="1"
+                         Margin="0,0,6,0"/>
+                <Button x:Name="BrowseBtn" Content="浏览"
+                        MinWidth="84" Padding="10,4" Height="28" FontSize="11"
+                        Margin="0,0,4,0"/>
+                <Button x:Name="OpenFolderBtn" Content="打开文件夹"
+                        MinWidth="84" Padding="10,4" Height="28" FontSize="11"/>
+            </StackPanel>
+
+            <!-- 说明 -->
+            <TextBlock x:Name="HintText"
+                       Text="勾选组件后点击「开始安装」，ODT 会自动下载 setup.exe 并生成 config.xml 执行安装。"
+                       FontSize="10.5" Foreground="{DynamicResource SubTextBrush}"
+                       TextWrapping="Wrap" Margin="0,2,0,6"/>
+
+            <!-- 进度条 -->
+            <ProgressBar x:Name="ProgressBar"
+                         Minimum="0" Maximum="100"
+                         Height="4" Margin="0,0,0,6"
+                         Foreground="{DynamicResource AccentBrush}"
+                         Background="{DynamicResource BorderBrushKey}"/>
+
+            <!-- 开始按钮 + 状态 -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <Button x:Name="InstallBtn" Content="🚀 开始安装"
+                        Background="{DynamicResource AccentBrush}"
+                        Foreground="{DynamicResource TextBrush}"
+                        MinWidth="120" Height="32" FontSize="12" FontWeight="SemiBold"
+                        Margin="0,0,12,0"/>
+                <TextBlock x:Name="StatusText"
+                           FontSize="11" Foreground="{DynamicResource SubTextBrush}"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <!-- 日志框 -->
+            <TextBox x:Name="LogBox"
+                     TextWrapping="Wrap"
+                     Background="{DynamicResource BgBrush}"
+                     Foreground="{DynamicResource TextBrush}"
+                     BorderBrush="{DynamicResource BorderBrushKey}"
+                     BorderThickness="1"
+                     FontFamily="Consolas, 'Courier New'"
+                     FontSize="11"
+                     IsReadOnly="True"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Disabled"
+                     MinHeight="80" MaxHeight="160"
+                     Margin="0,4,0,0"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
