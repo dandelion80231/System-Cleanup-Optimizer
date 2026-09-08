@@ -419,38 +419,7 @@ namespace CpqSystemTool
             }) { IsBackground = true, Name = "RunInBgWorker" }.Start();
         }
 
-        /// <summary>
-        /// 与 RunInBg 相同，但状态栏文案由回调在任务结束后动态决定。
-        /// 用于「结果可能部分失败」的任务——固定文案会在失败时也显示"完成"，构成假成功
-        /// （参见 MainWindow.Maint.cs 的「卸载本地依赖」与「清理探针缓存」）。
-        /// 回调在 UI 线程上执行，可安全读取任务中统计的计数变量。
-        /// </summary>
-        private void RunInBgWithStatus(TextBox log, Action<Action<string>> work, Func<string> done, Action onDoneUi = null)
-        {
-            log?.Dispatcher.Invoke(() => { log.Visibility = Visibility.Visible; log.Clear(); });
-            var disp = Dispatcher;
-            Action<Action> safeUi = a => { try { disp.BeginInvoke(a); } catch { /* 窗口已关闭，忽略 */ } };
-            Action<string> logf = s => safeUi(() => AppendOrReplaceLog(log, s));
-            new Thread(() =>
-            {
-                try
-                {
-                    work(logf);
-                    safeUi(() => { SetStatus(done?.Invoke() ?? "完成"); onDoneUi?.Invoke(); });
-                }
-                catch (Exception ex)
-                {
-                    safeUi(() =>
-                    {
-                        logf("[!] 异常: " + ex.Message);
-                        SetStatus("执行出错");
-                        try { onDoneUi?.Invoke(); } catch (Exception ex2) { System.Diagnostics.Debug.WriteLine("onDoneUi 失败: " + ex2.Message); }
-                    });
-                }
-            }) { IsBackground = true, Name = "RunInBgWorker" }.Start();
-        }
-
-        // 日志滚动降频参数：普通行在行数低于阈值时保持“每行 ScrollToEnd”（与旧行为一致）；
+        // 日志滚动降频参数：普通行在行数低于阈值时保持"每行 ScrollToEnd"（与旧行为一致）；
         // 超过阈值后改为每 N 行滚动一次，降低长任务（清理/探针/下载）大量追加日志时的 UI 线程布局压力。
         private const int LogScrollLineThreshold = 500;
         private const int LogScrollEveryN = 10;
