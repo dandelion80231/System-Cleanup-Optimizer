@@ -896,10 +896,11 @@ namespace CpqSystemTool
 
 
 
-                            // 【v1.19】源码披露包由 csproj 的 GenerateSourcePackage 目标在「每次构建」时
-                            // 自动生成并内嵌（.cs/.xaml/.csproj/授权文件/图标/README，约 0.82MB，永远是当前源码）。
-                            // 两张背景图刻意不在包内：它们本来就以 WPF Resource 嵌在程序集里，
-                            // 导出时由 CpqExtractBackgroundsFromAssembly 从运行中的程序集取回，不重复占体积。
+                            // 【v1.20】源码披露包由 csproj 的 GenerateSourcePackage 目标在「每次构建」时
+                            // 自动生成并内嵌（.cs/.xaml/.csproj/授权文件/README，约 0.65MB，永远是当前源码）。
+                            // 两张背景图与 Icons\*.png 刻意不在包内：它们本来就以 WPF Resource 嵌在程序集里，
+                            // 导出时由 CpqExtractBackgroundsFromAssembly / CpqExtractIconsFromAssembly
+                            // 从运行中的程序集取回，避免同一份图片在 exe 里被打包两次。
 
                             // 覆盖前确认（已有同名目录时）
                             if (Directory.Exists(extractDir))
@@ -939,11 +940,16 @@ namespace CpqSystemTool
                                     File.Copy(repoReadme, Path.Combine(extractDir, "README.md"), true);
                             }
 
-                            // 3) 背景图：从运行中的程序集提取，补齐源码包里刻意排除的两张图
+                            // 3) 背景图 + 组件图标：从运行中的程序集提取，补齐源码包里刻意排除的图片
                             int bgCount = CpqExtractBackgroundsFromAssembly(extractDir);
+                            int iconCount = CpqExtractIconsFromAssembly(extractDir);
 
-                            log.AppendText("[OK] 源码已导出到: " + extractDir
-                                + (bgCount > 0 ? ("（已补回 " + bgCount + " 张背景图）") : "") + "\r\n");
+                            var restored = new System.Text.StringBuilder();
+                            if (bgCount > 0) restored.Append("（已补回 " + bgCount + " 张背景图");
+                            if (iconCount > 0) restored.Append(restored.Length == 0 ? "（已补回 " : "、").Append(iconCount + " 个组件图标");
+                            if (restored.Length > 0) restored.Append("）");
+
+                            log.AppendText("[OK] 源码已导出到: " + extractDir + restored + "\r\n");
                             System.Windows.MessageBox.Show(this, "源码已导出到：\n" + extractDir + "\n\n包含所有 .cs/.xaml/.csproj 等源文件（已排除 bin/obj 等构建产物）。", "导出成功", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
 
 
@@ -3134,6 +3140,48 @@ namespace CpqSystemTool
                 System.IO.Directory.CreateDirectory(sub);
                 CpqCopySourceDir(dir, sub, excludeDirs, excludeExts);
             }
+        }
+
+        /// <summary>
+        /// Icons/*.png 也以 WPF Resource 嵌在程序集里。v1.20 起源码披露包刻意排除它们：
+        /// 10 张合计约 1.45MB，而它们同时已存在于程序的 WPF 资源(g.resources)中，
+        /// 留在包里等于同一份图标被打进 exe 两次。导出时改从运行中的程序集枚举并还原到
+        /// Icons\ 目录，保证导出结果可编译、图标正常显示。返回成功提取的张数。
+        /// </summary>
+        private static int CpqExtractIconsFromAssembly(string extractDir)
+        {
+            int n = 0;
+            string root = System.IO.Path.Combine(extractDir, "src", "CpqSystemTool");
+            if (!System.IO.Directory.Exists(root)) root = extractDir;
+            string iconsDir = System.IO.Path.Combine(root, "Icons");
+            try
+            {
+                var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                // 从 App.g.resources 枚举 icons/ 前缀的条目，避免把 10 个文件名硬编码在这里
+                // （以后新增/改名图标无需同步改这份导出代码）。
+                using (var rs = asm.GetManifestResourceStream(asm.GetName().Name + ".g.resources"))
+                {
+                    if (rs == null) return 0;
+                    var reader = new System.Resources.ResourceReader(rs);
+                    var en = reader.GetEnumerator();
+                    while (en.MoveNext())
+                    {
+                        var key = en.Key as string;
+                        if (string.IsNullOrEmpty(key)) continue;
+                        if (!key.StartsWith("icons/", System.StringComparison.OrdinalIgnoreCase)) continue;
+                        if (!(en.Value is System.IO.Stream src)) continue;
+                        string fileName = System.IO.Path.GetFileName(key);
+                        if (string.IsNullOrEmpty(fileName)) continue;
+                        System.IO.Directory.CreateDirectory(iconsDir);
+                        using (var fs = new System.IO.FileStream(System.IO.Path.Combine(iconsDir, fileName),
+                                System.IO.FileMode.Create, System.IO.FileAccess.Write))
+                            src.CopyTo(fs);
+                        n++;
+                    }
+                }
+            }
+            catch (System.Exception ex) { DebugLog.Ignore(ex); }
+            return n;
         }
 
         /// <summary>

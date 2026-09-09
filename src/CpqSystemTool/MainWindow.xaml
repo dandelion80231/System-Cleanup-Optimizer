@@ -86,8 +86,48 @@
             </Style.Triggers>
         </Style>
         <!-- 下拉框（ComboBox）：使用 WPF 默认模板（白色背景 + 黑色文字），
-             与首页 Office 风格下拉框一致。用户明确选择“白底黑字”，故不覆盖主题色，
+             与首页 Office 风格下拉框一致。用户明确选择"白底黑字"，故不覆盖主题色，
              移除上一版深色主题化，避免深色模式下与参考观感不符。 -->
+        <!-- OfficeDeployControl 所需资源 -->
+        <SolidColorBrush x:Key="TextBrush" Color="#E6EDF3"/>
+        <SolidColorBrush x:Key="SubTextBrush" Color="#8B98A5"/>
+        <SolidColorBrush x:Key="BgBrush" Color="#0B0E12"/>
+        <SolidColorBrush x:Key="BorderBrushKey" Color="#2A323C"/>
+        <!-- 按钮配色（深色默认值；实际值由 Theme.cs 的 ApplyShellColors 按当前主题重设，
+             与 Helpers.cs Btn() 用的 _btnSecondaryBg/_btnSecondaryFg/_btnPrimaryFg 同源） -->
+        <SolidColorBrush x:Key="SecondaryButtonBgBrush" Color="#2D3748"/>
+        <SolidColorBrush x:Key="SecondaryButtonFgBrush" Color="#E6EDF3"/>
+        <SolidColorBrush x:Key="PrimaryButtonFgBrush" Color="#04201B"/>
+        <Style x:Key="ComponentToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="Margin" Value="3,2"/>
+            <!-- 组件名文字统一走主题 TextBrush（继承下去，XAML 里不再逐个硬编码） -->
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <!-- Stretch：让卡片内容随 UniformGrid 单元格宽度自适应（一行 10 个时不裁字） -->
+                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#16E0BD"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#16E0BD"/>
+                                <!-- 选中底色是亮青，浅色文字会糊在一起 → 换成深墨色（与 primary 按钮前景一致） -->
+                                <Setter TargetName="border" Property="TextElement.Foreground" Value="#04201B"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#4D16E0BD"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
     <Grid x:Name="MainGrid">
         <Grid.ColumnDefinitions>

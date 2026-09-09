@@ -16,6 +16,7 @@ crash.log
 # Backups / temp
 *.bak
 *.bak.*
+*.bak_*
 # add_site_version.py 生成的带时间戳备份（download.html.bak-<时间戳>）
 *.bak-*
 # 临时沙箱测试目录
@@ -75,3 +76,6 @@ site-dist/
 
 # 本地 exe 备份目录（发布修复时留档，不入库）
 .exe-backup-*/
+
+# 发布产物目录（dotnet publish 输出，含 exe/dll/pdb/runtimes 与源码副本，不入库）
+src/publish/

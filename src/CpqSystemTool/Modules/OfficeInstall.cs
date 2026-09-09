@@ -21,21 +21,24 @@ namespace CpqSystemTool
             "Office 2019 LTSC 专业增强版 (批量) — 长期支持 / 老硬件"
         };
 
-        // 每个版本对应的 Product ID 与 Channel
-        private static readonly string[] Pids =
+        // 每个版本对应的 Product ID 与 Channel。
+        // v1.20：改为 public，供 OfficeDeployControl 的版本下拉框复用 —— 单一事实来源，
+        // 避免「老 Office 安装路径」和「ODT 组件安装路径」两处各维护一套 Product/Channel 而走样。
+        // 三个数组下标必须一一对应 Editions，改动时务必同步。
+        public static readonly string[] ProductIds =
         {
             "O365ProPlusRetail", "ProPlus2024Retail", "ProPlus2021Retail", "ProPlus2021Volume", "ProPlus2019Retail", "ProPlus2019Volume"
         };
-        private static readonly string[] Channels =
+        public static readonly string[] Channels =
         {
             "Current", "Current", "PerpetualVL2021", "PerpetualVL2021", "Current", "PerpetualVL2019"
         };
 
         public static void Install(int editionIndex, Action<string> log)
         {
-            if (editionIndex < 0 || editionIndex >= Pids.Length) { log("  [!] 无效的版本选择"); return; }
+            if (editionIndex < 0 || editionIndex >= ProductIds.Length) { log("  [!] 无效的版本选择"); return; }
             string arch = Environment.Is64BitOperatingSystem ? "64" : "32";
-            string xml = BuildConfig(Pids[editionIndex], Channels[editionIndex], arch, false);
+            string xml = BuildConfig(ProductIds[editionIndex], Channels[editionIndex], arch, false);
             string dir = Path.Combine(Path.GetTempPath(), "ZyperOffice");
             try { Directory.CreateDirectory(dir); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             string xmlPath = Path.Combine(dir, "config.xml");

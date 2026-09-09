@@ -373,57 +373,55 @@ namespace CpqSystemTool
             }
             actInner.Children.Add(cardsPanel);
 
-            // ----- Office 安装/卸载（Issue 13: 合并进来）-----
-            actInner.Children.Add(new TextBlock { Text = "📄 Office 安装 / 卸载", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 8, 0, 8) });
-            // 用 Grid 让 ComboBox 自动填满、按钮按列分布，比 WrapPanel 视觉更稳定
-            var officeBar = new Grid { Margin = new Thickness(0, 0, 0, 8) };
-            officeBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });  // ComboBox 自适应
-            officeBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });                    // 间距
-            officeBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                      // 安装按钮
-            officeBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });                    // 间距
-            officeBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                      // 卸载按钮
-            var cb = new ComboBox { MinHeight = 34, FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Left, HorizontalAlignment = HorizontalAlignment.Stretch };
-            // 统一深/浅色自适应（闭合框 + 下拉弹层背景与字体跟随主题；项样式含字号/内边距/悬浮/选中）
-            UiShapes.ApplyComboBoxTheme(cb, UiShapes.ComboBoxTheme.Create(
-                _inputBg, _inputFg, _windowBg, _panelBorder, _textMain, _rowHover, _rowSelected, _textDim));
-            foreach (var e in OfficeInstall.Editions) cb.Items.Add(e);
-            cb.SelectedIndex = 0;
-            Grid.SetColumn(cb, 0);
-            officeBar.Children.Add(cb);
-            var installBtn = Btn("安装所选版本", true, () =>
-            {
-                int i = cb.SelectedIndex;
-                pb.Visibility = Visibility.Visible;
-                RunInBg(log, l => OfficeInstall.Install(i, l), "Office 安装结束", () => pb.Visibility = Visibility.Collapsed);
-            }, 130);
-            Grid.SetColumn(installBtn, 2);
-            installBtn.Margin = new Thickness(0);
-            officeBar.Children.Add(installBtn);
-            var uninstallBtn = Btn("强力卸载 Office", false, () =>
-            {
-                pb.Visibility = Visibility.Visible;
-                RunInBg(log, OfficeInstall.Uninstall, "Office 卸载结束", () => pb.Visibility = Visibility.Collapsed);
-            }, 140);
-            Grid.SetColumn(uninstallBtn, 4);
-            uninstallBtn.Margin = new Thickness(0);
-            officeBar.Children.Add(uninstallBtn);
-            actInner.Children.Add(officeBar);
+            // ----- Office 安装/卸载（v1.20: 使用 OfficeDeployControl，内含卸载按钮）-----
+            var officeDeploy = new OfficeDeployControl();
+            actInner.Children.Add(officeDeploy);
 
+            // v1.20 修复：合并成 OfficeDeployControl 时把进度条和日志框一起删掉了，
+            // 结果点击任一激活方式后界面完全没有任何反馈（RunInBg 的输出写进了一个不在视觉树里的 TextBox）。
             actInner.Children.Add(pb);
-            // 使用统一日志框包装：避免 TextBox 自身边框 + 外层 Border 形成双层边框
-            log.Height = 100;
-            var logBorder = WrapLogBox(log);
-            Grid.SetRow(logBorder, 2);
-            root.Children.Add(logBorder);
+
+            // 共用日志框：MAS 激活的输出（RunInBg(log, …)）与 Office 安装/卸载的输出都汇入这一个框。
+            // OfficeDeployControl 设置 ExternalLogSink 后会自动隐藏自带日志框，页面只保留一个日志区。
+            // 回调已在 UI 线程（控件 AppendLog 内部 Dispatcher.Invoke 之后才调用），可直接操作控件。
+            officeDeploy.ExternalLogSink = s =>
+            {
+                log.AppendText(s + "\n");
+                log.ScrollToEnd();
+            };
+
+            var logWrap = new StackPanel();
+            logWrap.Children.Add(new TextBlock
+            {
+                Text = "📋 执行日志（激活 / Office）",
+                FontWeight = FontWeights.Bold,
+                Foreground = _accent,
+                FontSize = 13,
+                Margin = new Thickness(0, 4, 0, 8)
+            });
+            log.Height = 120;
+            logWrap.Children.Add(WrapLogBox(log));
+            Grid.SetRow(logWrap, 2);
+            root.Children.Add(logWrap);
 
             Grid.SetRow(activationCard, 1);
             root.Children.Add(activationCard);
 
-            // 动态 MaxHeight：最大化时 root 跟随视口拉伸
-            // 稳健布局：root.MaxHeight 绑定到 ContentArea.ViewportHeight（自动跟随初始+缩放，规避 vp=0 跳过）
-            BindRootHeightToViewport(root);
+            // v1.20 修复：本页三行全是 Auto，内容总高常常超出默认窗口高度。
+            // 原来只把 root.MaxHeight 绑到视口 → 超出部分被 ContentArea 直接裁掉且不出滚动条。
+            // 改为套一层页面级 ScrollViewer：限高落在 ScrollViewer 上，root 拿到无限高度按内容
+            // 自然排布，超出即滚动。滚轮路由沿用 MainWindow.xaml.cs 的「鼠标下方 ScrollViewer 优先」逻辑。
+            var pageScroll = new ScrollViewer
+            {
+                Content = root,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                CanContentScroll = false,
+                Background = System.Windows.Media.Brushes.Transparent
+            };
+            BindRootHeightToViewport(pageScroll);
 
-            return root;
+            return pageScroll;
         }
     }
 }

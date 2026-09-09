@@ -407,6 +407,19 @@ namespace CpqSystemTool
                 _isDarkMode ? Color.FromArgb(0x38, 0x16, 0xE0, 0xBD)   // #16E0BD @ 22% (深色：亮叠加)
                               : Color.FromArgb(0x59, 0x08, 0x91, 0x82));  // #089182 @ 35% (浅色：暗叠加)
 
+            // v1.20 修复：OfficeDeployControl（激活工具页）依赖的这四个 DynamicResource 原先只在
+            // MainWindow.xaml 里写死了「深色」默认值且从不随主题切换 → 浅色模式下出现
+            // 「文字仍是浅灰、ODT 路径框/日志框仍是黑底」。这里改为与页面其余部分同源派生
+            // （_textMain/_textDim/_inputBg/_panelBorder），保证深浅两套主题下观感完全一致。
+            Resources["TextBrush"] = ThemeBrush(_textMain.Color);
+            Resources["SubTextBrush"] = ThemeBrush(_textDim.Color);
+            Resources["BgBrush"] = ThemeBrush(_inputBg.Color);
+            Resources["BorderBrushKey"] = ThemeBrush(_panelBorder.Color);
+            // 按钮配色：与 Helpers.cs 的 Btn() 完全同源（_btnSecondaryBg/_btnSecondaryFg/_btnPrimaryFg），
+            // 让 XAML 里声明的按钮也能跟随主题联动，不会再出现「深色背景下浅底浅字看不清」。
+            Resources["SecondaryButtonBgBrush"] = ThemeBrush(_btnSecondaryBg.Color);
+            Resources["SecondaryButtonFgBrush"] = ThemeBrush(_btnSecondaryFg.Color);
+            Resources["PrimaryButtonFgBrush"] = ThemeBrush(_btnPrimaryFg.Color);
         }
 
         // 窗口 resize 合并（性能优化）：拖窗口边缘时 SizeChanged 会高频触发，而原来每触发一次

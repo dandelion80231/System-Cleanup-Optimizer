@@ -68,6 +68,56 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
+# ===== 清理 repo 根目录的旧运行时宿主残留 =====
+# 历史遗留的自包含发布会在 repo 根留下 hostfxr.dll / hostpolicy.dll / coreclr.dll 等旧版运行时 DLL。
+# 这些文件与单文件 bundle 同目录时会被 .NET 宿主优先使用（而非系统安装的运行时），
+# 导致 rollForward=Minor 等配置不生效，应用报"必须安装 .NET X.Y.0"。
+# 清理策略：删除已知会干扰宿主查找的 DLL + 清理产物（temp_runtimeconfig.json、fix_runtimeconfig.py 等）。
+# .gitignore:53 已有 *.dll 规则，这些文件从未被 git 追踪，可安全删除。
+$LegacyRuntimeDlls = @(
+    "hostfxr.dll", "hostpolicy.dll", "coreclr.dll", "clretwrc.dll",
+    "clrgc.dll", "clrgcexp.dll", "clrjit.dll", "mscorrc.dll",
+    "mscordaccore.dll", "mscordbi.dll", "vcruntime140_cor3.dll",
+    "System.Private.CoreLib.dll", "mscorlib.dll",
+    "msquic.dll", "netstandard.dll",
+    "D3DCompiler_47_cor3.dll", "DirectWriteForwarder.dll",
+    "PenImc_cor3.dll", "PresentationNative_cor3.dll", "wpfgfx_cor3.dll",
+    # NuGet restore 留在根目录的临时依赖 DLL（单文件 bundle 已将依赖嵌入 exe）
+    "Microsoft.Web.WebView2.Core.dll", "Microsoft.Web.WebView2.WinForms.dll",
+    "Microsoft.Web.WebView2.Wpf.dll", "WebView2Loader.dll",
+    "System.Management.dll", "System.ServiceProcess.ServiceController.dll"
+)
+$LegacyExtras = @(
+    "temp_runtimeconfig.json", "fix_runtimeconfig.py",
+    "系统清理与优化工具.dll", "系统清理与优化工具.pdb"
+)
+$cleanedCount = 0
+$cleanedBytes = 0
+foreach ($name in $LegacyRuntimeDlls + $LegacyExtras) {
+    $path = Join-Path $repoRoot $name
+    if (Test-Path $path) {
+        $size = (Get-Item $path).Length
+        Remove-Item $path -Force
+        $cleanedCount++
+        $cleanedBytes += $size
+    }
+}
+# 额外扫描：删除 repo 根下所有 >100KB 的 .dll（保留 WebView2 相关和 System.* 工具库）
+$AllowedDlls = @()
+foreach ($f in Get-ChildItem $repoRoot -Filter "*.dll" -File) {
+    if ($AllowedDlls -contains $f.Name) { continue }
+    if ($f.Length -gt 100000) {
+        Remove-Item $f.FullName -Force
+        $cleanedCount++
+        $cleanedBytes += $f.Length
+    }
+}
+if ($cleanedCount -gt 0) {
+    Write-Host ("已清理 repo 根目录 {0} 个旧运行时残留 ({1:N1} MB)，避免单文件 bundle 双击失败。" -f $cleanedCount, ($cleanedBytes/1MB))
+} else {
+    Write-Host "repo 根目录无需清理，无旧运行时残留。"
+}
+
 $exePath = Join-Path $outDir $exeName
 
 if (-not (Test-Path $exePath)) {

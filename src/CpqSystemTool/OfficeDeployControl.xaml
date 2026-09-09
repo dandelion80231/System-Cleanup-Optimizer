@@ -15,21 +15,23 @@
             <ItemsControl x:Name="ComponentsList" ItemsSource="{Binding Components, ElementName=_root}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <WrapPanel Orientation="Horizontal"/>
+                        <!-- 10 列 × 1 行：每格自动均分 1/10 宽度，默认窗口下正好铺满一行、不折行 -->
+                        <UniformGrid Columns="10" Rows="1"/>
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <ToggleButton Style="{DynamicResource ComponentToggleStyle}"
                                       IsChecked="{Binding IsSelected, Mode=TwoWay}">
-                            <StackPanel Width="140">
+                            <!-- 不写死宽度：由 ComponentToggleStyle 的 ContentPresenter(Stretch) 随单元格自适应 -->
+                            <StackPanel>
                                 <Image Source="{Binding IconPath}"
-                                       Height="40" Width="40"
+                                       Height="44" Width="44"
                                        Stretch="Uniform"
                                        Margin="0,0,0,4"/>
+                                <!-- 前景色由 ComponentToggleStyle 的 TextElement.Foreground 继承（选中时自动变深墨色） -->
                                 <TextBlock Text="{Binding DisplayName}"
                                            FontSize="11"
-                                           Foreground="{DynamicResource TextBrush}"
                                            HorizontalAlignment="Center"
                                            TextWrapping="Wrap"/>
                             </StackPanel>
@@ -37,6 +39,24 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+
+            <!-- 选项行：版本（名称较长，独占一行，左对齐更易读） -->
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,4">
+                <TextBlock Text="版本：" FontSize="11"
+                           Foreground="{DynamicResource SubTextBrush}"
+                           VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <ComboBox x:Name="EditionCombo"
+                          MinWidth="360" Height="28" FontSize="11"
+                          VerticalContentAlignment="Center"
+                          HorizontalContentAlignment="Left"
+                          Margin="0,0,12,0">
+                    <ComboBox.ItemContainerStyle>
+                        <Style TargetType="ComboBoxItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                        </Style>
+                    </ComboBox.ItemContainerStyle>
+                </ComboBox>
+            </StackPanel>
 
             <!-- 选项行：架构 / 语言 / 打开 XML -->
             <StackPanel Orientation="Horizontal" Margin="0,8,0,4">
@@ -46,34 +66,66 @@
                 <ComboBox x:Name="ArchCombo"
                           SelectedItem="{Binding SelectedArchitecture, ElementName=_root}"
                           MinWidth="80" Height="28" FontSize="11"
-                          Margin="0,0,12,0"/>
+                          VerticalContentAlignment="Center"
+                          HorizontalContentAlignment="Center"
+                          Margin="0,0,12,0">
+                    <ComboBox.ItemContainerStyle>
+                        <Style TargetType="ComboBoxItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                        </Style>
+                    </ComboBox.ItemContainerStyle>
+                </ComboBox>
 
                 <TextBlock Text="语言：" FontSize="11"
                            Foreground="{DynamicResource SubTextBrush}"
                            VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <!-- 语言下拉改为中文显示（Items 由后台填充：Content=中文名，Tag=ODT 区域码） -->
                 <ComboBox x:Name="LangCombo"
-                          SelectedItem="{Binding SelectedLanguage, ElementName=_root}"
-                          MinWidth="80" Height="28" FontSize="11"
-                          Margin="0,0,12,0"/>
+                          MinWidth="110" Height="28" FontSize="11"
+                          VerticalContentAlignment="Center"
+                          HorizontalContentAlignment="Center"
+                          Margin="0,0,12,0">
+                    <ComboBox.ItemContainerStyle>
+                        <Style TargetType="ComboBoxItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                        </Style>
+                    </ComboBox.ItemContainerStyle>
+                </ComboBox>
 
                 <Button x:Name="OpenXmlBtn" Content="📄 打开 XML"
+                        Background="{DynamicResource SecondaryButtonBgBrush}"
+                        Foreground="{DynamicResource SecondaryButtonFgBrush}"
+                        BorderBrush="{DynamicResource BorderBrushKey}"
+                        BorderThickness="1"
                         MinWidth="90" Height="28" FontSize="11"
                         Margin="0,0,8,0"/>
             </StackPanel>
 
-            <!-- ODT 路径行 -->
+            <!-- ODT 路径行（标签 + 路径框 + 浏览/打开文件夹） -->
             <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                <TextBlock Text="ODT 路径：" FontSize="11"
+                           Foreground="{DynamicResource SubTextBrush}"
+                           VerticalAlignment="Center" Margin="0,0,4,0"/>
                 <TextBox x:Name="SetupPathBox"
                          Width="400" Height="28" FontSize="11"
                          Background="{DynamicResource BgBrush}"
                          Foreground="{DynamicResource TextBrush}"
                          BorderBrush="{DynamicResource BorderBrushKey}"
                          BorderThickness="1"
+                         VerticalContentAlignment="Center"
                          Margin="0,0,6,0"/>
                 <Button x:Name="BrowseBtn" Content="浏览"
+                        Background="{DynamicResource SecondaryButtonBgBrush}"
+                        Foreground="{DynamicResource SecondaryButtonFgBrush}"
+                        BorderBrush="{DynamicResource BorderBrushKey}"
+                        BorderThickness="1"
                         MinWidth="84" Padding="10,4" Height="28" FontSize="11"
                         Margin="0,0,4,0"/>
                 <Button x:Name="OpenFolderBtn" Content="打开文件夹"
+                        Background="{DynamicResource SecondaryButtonBgBrush}"
+                        Foreground="{DynamicResource SecondaryButtonFgBrush}"
+                        BorderBrush="{DynamicResource BorderBrushKey}"
+                        BorderThickness="1"
                         MinWidth="84" Padding="10,4" Height="28" FontSize="11"/>
             </StackPanel>
 
@@ -86,18 +138,27 @@
             <!-- 进度条 -->
             <ProgressBar x:Name="ProgressBar"
                          Minimum="0" Maximum="100"
+                         Value="{Binding ProgressValue, ElementName=_root, Mode=OneWay}"
                          Height="4" Margin="0,0,0,6"
                          Foreground="{DynamicResource AccentBrush}"
                          Background="{DynamicResource BorderBrushKey}"/>
 
-            <!-- 开始按钮 + 状态 -->
+            <!-- 开始按钮 + 状态 + 卸载按钮 -->
             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                 <Button x:Name="InstallBtn" Content="🚀 开始安装"
                         Background="{DynamicResource AccentBrush}"
-                        Foreground="{DynamicResource TextBrush}"
+                        Foreground="{DynamicResource PrimaryButtonFgBrush}"
                         MinWidth="120" Height="32" FontSize="12" FontWeight="SemiBold"
+                        Margin="0,0,8,0"/>
+                <Button x:Name="UninstallBtn" Content="🗑 强力卸载 Office"
+                        Background="{DynamicResource SecondaryButtonBgBrush}"
+                        Foreground="{DynamicResource SecondaryButtonFgBrush}"
+                        BorderBrush="{DynamicResource BorderBrushKey}"
+                        BorderThickness="1"
+                        MinWidth="140" Height="32" FontSize="12"
                         Margin="0,0,12,0"/>
                 <TextBlock x:Name="StatusText"
+                           Text="{Binding StatusMessage, ElementName=_root, Mode=OneWay}"
                            FontSize="11" Foreground="{DynamicResource SubTextBrush}"
                            VerticalAlignment="Center"/>
             </StackPanel>
