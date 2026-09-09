@@ -54,8 +54,6 @@ tools/edge_offline/
 *.dll
 *.msi
 *.zip
-# 源码导出包：随源码提交，构建必需（否则克隆后报 CS1566）
-!src/CpqSystemTool/src.zip
 *.psd
 *.pdb
 

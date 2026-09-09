@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Text;
+using Microsoft.Win32;
 
 namespace CpqSystemTool
 {
@@ -15,6 +16,7 @@ namespace CpqSystemTool
         {
             "Microsoft 365 (Office365) — 订阅制 / 云端协作",
             "Office 2024 专业增强版 (零售) — 最新 / 永久授权",
+            "Office 2024 LTSC 专业增强版 (批量) — 长期支持 / 企业级",
             "Office 2021 专业增强版 (零售) — 主流稳定 / 永久授权",
             "Office 2021 LTSC 专业增强版 (批量) — 长期支持 / 企业级",
             "Office 2019 专业增强版 (零售) — 经典兼容 / 永久授权",
@@ -27,11 +29,11 @@ namespace CpqSystemTool
         // 三个数组下标必须一一对应 Editions，改动时务必同步。
         public static readonly string[] ProductIds =
         {
-            "O365ProPlusRetail", "ProPlus2024Retail", "ProPlus2021Retail", "ProPlus2021Volume", "ProPlus2019Retail", "ProPlus2019Volume"
+            "O365ProPlusRetail", "ProPlus2024Retail", "ProPlus2024Volume", "ProPlus2021Retail", "ProPlus2021Volume", "ProPlus2019Retail", "ProPlus2019Volume"
         };
         public static readonly string[] Channels =
         {
-            "Current", "Current", "PerpetualVL2021", "PerpetualVL2021", "Current", "PerpetualVL2019"
+            "Current", "Current", "PerpetualVL2024", "PerpetualVL2021", "PerpetualVL2021", "Current", "PerpetualVL2019"
         };
 
         public static void Install(int editionIndex, Action<string> log)
@@ -72,11 +74,14 @@ namespace CpqSystemTool
             int rc = Exec.RunCmd(new[] { setup, "/configure", xmlPath }, log);
             if (rc != 0)
             {
-                log("  [!] Office 卸载命令返回非零退出码 " + rc + "，已中止残留清理（未删除任何 Office 目录，请先解决上述错误再重试）");
+                log("  [!] Office 卸载命令返回非零退出码 " + rc + "，已中止残留清理（未删除任何 Office 目录，也未清除注册表，请先解决上述错误再重试）");
                 return;
             }
             CleanLeftovers(log);
-            log("  [完成] 卸载结束");
+            // Remove All=TRUE 会停 ClickToRunSvc 服务、卸 C2R 引擎，但服务定义与 ClickToRun 键
+            // 可能残留（ODT 全卸已知不完全现象）。卸载成功（rc==0）后才兜底清除，同款安全闸门。
+            CleanRegistry(log);
+            log("  [完成] 卸载结束（含残留目录与注册表清理）");
         }
 
         /// <summary>确保 setup.exe 存在：本地有就用，否则从官方 CDN 下载。</summary>
@@ -157,6 +162,46 @@ namespace CpqSystemTool
                 string p = Exec.ExpandEnv(d);
                 if (Directory.Exists(p))
                     Exec.RunPowerShell("Remove-Item -Path " + Exec.QuotePS(p) + " -Recurse -Force -EA 0", log);
+            }
+        }
+
+        /// <summary>
+        /// 全卸后兜底清除 C2R 相关注册表残留（Remove All=TRUE 已知不完全现象）。
+        /// 仅在卸载成功（rc==0）后由 Uninstall 调用——失败时绝不碰注册表，保持安全闸门一致。
+        /// 只删「引擎本体」的键，不碰 HKLM\...\ClickToRun\Configuration 的 ProductReleaseIds：
+        /// 那是 C2R 账本，部分卸载场景还要靠它自动识别已装组件，误删会破坏后续 ODT 操作。
+        /// </summary>
+        private static void CleanRegistry(Action<string> log)
+        {
+            // ClickToRunSvc 服务定义：Remove All 停服务后服务键常残留
+            // ClickToRun 引擎键：C2R 引擎卸载后的壳
+            // WOW6432Node 变体：32/64 位 Office 共存时的镜像键
+            string[] regKeys =
+            {
+                @"SYSTEM\CurrentControlSet\Services\ClickToRunSvc",
+                @"SOFTWARE\Microsoft\Office\ClickToRun",
+                @"SOFTWARE\WOW6432Node\Microsoft\Office\ClickToRun",
+                @"SOFTWARE\Classes\ClickToRunSvc",
+                @"SOFTWARE\Microsoft\Office\16.0\ClickToRun",
+                @"SOFTWARE\WOW6432Node\Microsoft\Office\16.0\ClickToRun",
+            };
+            foreach (var keyPath in regKeys)
+            {
+                try
+                {
+                    using (var k = Registry.LocalMachine.OpenSubKey(keyPath))
+                    {
+                        if (k == null) continue;
+                        // 单参版本：外层已 k==null 继续 + try/catch 兜底，无需 preserveReadOnly 变体
+                        Registry.LocalMachine.DeleteSubKeyTree(keyPath);
+                        log("  [注册表] 已清除残留键: " + keyPath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // 单个键删除失败不影响整体（可能已被 ODT 自身清掉），仅记录不中断
+                    log("  [!] 注册表键删除失败（可能已不存在或被占用）: " + keyPath + " — " + ex.Message);
+                }
             }
         }
     }

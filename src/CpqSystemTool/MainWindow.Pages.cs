@@ -181,7 +181,7 @@ namespace CpqSystemTool
 
                 var info = new StackPanel();
                 info.Children.Add(new TextBlock { Text = s.Display + "  [" + RiskLabel(s.Risk) + "]", FontWeight = FontWeights.SemiBold, Foreground = _textMain });
-                info.Children.Add(new TextBlock { Text = s.Desc, FontSize = 11.5, Foreground = _textDim, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
+                info.Children.Add(new Emoji.Wpf.TextBlock { Text = s.Desc, FontSize = 11.5, Foreground = _textDim, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
                 Grid.SetColumn(info, 0);
 
                 // 初始按钮：检测中（加载完成前禁用，避免点击无响应；稍后异步刷新为 禁用/恢复）
@@ -309,7 +309,7 @@ namespace CpqSystemTool
             // ===== 左列：Edge 浏览器 =====
             var leftCard = Card();
             var leftInner = (StackPanel)leftCard.Child;
-            leftInner.Children.Add(new TextBlock { Text = "📦 Edge 浏览器", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) });
+            leftInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "📦 Edge 浏览器", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) });
 
             // 5 频道状态紧凑网格（每行 2 频道，最后一行只有 1 个）
             var chGrid = new Grid();
@@ -326,7 +326,7 @@ namespace CpqSystemTool
                     var cell = new StackPanel { VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 0, 0, 6) };
                     cell.Children.Add(new TextBlock { Text = displayNames[idx], FontSize = 13, Foreground = _textMain, FontWeight = FontWeights.SemiBold });
                     var v = EdgeCore.GetEdgeVersion(channels[idx]);
-                    cell.Children.Add(new TextBlock { Text = string.IsNullOrEmpty(v) ? "未安装" : v, Foreground = string.IsNullOrEmpty(v) ? _dangerRed : _successGreen, FontSize = 11.5, FontFamily = new FontFamily("Consolas, Courier New, monospace") });
+                    cell.Children.Add(new Emoji.Wpf.TextBlock { Text = string.IsNullOrEmpty(v) ? "未安装" : v, Foreground = string.IsNullOrEmpty(v) ? _dangerRed : _successGreen, FontSize = 11.5, FontFamily = new FontFamily("Consolas, Courier New, monospace") });
                     Grid.SetColumn(cell, j * 2);
                     row.Children.Add(cell);
                 }
@@ -340,7 +340,7 @@ namespace CpqSystemTool
             leftInner.Children.Add(new Border { Height = 1, Background = _panelBorder, Margin = new Thickness(0, 4, 0, 12) });
 
             // 版本选择 + 操作
-            leftInner.Children.Add(new TextBlock { Text = "选择要操作的版本", FontSize = 13, Foreground = _textMain, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 4) });
+            leftInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "选择要操作的版本", FontSize = 13, Foreground = _textMain, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 4) });
             var channelCombo = new ComboBox { FontSize = 13, MinHeight = 32, Margin = new Thickness(0, 0, 0, 10), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Center };
             for (int i = 0; i < channels.Length; i++) channelCombo.Items.Add(displayNames[i]);
             channelCombo.SelectedIndex = 0;
@@ -413,7 +413,7 @@ namespace CpqSystemTool
             leftInner.Children.Add(sbChk);
 
             // 顶部留间距
-            leftInner.Children.Add(new TextBlock { Height = 6 });
+            leftInner.Children.Add(new Emoji.Wpf.TextBlock { Height = 6 });
 
             // 一键优化 / 一键恢复按钮（2 列等宽 Grid）
             var flagBatchBar = new Grid();
@@ -448,7 +448,7 @@ namespace CpqSystemTool
             flagBatchBar.Children.Add(clearAllBtn);
 
             leftInner.Children.Add(flagBatchBar);
-            leftInner.Children.Add(new TextBlock 
+            leftInner.Children.Add(new Emoji.Wpf.TextBlock 
             { 
                 Text = "⚡ 应用 11 项 flags 推荐值（性能类启用、Copilot 禁用、ANGLE 默认）；↩ 清除所有 flags 注册表值恢复出厂。两项都会强制重启 Edge 让 flags 立即生效。", 
                 Foreground = _textDim, 
@@ -463,7 +463,7 @@ namespace CpqSystemTool
             // ===== 右列：WebView2 + 自动更新 =====
             var rightCard = Card();
             var rightInner = (StackPanel)rightCard.Child;
-            rightInner.Children.Add(new TextBlock { Text = "🌐 WebView2 Runtime", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) });
+            rightInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🌐 WebView2 Runtime", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) });
 
             // 全局 WebView2（带版本）
             var (w1Sp, w1Ver) = MakeEdgeRowInfo("全局 WebView2", EdgeCore.GetWebView2Version());
@@ -502,7 +502,7 @@ namespace CpqSystemTool
             rightInner.Children.Add(new Border { Height = 1, Background = _panelBorder, Margin = new Thickness(0, 4, 0, 12) });
 
             // 自动更新控制
-            rightInner.Children.Add(new TextBlock { Text = "⚙ 自动更新控制", FontWeight = FontWeights.SemiBold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 0, 0, 8) });
+            rightInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🔄 自动更新控制", FontWeight = FontWeights.SemiBold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 0, 0, 8) });
             var updateBar = new Grid();
             updateBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             updateBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
@@ -526,7 +526,7 @@ namespace CpqSystemTool
             rightInner.Children.Add(updateBar);
 
             // ===== 实验性功能 (edge://flags) =====
-            rightInner.Children.Add(new TextBlock { Text = "⚙ Edge 实验性功能 (edge://flags)", FontWeight = FontWeights.SemiBold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 8, 0, 4) });
+            rightInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🧪 Edge 实验性功能 (edge://flags)", FontWeight = FontWeights.SemiBold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 8, 0, 4) });
 
             // flag 值 → 用户可读显示名映射（use-angle / edge-copilot-mode 枚举 + 开关类 "1"/"0"）
             var flagDisplayNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -554,7 +554,7 @@ namespace CpqSystemTool
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-                var label = new TextBlock
+                var label = new Emoji.Wpf.TextBlock
                 {
                     Text = def.Label,
                     Foreground = _textMain,
@@ -607,7 +607,7 @@ namespace CpqSystemTool
                 rightInner.Children.Add(row);
             }
 
-            rightInner.Children.Add(new TextBlock { Text = "⚠ 修改需重启 Edge 才生效；选「默认」即恢复出厂设置；⭐ 为推荐值", Foreground = _textDim, FontSize = 11.5, Margin = new Thickness(0, 6, 0, 0) });
+            rightInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "⚠ 修改需重启 Edge 才生效；选「默认」即恢复出厂设置；⭐ 为推荐值", Foreground = _textDim, FontSize = 11.5, Margin = new Thickness(0, 6, 0, 0) });
 
             Grid.SetColumn(rightCard, 2);
             mainGrid.Children.Add(rightCard);
@@ -704,8 +704,8 @@ namespace CpqSystemTool
         private (StackPanel, TextBlock) MakeEdgeRowInfo(string label, string version)
         {
             var sp = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            sp.Children.Add(new TextBlock { Text = label + "：", FontSize = 13, Foreground = _textMain, FontWeight = FontWeights.SemiBold });
-            var verTb = new TextBlock { Text = string.IsNullOrEmpty(version) ? "未安装" : version, Foreground = string.IsNullOrEmpty(version) ? _dangerRed : _successGreen, FontSize = 11.5, FontFamily = new FontFamily("Consolas, Courier New, monospace") };
+            sp.Children.Add(new Emoji.Wpf.TextBlock { Text = label + "：", FontSize = 13, Foreground = _textMain, FontWeight = FontWeights.SemiBold });
+            var verTb = new Emoji.Wpf.TextBlock { Text = string.IsNullOrEmpty(version) ? "未安装" : version, Foreground = string.IsNullOrEmpty(version) ? _dangerRed : _successGreen, FontSize = 11.5, FontFamily = new FontFamily("Consolas, Courier New, monospace") };
             sp.Children.Add(verTb);
             return (sp, verTb);
         }
@@ -755,7 +755,7 @@ namespace CpqSystemTool
                 };
                 sp.Children.Add(chk);
                 if (!string.IsNullOrEmpty(desc))
-                    sp.Children.Add(new TextBlock { Text = desc, FontSize = 11, Foreground = _textDim, Margin = new Thickness(20, 0, 0, 0), TextWrapping = TextWrapping.Wrap });
+                    sp.Children.Add(new Emoji.Wpf.TextBlock { Text = desc, FontSize = 11, Foreground = _textDim, Margin = new Thickness(20, 0, 0, 0), TextWrapping = TextWrapping.Wrap });
                 chk.Click += (s, e) =>
                 {
                     bool want = chk.IsChecked == true;
@@ -775,7 +775,7 @@ namespace CpqSystemTool
             }
 
             // ---- 搜索组 ----
-            inner.Children.Add(new TextBlock { Text = "🔍 搜索设置", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 8, 0, 6) });
+            inner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🔍 搜索设置", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 8, 0, 6) });
             MakeCheck("关闭搜索栏云端结果（OneDrive / SharePoint / Outlook / Bing）",
                 () => PrivacyCore.IsCloudSearchDisabled(),
                 (l, b) => { if (b) PrivacyCore.DisableCloudSearch(l); else PrivacyCore.EnableCloudSearch(l); });
@@ -787,7 +787,7 @@ namespace CpqSystemTool
                 (l, b) => { if (b) PrivacyCore.DisableSearchHistory(l); else PrivacyCore.EnableSearchHistory(l); });
 
             // ---- WSearch 服务 + 防火墙规则按钮（四个按钮同一行） ----
-            inner.Children.Add(new TextBlock { Text = "🛡 Windows Search 服务与防火墙", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 8, 0, 6) });
+            inner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🛡 Windows Search 服务与防火墙", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 8, 0, 6) });
             // 等宽均分整行：Grid(4×★Star) + 按钮居中、保持原始大小（与安全防护更新按钮行一致）
             var serviceBar = new Grid { Margin = new Thickness(0, 0, 0, 8), HorizontalAlignment = HorizontalAlignment.Stretch };
             serviceBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -824,7 +824,7 @@ namespace CpqSystemTool
             inner.Children.Add(serviceBar);
 
             // ---- 更新组 ----
-            inner.Children.Add(new TextBlock { Text = "📦 Windows 更新", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 8, 0, 6) });
+            inner.Children.Add(new Emoji.Wpf.TextBlock { Text = "📦 Windows 更新", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 8, 0, 6) });
             MakeCheck("禁止Windows更新传递优化",
                 () => PrivacyCore.IsDeliveryOptimizationDisabled(),
                 (l, b) => { if (b) PrivacyCore.DisableDeliveryOptimization(l); else PrivacyCore.EnableDeliveryOptimization(l); });
@@ -839,7 +839,7 @@ namespace CpqSystemTool
                 (l, b) => { if (b) PrivacyCore.DisableTelemetry(l); else PrivacyCore.EnableTelemetry(l); });
 
             // ---- 隐私与安全组 ----
-            inner.Children.Add(new TextBlock { Text = "🔒 隐私与安全（仅当前用户）", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 8, 0, 6) });
+            inner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🔒 隐私与安全（仅当前用户）", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 8, 0, 6) });
             MakeCheck("允许Windows收集活动历史记录",
                 () => !PrivacyCore.IsActivityHistoryDisabled(),
                 (l, b) => { if (b) PrivacyCore.EnableActivityHistory(l); else PrivacyCore.DisableActivityHistory(l); }, semantics: CheckSemantics.CheckedMeansEnable);
@@ -860,7 +860,7 @@ namespace CpqSystemTool
                 (l, b) => { if (b) PrivacyCore.EnableInkDict(l); else PrivacyCore.DisableInkDict(l); }, semantics: CheckSemantics.CheckedMeansEnable);
 
             // ---- 开始菜单推荐行数 ----
-            inner.Children.Add(new TextBlock { Text = "📐 开始菜单推荐的项目显示行数", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 8, 0, 6) });
+            inner.Children.Add(new Emoji.Wpf.TextBlock { Text = "📐 开始菜单推荐的项目显示行数", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 8, 0, 6) });
             var layoutBar = new Grid { Margin = new Thickness(0, 0, 0, 8) };
             for (int li = 0; li < 3; li++)
                 layoutBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });

@@ -257,7 +257,7 @@ namespace CpqSystemTool
                 owner?._inputBg ?? UiShapes.DefaultInputBackground, owner?._inputFg ?? fg,
                 windowBg, panelBorder,
                 fg, rowHover, rowSelected, dim));
-            body.Children.Add(new TextBlock { Height = 8 });
+            body.Children.Add(new Emoji.Wpf.TextBlock { Height = 8 });
 
             // 下载直链
             body.Children.Add(Label("下载直链 URL", "留空则走微软商店（需填下方商店 ID）或下方官方下载页解析。"));
@@ -267,7 +267,7 @@ namespace CpqSystemTool
             body.Children.Add(_urlBox);
             // 自动识别按钮：从 URL 文件名推断名称 + 描述（均可手改）
             var autoBtnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 4, 0, 0) };
-            var autoBtn = owner != null ? owner.Btn("🔍 自动识别", false, () => AutoFillFromUrl(), 96) : new Button { Content = "🔍 自动识别", Width = 96 };
+            var autoBtn = owner != null ? owner.Btn("🔍 自动识别", false, () => AutoFillFromUrl(), 96) : new Button { Content = new Emoji.Wpf.TextBlock { Text = "🔍 自动识别", VerticalAlignment = VerticalAlignment.Center }, Width = 96 };
             autoBtnRow.Children.Add(autoBtn);
             body.Children.Add(autoBtnRow);
             body.Children.Add(new TextBlock { Height = 8 });

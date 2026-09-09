@@ -34,7 +34,7 @@ namespace CpqSystemTool
             // ===== 卡片 1：Windows 版本转换 =====
             var vsCard = Card();
             var vsInner = (StackPanel)vsCard.Child;
-            vsInner.Children.Add(new TextBlock { Text = "🔄 Windows 版本转换", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) });
+            vsInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🔄 Windows 版本转换", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) });
             vsInner.Children.Add(new TextBlock
             {
                 Text = "建议先关闭杀毒软件/Defender 实时保护；会自动重启一次并切换为未激活状态，需重新激活。转换前请先创建系统还原点。",
@@ -44,7 +44,7 @@ namespace CpqSystemTool
                 TextWrapping = TextWrapping.Wrap
             });
 
-            var vsCurrentTb = new TextBlock
+            var vsCurrentTb = new Emoji.Wpf.TextBlock
             {
                 Text = "当前版本: 查询中…",
                 FontSize = 13,
@@ -143,7 +143,7 @@ namespace CpqSystemTool
             // ===== 卡片 2：上帝模式 =====
             var godCard = Card();
             var godInner = (StackPanel)godCard.Child;
-            godInner.Children.Add(new TextBlock { Text = "🌌 上帝模式", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) });
+            godInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🌌 上帝模式", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) });
             var godModeBtn = Btn("打开上帝模式（创建 GodMode.{ED7BA470-8E54-465E-825C-99712043E01C} 链接到桌面）", true, () =>
             {
                 GodMode.Create(msg => sharedLog.AppendText(msg + "\r\n"));
@@ -154,7 +154,7 @@ namespace CpqSystemTool
             // ===== 卡片 3：系统还原 =====
             var restoreCard = Card();
             var restoreInner = (StackPanel)restoreCard.Child;
-            restoreInner.Children.Add(new TextBlock { Text = "⏪ 系统还原", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 4, 0, 8) });
+            restoreInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "⏪ 系统还原", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 4, 0, 8) });
             var listBox = new ListBox { MaxHeight = 180, Margin = new Thickness(0, 0, 0, 8), Background = _isDarkMode ? Brushes.Transparent : _bgCard, BorderBrush = _panelBorder, BorderThickness = new Thickness(1) };
             listBox.ItemContainerStyle = new Style(typeof(ListBoxItem));
             listBox.ItemContainerStyle.Setters.Add(new Setter(Control.ForegroundProperty, _textMain));
@@ -272,7 +272,7 @@ namespace CpqSystemTool
                 new { Id="HWID",     Name="HWID",      Sub="硬件永久激活",       Desc="数字许可证绑定硬件，永久有效（重装后可能失效）", Color=_accent },
                 new { Id="KMS38",    Name="KMS38",      Sub="激活至2038年",         Desc="KMS 密钥激活，有效期至2038年1月，适合长期使用", Color=new SolidColorBrush(Color.FromRgb(0x34, 0x98, 0xDB)) },
                 new { Id="Ohook",    Name="Ohook",      Sub="Office 激活",          Desc="仅激活 Microsoft Office 套件，不影响 Windows", Color=new SolidColorBrush(Color.FromRgb(0x9B,0x59,0xB6)) },
-                new { Id="KMS",      Name="Online KMS", Sub="在线KMS（每180天）",   Desc="通过在线 KMS 服务器激活，需每180天续期或配合计划任务", Color=new SolidColorBrush(Color.FromRgb(0xE6,0x7E,0x22)) },
+                new { Id="KMS",      Name="Online KMS", Sub="在线KMS（每180天）",   Desc="在线KMS服务器激活，需每180天续期或配合计划任务", Color=new SolidColorBrush(Color.FromRgb(0xE6,0x7E,0x22)) },
                 new { Id="TSforge",  Name="TSforge",    Sub="强制激活",             Desc="强制写入激活信息，绕过常规检测（可能被检测）", Color=_warnOrange },
                 new { Id=Activation.DiagnosticMethodId, Name="诊断", Sub="查看激活状态", Desc="不执行激活，仅显示当前 Windows/Office 激活详情", Color=_textDim },
             };
@@ -286,15 +286,18 @@ namespace CpqSystemTool
             var log = MakeLogBox();
 
             var activationCard = Card();
+            // 执行日志上方的圆角边框底部内边距 16→6，整体往上缩 10px（与下方「执行日志」行留 10px 间距即可）
+            activationCard.Padding = new Thickness(16, 16, 16, 6);
             var actInner = (StackPanel)activationCard.Child;
-            actInner.Children.Add(new TextBlock { Text = "🎯 激活方式（点击卡片）", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 0, 0, 10) });
+            // 彩色 emoji 页头：Emoji.Wpf.TextBlock 的 emoji 字形自动以原色图形渲染（原型 office-ui-prototype 同一方案）
+            actInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🎯 激活方式（点击卡片）", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 0, 0, 10) });
 
             var cardsPanel = new System.Windows.Controls.Primitives.UniformGrid
             {
                 Columns = 3,
                 Rows = 2,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                Margin = new Thickness(0, 0, 0, 14)
+                Margin = new Thickness(0, 0, 0, 6)
             };
 
             // Issue 36: 卡片单选高亮（点击的卡片保持高亮，其他自动取消）
@@ -312,16 +315,35 @@ namespace CpqSystemTool
                     BorderBrush = m.Color,
                     BorderThickness = new Thickness(2),
                     CornerRadius = new CornerRadius(10),
-                    Padding = new Thickness(14, 12, 14, 12),
+                    Padding = new Thickness(10, 6, 10, 6),
                     Cursor = Cursors.Hand,
                     Margin = new Thickness(0, 0, 8, 8),
-                    MinHeight = 90,
+                    MinHeight = 46,
                     Tag = methodId
                 };
-                var cardSp = new StackPanel();
-                cardSp.Children.Add(new TextBlock { Text = m.Name, FontSize = 16, FontWeight = FontWeights.Bold, Foreground = m.Color });
-                cardSp.Children.Add(new TextBlock { Text = m.Sub, FontSize = 13, Foreground = _textDim, Margin = new Thickness(0, 2, 0, 0) });
-                cardSp.Children.Add(new TextBlock { Text = m.Desc, FontSize = 11, Foreground = _textDim, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0), Opacity = 0.75 });
+                // v1.20 布局调整：Name + Sub 合并为同一行（如「HWID---硬件永久激活」），整体水平居中，
+                // Desc 为第二行；卡片高度压到约一半（MinHeight=46），六张卡片统一此样式。
+                var cardSp = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+                cardSp.Children.Add(new TextBlock
+                {
+                    Text = m.Name + "---" + m.Sub,
+                    FontSize = 15,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = m.Color,
+                    TextAlignment = TextAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                });
+                cardSp.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = m.Desc,
+                    FontSize = 11,
+                    Foreground = _textDim,
+                    TextWrapping = TextWrapping.Wrap,
+                    TextAlignment = TextAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 4, 0, 0),
+                    Opacity = 0.75
+                });
                 cardBorder.Child = cardSp;
                 cards.Add(cardBorder);
 
@@ -391,8 +413,9 @@ namespace CpqSystemTool
             };
 
             var logWrap = new StackPanel();
-            logWrap.Children.Add(new TextBlock
+            logWrap.Children.Add(new Emoji.Wpf.TextBlock
             {
+                // 彩色 emoji 页头：📋 由 Emoji.Wpf.TextBlock 渲染原色图形
                 Text = "📋 执行日志（激活 / Office）",
                 FontWeight = FontWeights.Bold,
                 Foreground = _accent,

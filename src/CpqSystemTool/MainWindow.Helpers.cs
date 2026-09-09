@@ -142,9 +142,14 @@ namespace CpqSystemTool
 
         internal Button Btn(string text, bool primary, Action onClick, double minW = 130)
         {
+            var fg = primary ? _btnPrimaryFg : _btnSecondaryFg;
+            // 含 emoji 的按钮文案（如「🗑 开始清理」）用 Emoji.Wpf.TextBlock 承载：emoji 自动原色图形、
+            // 中文跟随 Foreground 画笔（离屏渲染探针已验证混排正常）；不含 emoji 的保持字符串 Content（零行为变化）。
             var b = new Button
             {
-                Content = text,
+                Content = EmojiLabel.HasEmoji(text)
+                    ? new Emoji.Wpf.TextBlock { Text = text, Foreground = fg, VerticalAlignment = VerticalAlignment.Center }
+                    : text,
                 MinWidth = minW,
                 MinHeight = 34,
                 Margin = new Thickness(0, 0, 6, 0),
@@ -153,7 +158,7 @@ namespace CpqSystemTool
                 FontSize = 12,
                 FontWeight = primary ? FontWeights.SemiBold : FontWeights.Normal,
                 Background = primary ? _accent : _btnSecondaryBg,
-                Foreground = primary ? _btnPrimaryFg : _btnSecondaryFg,
+                Foreground = fg,
                 BorderThickness = primary ? new Thickness(0) : new Thickness(1),
                 BorderBrush = primary ? Brushes.Transparent : _panelBorder
             };
@@ -581,7 +586,7 @@ namespace CpqSystemTool
             };
             if (accentCaret) box.CaretBrush = _accent;
             if (toolTip != null) box.ToolTip = toolTip;
-            var icon = new TextBlock
+            var icon = new Emoji.Wpf.TextBlock
             {
                 Text = "🔍",
                 FontSize = fontSize,

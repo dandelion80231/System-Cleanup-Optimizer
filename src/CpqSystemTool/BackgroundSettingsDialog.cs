@@ -181,7 +181,7 @@ namespace CpqSystemTool
 
             // 第 0 行：标题 + 模式选择
             var header = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
-            var title = new TextBlock
+            var title = new Emoji.Wpf.TextBlock
             {
                 Text = "🎨 自定义背景",
                 FontSize = 18.0,
@@ -432,7 +432,7 @@ namespace CpqSystemTool
             Grid.SetRow(formatGrid, 1);
             rightCol.Children.Add(formatGrid);
 
-            _contrastText = new TextBlock
+            _contrastText = new Emoji.Wpf.TextBlock
             {
                 TextWrapping = TextWrapping.Wrap,
                 FontSize = 11.0,
@@ -479,14 +479,14 @@ namespace CpqSystemTool
             imgHeaderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             imgHeaderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var imgTitlePanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            imgTitlePanel.Children.Add(new TextBlock
+            imgTitlePanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "自定义背景图",
                 FontWeight = FontWeights.SemiBold,
                 Foreground = _owner._textMain,
                 VerticalAlignment = VerticalAlignment.Center
             });
-            imgTitlePanel.Children.Add(new TextBlock
+            imgTitlePanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "提示：支持 PNG/JPG/BMP/GIF/WebP；图片会被引用（不嵌入 exe），请勿删除原文件。切换主题后新背景自动生效。",
                 FontSize = 11.0,
@@ -500,7 +500,7 @@ namespace CpqSystemTool
 
             var imgResetBtn = new Button
             {
-                Content = "🔄 恢复默认背景",
+                Content = new Emoji.Wpf.TextBlock { Text = "🔄 恢复默认背景", VerticalAlignment = VerticalAlignment.Center },
                 Height = 28,
                 Padding = new Thickness(10, 0, 10, 0),
                 Background = _owner._btnSecondaryBg,
@@ -527,7 +527,7 @@ namespace CpqSystemTool
             // 🌙 选择深色背景
             var darkSelectBtn = new Button
             {
-                Content = "🌙 选择深色背景",
+                Content = new Emoji.Wpf.TextBlock { Text = "🌙 选择深色背景", VerticalAlignment = VerticalAlignment.Center },
                 Height = 28,
                 Margin = new Thickness(0, 4, 0, 0),
                 Padding = new Thickness(10, 0, 10, 0),
@@ -557,7 +557,7 @@ namespace CpqSystemTool
             // ☀️ 选择浅色背景
             var lightSelectBtn = new Button
             {
-                Content = "☀️ 选择浅色背景",
+                Content = new Emoji.Wpf.TextBlock { Text = "☀️ 选择浅色背景", VerticalAlignment = VerticalAlignment.Center },
                 Height = 28,
                 Margin = new Thickness(0, 10, 0, 0),
                 Padding = new Thickness(10, 0, 10, 0),
@@ -2499,7 +2499,7 @@ namespace CpqSystemTool
                 Margin = new Thickness(0, 0, 0, 12)
             };
             var hSp = new StackPanel();
-            hSp.Children.Add(new TextBlock
+            hSp.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "颜色组合 / 调色板",
                 FontWeight = FontWeights.SemiBold,
@@ -2531,7 +2531,7 @@ namespace CpqSystemTool
             // 随机生成基色（对齐 gradients.app 的 shuffle）
             var randHarmonyBtn = new Button
             {
-                Content = "🎲 随机",
+                Content = new Emoji.Wpf.TextBlock { Text = "🎲 随机", VerticalAlignment = VerticalAlignment.Center },
                 Height = 26,
                 Padding = new Thickness(8, 2, 8, 2),
                 Margin = new Thickness(8, 0, 0, 0),
@@ -2805,7 +2805,7 @@ namespace CpqSystemTool
                 Margin = new Thickness(0, 8, 0, 0)
             };
             var cssSp = new StackPanel();
-            cssSp.Children.Add(new TextBlock
+            cssSp.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "网格 CSS 导入/导出",
                 FontWeight = FontWeights.SemiBold,
@@ -2842,7 +2842,7 @@ namespace CpqSystemTool
 
             var randMeshBtn = new Button
             {
-                Content = "🎲 随机光斑",
+                Content = new Emoji.Wpf.TextBlock { Text = "🎲 随机光斑", VerticalAlignment = VerticalAlignment.Center },
                 Height = 28,
                 Width = 100,
                 Background = _owner._btnSecondaryBg,

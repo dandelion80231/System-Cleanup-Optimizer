@@ -282,6 +282,12 @@ namespace CpqSystemTool
                     }
                     log("MAS 脚本已退出（退出码 " + p.ExitCode + "）。");
                 }
+
+                // M365 横幅抑制：OHook 激活 Office 365 后，部分版本会弹
+                // 「There was a problem checking this device's license status」。
+                // 依据 MAS 官方手动步骤写入 HKCU 注册表项抑制（HKCU 无需管理员权限）。
+                if (methodId == "Ohook")
+                    SuppressOffice365LicenseBanner(log);
             }
             catch (Exception ex)
             {
@@ -292,6 +298,33 @@ namespace CpqSystemTool
 
             log("正在刷新激活状态...");
             CheckStatus(log);
+        }
+
+        /// <summary>
+        /// 抑制部分 Office 365 版本在 OHook 激活后弹出的「There was a problem checking this device's license status」横幅。
+        /// 依据 MAS 官方手动步骤：写入 HKCU\Software\Microsoft\Office\16.0\Common\Licensing\Resiliency
+        /// 的 TimeOfLastHeartbeatFailure = "2040-01-01T00:00:00Z"（REG_SZ）。HKCU 无需管理员权限；
+        /// 写失败不影响激活本身，仅记录并忽略。
+        /// </summary>
+        private static void SuppressOffice365LicenseBanner(Action<string> log)
+        {
+            try
+            {
+                using (var key = Registry.CurrentUser.CreateSubKey(
+                    @"Software\Microsoft\Office\16.0\Common\Licensing\Resiliency"))
+                {
+                    if (key != null)
+                    {
+                        key.SetValue("TimeOfLastHeartbeatFailure", "2040-01-01T00:00:00Z", RegistryValueKind.String);
+                        log("  [OK] 已写入注册表，抑制 Office 365 许可状态横幅。");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLog.Ignore(ex);
+                log("  [!] 抑制 Office 365 横幅的注册表写入失败（可忽略，不影响激活）: " + ex.Message);
+            }
         }
 
         public static void Activate(string methodId, Action<string> log)

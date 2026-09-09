@@ -380,7 +380,7 @@ namespace CpqSystemTool
 
 
 
-            pathSp.Children.Add(new TextBlock { Text = "📁 配置默认保存路径", FontWeight = FontWeights.SemiBold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 0, 0, 4) });
+            pathSp.Children.Add(new Emoji.Wpf.TextBlock { Text = "📁 配置默认保存路径", FontWeight = FontWeights.SemiBold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 0, 0, 4) });
 
 
 
@@ -632,7 +632,7 @@ namespace CpqSystemTool
 
 
 
-            pathSp.Children.Add(new TextBlock { Text = "提示：自动保存功能会将配置保存到上述路径下的 autosave.json 文件。可直接编辑路径，或点「📂 浏览…」选择。修改后点击「应用路径」生效。", Foreground = _textDim, FontSize = 11.5, TextWrapping = TextWrapping.Wrap });
+            pathSp.Children.Add(new Emoji.Wpf.TextBlock { Text = "提示：自动保存功能会将配置保存到上述路径下的 autosave.json 文件。可直接编辑路径，或点「📂 浏览…」选择。修改后点击「应用路径」生效。", Foreground = _textDim, FontSize = 11.5, TextWrapping = TextWrapping.Wrap });
 
 
 
@@ -1080,7 +1080,7 @@ namespace CpqSystemTool
 
 
 
-            titleLeft.Children.Add(new TextBlock { Text = "🎨 自定义背景图", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
+            titleLeft.Children.Add(new Emoji.Wpf.TextBlock { Text = "🎨 自定义背景图", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
 
 
 

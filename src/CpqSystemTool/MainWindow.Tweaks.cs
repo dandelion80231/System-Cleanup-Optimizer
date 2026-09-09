@@ -40,7 +40,7 @@ namespace CpqSystemTool
                 App.Trace("BuildTweaks.TweaksAllFailed: " + ex.Message);
                 // Tweaks 初始化失败时返回错误提示页（避免空白）
                 var errRoot = new StackPanel { Margin = new Thickness(24) };
-                errRoot.Children.Add(new TextBlock { Text = "⚙ 系统优化", FontSize = 20, FontWeight = FontWeights.Bold, Foreground = _accent, Margin = new Thickness(0, 0, 0, 12) });
+                errRoot.Children.Add(new Emoji.Wpf.TextBlock { Text = "🎛️ 系统优化", FontSize = 20, FontWeight = FontWeights.Bold, Foreground = _accent, Margin = new Thickness(0, 0, 0, 12) });
                 errRoot.Children.Add(new TextBlock { Text = "优化项加载失败：" + ex.Message, Foreground = _dangerRed, FontSize = 13, TextWrapping = TextWrapping.Wrap });
                 errRoot.Children.Add(new TextBlock { Text = "请检查注册表访问权限或重启应用。", Foreground = _textDim, FontSize = 13, Margin = new Thickness(0, 8, 0, 0) });
                 return errRoot;

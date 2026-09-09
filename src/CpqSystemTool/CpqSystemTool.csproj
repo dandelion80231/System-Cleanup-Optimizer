@@ -9,7 +9,7 @@
     <UseWPF>true</UseWPF>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
-    <NoWarn>NU1603</NoWarn>
+    <NoWarn>NU1603;NU1510</NoWarn>
     <ImplicitUsings>disable</ImplicitUsings>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <ApplicationIcon>brush.ico</ApplicationIcon>
@@ -18,9 +18,9 @@
     <AssemblyProduct>系统清理与优化工具</AssemblyProduct>
     <AssemblyDescription>面向 Windows 10/11 的一体化系统清理、优化与维护工具</AssemblyDescription>
     <AssemblyCopyright>Copyright © 2026</AssemblyCopyright>
-    <AssemblyVersion>1.0.19.0</AssemblyVersion>
-    <FileVersion>1.0.19.0</FileVersion>
-    <InformationalVersion>1.0.19.0</InformationalVersion>
+    <AssemblyVersion>1.0.20.0</AssemblyVersion>
+    <FileVersion>1.0.20.0</FileVersion>
+    <InformationalVersion>1.0.20.0</InformationalVersion>
     <!-- 显式 x64：Windows 10/11 无 32 位版本，且 64 位进程可加载 64 位 WebView2 Runtime -->
     <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
@@ -33,6 +33,12 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="[1.0.2045.28, 1.0.2045.28]" />
     <PackageReference Include="System.Management" Version="10.0.0" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.0" />
+    <!-- 中文控制台输出解码（cscript/slmgr/ospp 在中文 Windows 输出 GBK/CP936）：
+         Exec.cs 静态构造 RegisterProvider(CodePagesEncodingProvider.Instance) + GetEncoding("GBK") 需本包 -->
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.0" />
+    <!-- 彩色 emoji 渲染（Emoji.Wpf TextBlock：普通文字走前景色画笔，emoji 字形自动以原色图形渲染，
+         浅色/深色主题均适用）；与 office-ui-prototype 同一方案（0.3.4，本地 NuGet 缓存已验证） -->
+    <PackageReference Include="Emoji.Wpf" Version="0.3.4" />
   </ItemGroup>
 
   <ItemGroup>

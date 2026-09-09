@@ -15,8 +15,8 @@ namespace CpqSystemTool
     public partial class MainWindow
     {
         // 软件版本号：左下角显示（同 BuildAbout 关于页更新日志）。
-        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.19.0 ↔ v1.19），两处保持一致。
-        private const string APP_VERSION = "v1.19";
+        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.20.0 ↔ v1.20），两处保持一致。
+        private const string APP_VERSION = "v1.20";
 
         // 导航按钮最小高度：16 个按钮平分视口高度（Star 行），窗口变矮或高 DPI 下高度会小于文字行高，
         // 导致文字被压扁/截断。给行与按钮同时设该下限，空间不足时由外层 ScrollViewer 滚动兜底。
@@ -26,10 +26,10 @@ namespace CpqSystemTool
         {
             _nav = new List<NavItem>
             {
-                new NavItem { Key = "tweaks",    Title = "系统优化",   Icon = "⚙", Build = BuildTweaks },
+                new NavItem { Key = "tweaks",    Title = "系统优化",   Icon = "🎛️", Build = BuildTweaks },
                 new NavItem { Key = "cleanup",   Title = "清理优化",   Icon = "🧹", Build = BuildCleanup },
                 new NavItem { Key = "services",  Title = "服务优化",   Icon = "🛠", Build = BuildServices },
-                new NavItem { Key = "appx",      Title = "Appx 商店", Icon = "🛒", Build = BuildAppx },
+                new NavItem { Key = "appx",      Title = "Appx 商店", Icon = "🛍️", Build = BuildAppx },
                 new NavItem { Key = "appxraw",   Title = "Appx 管理", Icon = "📦", Build = BuildAppxRaw },
                 new NavItem { Key = "commonsw",  Title = "常用软件",   Icon = "📦", Build = BuildCommonSoftware },
                 new NavItem { Key = "security",  Title = "安全防护",   Icon = "🛡", Build = BuildSecurity },
@@ -38,12 +38,12 @@ namespace CpqSystemTool
                 new NavItem { Key = "systools",  Title = "系统工具",   Icon = "🧰", Build = BuildSystemTools },
                 new NavItem { Key = "memory",    Title = "内存工具",   Icon = "🧠", Build = BuildMemory },
                 new NavItem { Key = "activation",Title = "激活工具", Icon = "🔑", Build = BuildActivation },
-                new NavItem { Key = "sysinfo",   Title = "系统信息",   Icon = "ℹ", Build = BuildSystemInfo },
-                new NavItem { Key = "maint",     Title = "维护工具",   Icon = "🔧", Build = BuildMaintenanceTools },
-                new NavItem { Key = "driverstore", Title = "驱动清理", Icon = "🗑", Build = BuildDriverStore },
-                new NavItem { Key = "config",    Title = "配置管理",   Icon = "⚙", Build = BuildConfig },
+                new NavItem { Key = "sysinfo",   Title = "系统信息",   Icon = "📊", Build = BuildSystemInfo },
+                new NavItem { Key = "maint",     Title = "维护工具",   Icon = "🧰", Build = BuildMaintenanceTools },
+                new NavItem { Key = "driverstore", Title = "驱动清理", Icon = "\uD83E\uDDE9", Build = BuildDriverStore },
+                new NavItem { Key = "config",    Title = "配置管理",   Icon = "🗂️", Build = BuildConfig },
                 // 隐藏页：不占用侧边栏列表，由底部品牌区（图标 + 版本号）点击进入
-                new NavItem { Key = "about",     Title = "关于",       Icon = "©", Build = BuildAbout, Hidden = true },
+                new NavItem { Key = "about",     Title = "关于",       Icon = "📄", Build = BuildAbout, Hidden = true },
             };
 
             // 用 DockPanel 让底部 footer 始终贴底，中间内容自然撑满
@@ -75,8 +75,8 @@ namespace CpqSystemTool
                 footer.Children.Add(icon);
             }
             catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); 
-                // 图标加载失败时用 emoji 占位
-                footer.Children.Add(new TextBlock { Text = "🎨", FontSize = 24, Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center });
+                // 图标加载失败时用彩色 emoji 占位（Emoji.Wpf.TextBlock 原色渲染，替代单色占位）
+                footer.Children.Add(new Emoji.Wpf.TextBlock { Text = "🎨", FontSize = 24, Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center });
             }
             // 左下角版本+关于入口：文字颜色随主题切换，统一由 UpdateSidebarTitleColors 刷新
             var verTb = new TextBlock
@@ -142,9 +142,10 @@ namespace CpqSystemTool
                 sp.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = NAV_BUTTON_MIN_HEIGHT });
                 var b = new Button
                 {
-                    // 文字用 TextBlock 承载并开启省略号：窄侧边栏下图标+标题放不下时省略而非硬裁剪。
-                    // （Button 的 Foreground 由 Navigate 设置，TextBlock 走属性值继承，不受影响）
-                    Content = new TextBlock
+                    // 文字用 Emoji.Wpf.TextBlock 承载：导航图标（🧹/🛠/🧠/🔑 等）自动原色图形渲染；
+                    // 标题中文仍继承 Button 的 Foreground（Navigate 设选中态颜色，属性值继承不受影响）。
+                    // 开启省略号：窄侧边栏下图标+标题放不下时省略而非硬裁剪。
+                    Content = new Emoji.Wpf.TextBlock
                     {
                         Text = n.Icon + "  " + n.Title,
                         TextTrimming = TextTrimming.CharacterEllipsis,

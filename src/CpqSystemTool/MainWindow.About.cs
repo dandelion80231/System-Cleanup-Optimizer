@@ -37,7 +37,7 @@ namespace CpqSystemTool
             var root = new StackPanel { Margin = new Thickness(0) };
             root.Children.Add(Header("关于", "软件信息、开源协议与免责声明。"));
 
-            TextBlock SectionTitle(string text) => new TextBlock
+            TextBlock SectionTitle(string text) => new Emoji.Wpf.TextBlock
             {
                 Text = text,
                 FontWeight = FontWeights.Bold,
@@ -77,7 +77,7 @@ namespace CpqSystemTool
             catch (Exception caughtEx)
             {
                 DebugLog.Ignore(caughtEx);
-                iconContainer.Child = new TextBlock { Text = "🛠", FontSize = 40, VerticalAlignment = VerticalAlignment.Center };
+                iconContainer.Child = new Emoji.Wpf.TextBlock { Text = "🛠", FontSize = 40, VerticalAlignment = VerticalAlignment.Center };
             }
             Grid.SetColumn(iconContainer, 0);
             identityRow.Children.Add(iconContainer);

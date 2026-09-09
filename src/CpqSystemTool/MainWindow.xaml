@@ -1,6 +1,7 @@
 ﻿<Window x:Class="CpqSystemTool.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
         Title="系统清理与优化工具" Height="740" Width="1200"
         WindowStartupLocation="CenterScreen" FontFamily="Segoe UI" Icon="brush.ico">
     <Window.Resources>
@@ -161,12 +162,17 @@
                 <Grid>
                     <TextBlock x:Name="PageTitle" Text="系统优化" FontSize="22" FontWeight="Bold" Foreground="#E6EDF3" VerticalAlignment="Center" Margin="0"/>
                     <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal">
+                        <!-- 彩色 emoji 按钮（Emoji.Wpf.TextBlock 原色渲染；Button.FontSize 不穿透到 TextBlock 内容，故显式设 16） -->
                         <Button x:Name="BgSettingsBtn" Width="36" Height="36" Cursor="Hand" ToolTip="自定义背景"
                                 BorderThickness="0" Background="Transparent" Foreground="#8B98A5"
-                                FontSize="16" Content="🎨" Click="BgSettingsBtn_Click"/>
+                                Click="BgSettingsBtn_Click">
+                            <emoji:TextBlock Text="🎨" FontSize="16" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        </Button>
                         <Button x:Name="ThemeToggleBtn" Width="36" Height="36" Cursor="Hand" ToolTip="切换主题"
                                 BorderThickness="0" Background="Transparent" Foreground="#8B98A5"
-                                FontSize="16" Content="🌙" Click="ThemeToggle_Click"/>
+                                Click="ThemeToggle_Click">
+                            <emoji:TextBlock x:Name="ThemeToggleIcon" Text="🌙" FontSize="16" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        </Button>
                     </StackPanel>
                 </Grid>
             </Border>

@@ -14,6 +14,40 @@ namespace CpqSystemTool
             // 子进程等待退出超时（毫秒）：15 分钟；超时强制 Kill，避免 UI 永久挂起
             private const int PROCESS_TIMEOUT_MS = 900000;
 
+            // 注册旧代码页提供器，使 Encoding.GetEncoding("GBK")/936 可用（.NET 默认仅含 UTF-8/ASCII）
+            static Exec()
+            {
+                try { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); } catch { }
+            }
+
+            /// <summary>把流完整读入字节数组（用于绕过 Process 的编码解码，自行做 UTF-8/GBK 自适应）。</summary>
+            private static byte[] ReadStreamBytes(Stream s)
+            {
+                if (s == null) return Array.Empty<byte>();
+                using (var ms = new MemoryStream())
+                {
+                    s.CopyTo(ms);
+                    return ms.ToArray();
+                }
+            }
+
+            /// <summary>中文输出自适应解码：先按 UTF-8 解码（整段合法则用 UTF-8，兼容 PowerShell/winget 等现代程序）；
+            /// 否则回退到 GBK/CP936（兼容 cscript/slmgr/ospp 等旧控制台程序在中文 Windows 上的输出）。</summary>
+            private static string DecodeCjk(byte[] bytes)
+            {
+                if (bytes == null || bytes.Length == 0) return "";
+                try
+                {
+                    // throwOnInvalidBytes=true：遇非法 UTF-8 序列直接抛 DecoderFallbackException，交回退分支
+                    return new UTF8Encoding(false, true).GetString(bytes);
+                }
+                catch (DecoderFallbackException)
+                {
+                    try { return Encoding.GetEncoding("GBK").GetString(bytes); }
+                    catch { return Encoding.UTF8.GetString(bytes); }
+                }
+            }
+
         /// <summary>等待子进程退出；超时则强制 Kill 整个进程树，并等其真正退出后再返回，避免 UI 永久挂起 / ExitCode 读取异常。</summary>
         private static void KillIfTimeout(System.Diagnostics.Process p, int timeoutMs)
         {
@@ -259,17 +293,17 @@ namespace CpqSystemTool
                     if (p == null) { log?.Invoke("  [!] 无法启动: " + args[0]); return -1; }
                     if (capture)
                     {
-                        var sbOut = new StringBuilder();
-                        var sbErr = new StringBuilder();
-                        p.OutputDataReceived += (s, e) => { if (e.Data != null) sbOut.AppendLine(e.Data); };
-                        p.ErrorDataReceived += (s, e) => { if (e.Data != null) sbErr.AppendLine(e.Data); };
-                        p.BeginOutputReadLine();
-                        p.BeginErrorReadLine();
+                        // 修复乱码：不再依赖 Process 的 OutputDataReceived（其按 StandardOutputEncoding 解码，
+                        // cscript/slmgr/ospp 实际输出 GBK/CP936，被按 UTF-8 解必乱码）。改为直接读原始字节流，
+                        // 后台排空防大输出阻塞，再用 DecodeCjk 自适应解码（UTF-8 优先、失败回退 GBK）。
+                        var outTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardOutput.BaseStream));
+                        var errTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardError.BaseStream));
                         KillIfTimeout(p, PROCESS_TIMEOUT_MS);
-                        p.WaitForExit();   // 等待异步输出事件排空（Kill 后也会快速返回）
-                        var outp = sbOut.ToString();
+                        p.WaitForExit();
+                        System.Threading.Tasks.Task.WaitAll(outTask, errTask);
+                        var outp = DecodeCjk(outTask.Result);
                         if (!string.IsNullOrWhiteSpace(outp)) log?.Invoke(outp.Trim());
-                        var errp = sbErr.ToString();
+                        var errp = DecodeCjk(errTask.Result);
                         if (!string.IsNullOrWhiteSpace(errp)) log?.Invoke("   [STDERR] " + errp.Trim());
                         return p.ExitCode;
                     }
@@ -300,26 +334,25 @@ namespace CpqSystemTool
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    StandardOutputEncoding = Encoding.UTF8,
-                    StandardErrorEncoding = Encoding.UTF8
+                    RedirectStandardError = true
                 };
-                if (encoding != null) psi.StandardOutputEncoding = encoding;
+                // 不再在此设定 StandardOutputEncoding/StandardErrorEncoding：RunCmdGet 直接读原始字节 +
+                // DecodeCjk 自适应解码（UTF-8 优先、失败回退 GBK），覆盖 cscript 等 GBK 输出程序。
+                // encoding 参数保留以兼容调用方签名（现已由自适应解码统一处理，此处不再单独生效）。
+                _ = encoding;
                 using (var p = Process.Start(psi))
                 {
                     if (p == null) { log?.Invoke("  [!] 无法启动: " + args[0]); return ""; }
-                    var sbOut = new StringBuilder();
-                    var sbErr = new StringBuilder();
-                    p.OutputDataReceived += (s, e) => { if (e.Data != null) sbOut.AppendLine(e.Data); };
-                    p.ErrorDataReceived += (s, e) => { if (e.Data != null) sbErr.AppendLine(e.Data); };
-                    p.BeginOutputReadLine();
-                    p.BeginErrorReadLine();
+                    // 修复乱码：同上，直接读原始字节 + DecodeCjk 自适应解码（UTF-8 优先、失败回退 GBK）
+                    var outTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardOutput.BaseStream));
+                    var errTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardError.BaseStream));
                     KillIfTimeout(p, PROCESS_TIMEOUT_MS);
-                    p.WaitForExit();   // 等待异步输出事件排空（Kill 后也会快速返回）
+                    p.WaitForExit();
+                    System.Threading.Tasks.Task.WaitAll(outTask, errTask);
                     // 修复：stderr 此前收集后从未使用，命令失败时完全没有诊断信息；仅在非空时输出
-                    var errp = sbErr.ToString();
+                    var errp = DecodeCjk(errTask.Result);
                     if (!string.IsNullOrWhiteSpace(errp)) log?.Invoke("   [stderr] " + errp.Trim());
-                    return sbOut.ToString() ?? "";
+                    return DecodeCjk(outTask.Result) ?? "";
                 }
             }
             catch (Exception ex) { log?.Invoke("  [!] 执行 " + args[0] + " 失败: " + ex.Message); return ""; }
@@ -340,17 +373,16 @@ namespace CpqSystemTool
                     if (p == null) { log?.Invoke("  [!] 无法启动 cscript"); return -1; }
                     if (capture)
                     {
-                        var sbOut = new StringBuilder();
-                        var sbErr = new StringBuilder();
-                        p.OutputDataReceived += (s, e) => { if (e.Data != null) sbOut.AppendLine(e.Data); };
-                        p.ErrorDataReceived += (s, e) => { if (e.Data != null) sbErr.AppendLine(e.Data); };
-                        p.BeginOutputReadLine();
-                        p.BeginErrorReadLine();
+                        // 修复乱码（slmgr.vbs/ospp.vbs 经 cscript 在中文 Windows 输出 GBK/CP936，
+                        // Process 按 UTF-8 解必乱码）：直接读原始字节，后台排空后用 DecodeCjk 自适应解码。
+                        var outTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardOutput.BaseStream));
+                        var errTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardError.BaseStream));
                         KillIfTimeout(p, PROCESS_TIMEOUT_MS);
-                        p.WaitForExit();   // 等待异步输出事件排空（Kill 后也会快速返回）
-                        var outp = sbOut.ToString();
+                        p.WaitForExit();
+                        System.Threading.Tasks.Task.WaitAll(outTask, errTask);
+                        var outp = DecodeCjk(outTask.Result);
                         if (!string.IsNullOrWhiteSpace(outp)) log?.Invoke(outp.Trim());
-                        var errp = sbErr.ToString();
+                        var errp = DecodeCjk(errTask.Result);
                         if (!string.IsNullOrWhiteSpace(errp)) log?.Invoke("   [STDERR] " + errp.Trim());
                         return p.ExitCode;
                     }
@@ -370,18 +402,16 @@ namespace CpqSystemTool
                 using (var p = Process.Start(psi))
                 {
                     if (p == null) { log?.Invoke("  [!] 无法启动 cscript"); return ""; }
-                    var sbOut = new StringBuilder();
-                    var sbErr = new StringBuilder();
-                    p.OutputDataReceived += (s, e) => { if (e.Data != null) sbOut.AppendLine(e.Data); };
-                    p.ErrorDataReceived += (s, e) => { if (e.Data != null) sbErr.AppendLine(e.Data); };
-                    p.BeginOutputReadLine();
-                    p.BeginErrorReadLine();
+                    // 修复乱码（cscript 输出 GBK）：直接读原始字节 + DecodeCjk 自适应解码
+                    var outTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardOutput.BaseStream));
+                    var errTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardError.BaseStream));
                     KillIfTimeout(p, PROCESS_TIMEOUT_MS);
-                    p.WaitForExit();   // 等待异步输出事件排空（Kill 后也会快速返回）
+                    p.WaitForExit();
+                    System.Threading.Tasks.Task.WaitAll(outTask, errTask);
                     // 修复：stderr 此前收集后从未使用，脚本报错（如 slmgr 无效密钥）完全没有诊断信息；仅在非空时输出
-                    var errp = sbErr.ToString();
+                    var errp = DecodeCjk(errTask.Result);
                     if (!string.IsNullOrWhiteSpace(errp)) log?.Invoke("   [stderr] " + errp.Trim());
-                    return sbOut.ToString() ?? "";
+                    return DecodeCjk(outTask.Result) ?? "";
                 }
             }
             catch (Exception ex) { log?.Invoke("  [!] 执行 VBS " + args[0] + " 失败: " + ex.Message); return ""; }
@@ -400,11 +430,10 @@ namespace CpqSystemTool
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = redirect,
-                RedirectStandardError = redirect,
-                // 修复：此前未设编码，cscript 输出按本地代码页解码，中文（如 slmgr 的许可证状态）必乱码；
-                // 显式指定与同文件其它 ProcessStartInfo 一致的 UTF-8（未重定向时不设，避免无意义赋值）。
-                StandardOutputEncoding = redirect ? Encoding.UTF8 : null,
-                StandardErrorEncoding = redirect ? Encoding.UTF8 : null
+                RedirectStandardError = redirect
+                // 注：不再在此设定 StandardOutputEncoding/StandardErrorEncoding。RunVbs/RunVbsGet 直接读
+                // p.StandardOutput.BaseStream 原始字节，再用 DecodeCjk 自适应解码（UTF-8 优先、失败回退 GBK），
+                // 因为 cscript/slmgr/ospp 在中文 Windows 实际输出 GBK/CP936，设 UTF-8 反而必乱码。
             };
         }
 

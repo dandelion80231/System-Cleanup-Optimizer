@@ -50,7 +50,7 @@ namespace CpqSystemTool
             // ===== 上：Windows Defender 卡片 =====
             var defCard = Card();
             var defInner = (StackPanel)defCard.Child;
-            defInner.Children.Add(new TextBlock { Text = "🛡 Windows Defender", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) });
+            defInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🛡 Windows Defender", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) });
 
             // 状态区（可刷新，禁用/恢复 WD 后重建而不丢日志）
             var defStatusHost = new StackPanel();
@@ -84,7 +84,7 @@ namespace CpqSystemTool
                 };
                 defStatusHost.Children.Add(overallStatus);
 
-                var note = new TextBlock
+                var note = new Emoji.Wpf.TextBlock
                 {
                     Text = allOff
                         ? "提示：下方 5 个开关可单独微调（无需重启）。⚠ 请勿重启——Windows 11 24H2+ 重启会还原 Defender 配置。恢复请点击右侧「一键恢复 WD」。"
@@ -343,7 +343,7 @@ namespace CpqSystemTool
             // ===== 中：Windows Defender 防火墙卡片 =====
             var fwCard = Card();
             var fwInner = (StackPanel)fwCard.Child;
-            fwInner.Children.Add(new TextBlock { Text = "🛡 Windows Defender 防火墙", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) });
+            fwInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🛡 Windows Defender 防火墙", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) });
 
             // 状态区（异步加载）
             var fwStatusHost = new StackPanel();
@@ -357,7 +357,7 @@ namespace CpqSystemTool
                 var profiles = preset ?? FirewallCore.GetProfiles();
                 if (profiles == null || profiles.Count == 0)
                 {
-                    fwStatusHost.Children.Add(new TextBlock { Text = "⚠ 未能读取防火墙状态（请查看下方日志了解具体原因）", Foreground = _warnOrange, FontSize = 13, TextWrapping = TextWrapping.Wrap });
+                    fwStatusHost.Children.Add(new Emoji.Wpf.TextBlock { Text = "🚨 未能读取防火墙状态（请查看下方日志了解具体原因）", Foreground = _warnOrange, FontSize = 13, TextWrapping = TextWrapping.Wrap });
                     return;
                 }
                 foreach (var p in profiles)
@@ -367,7 +367,7 @@ namespace CpqSystemTool
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                     row.Children.Add(new TextBlock { Text = cn + " 配置文件", Foreground = _textMain, VerticalAlignment = VerticalAlignment.Center });
-                    var tbState = new TextBlock
+                    var tbState = new Emoji.Wpf.TextBlock
                     {
                         Text = p.Enabled ? "● 已开启" : "○ 已关闭",
                         Foreground = p.Enabled ? _successGreen : _warnOrange,
@@ -396,7 +396,7 @@ namespace CpqSystemTool
             fwInner.Children.Add(fwBtnRow);
 
             // 规则管理面板
-            fwInner.Children.Add(new TextBlock { Text = "🔧 防火墙规则管理", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 10, 0, 6) });
+            fwInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🔧 防火墙规则管理", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 10, 0, 6) });
 
             var TELEMETRY_HOSTS = new[] { "vortex-win.data.microsoft.com", "settings-win.data.microsoft.com", "watson.telemetry.microsoft.com", "telemetry.microsoft.com", "oca.telemetry.microsoft.com" };
 

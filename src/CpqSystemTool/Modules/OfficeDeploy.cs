@@ -26,14 +26,19 @@ namespace CpqSystemTool
         /// <summary>套件内排除 ID（对应 &lt;ExcludeApp ID="..."/&gt;）；无则为 null</summary>
         public string ExcludeAppId { get; }
 
-        /// <summary>独立单品 Product ID（路线 B 用）；无则为 null</summary>
+        /// <summary>独立单品 Product ID（批量/Volume 版，路线 B 用）；无则为 null</summary>
         public string StandaloneProductId { get; }
 
-        public OfficeComponent(string name, string excludeAppId, string standaloneProductId)
+        /// <summary>独立单品 Product ID 的零售版（Retail），用于订阅制套件（Channel=Current 等）同装场景；
+        /// 订阅通道不能装 Volume 版，须改用 Retail 版。无则为 null。</summary>
+        public string StandaloneProductIdRetail { get; }
+
+        public OfficeComponent(string name, string excludeAppId, string standaloneProductId, string standaloneProductIdRetail = null)
         {
             Name = name;
             ExcludeAppId = excludeAppId;
             StandaloneProductId = standaloneProductId;
+            StandaloneProductIdRetail = standaloneProductIdRetail;
         }
     }
 
@@ -55,8 +60,10 @@ namespace CpqSystemTool
         // 套件内、但 ID 与显示名不同
         public static readonly OfficeComponent OneDrive = new OfficeComponent("OneDrive", "Groove", null); // 官方用 Groove
         // 独立产品（不能作为 ExcludeApp，只能作为独立 Product 出现）
-        public static readonly OfficeComponent Visio = new OfficeComponent("Visio", null, "VisioPro2024Volume");
-        public static readonly OfficeComponent Project = new OfficeComponent("Project", null, "ProjectPro2024Volume");
+        // 独立产品：Volume 版用于 LTSC 批量套件（PerpetualVLxxxx）；订阅制套件（Channel=Current 等）
+        // 不能装 Volume 版，须改用 Retail 版（StandaloneProductIdRetail），由 BuildArgs 按通道自动切换。
+        public static readonly OfficeComponent Visio = new OfficeComponent("Visio", null, "VisioPro2024Volume", "VisioPro2024Retail");
+        public static readonly OfficeComponent Project = new OfficeComponent("Project", null, "ProjectPro2024Volume", "ProjectPro2024Retail");
 
         /// <summary>全部“套件内可排除”组件（即 ExcludeAppId 非 null 的组件）</summary>
         public static IEnumerable<OfficeComponent> SuiteApps
@@ -230,6 +237,16 @@ namespace CpqSystemTool
         {
             "Current", "CurrentPreview", "SemiAnnual", "SemiAnnualPreview", "MonthlyEnterprise", "BetaChannel",
         };
+
+        /// <summary>
+        /// 判断给定通道是否为“订阅制”通道（Current / SemiAnnual / MonthlyEnterprise / Beta 等预览通道）。
+        /// 订阅制通道只能承载 Microsoft 365 订阅/零售产品；批量许可（Volume）产品须改用 PerpetualVL 系列通道。
+        /// 供 BuildArgs 等外部逻辑按套件通道选择 Visio/Project 的 Retail/Volume 版 ProductId。
+        /// </summary>
+        public static bool IsSubscriptionChannel(string channel)
+        {
+            return !string.IsNullOrEmpty(channel) && SubscriptionChannels.Contains(channel);
+        }
 
         /// <summary>
         /// 校验“通道-许可类型”是否匹配：批量许可（ProductId 含 "Volume"）产品不能使用订阅制通道。

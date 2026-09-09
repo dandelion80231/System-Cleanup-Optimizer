@@ -374,7 +374,9 @@ namespace CpqSystemTool
         // ---- 小型 UI 辅助（本页专用，不与 Helpers.cs 冲突）----
         private TextBlock SectionTitle(string text)
         {
-            return new TextBlock { Text = text, FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) };
+            // 含 emoji 的分区标题（📊/🧩/📋 等）走 Emoji.Wpf.TextBlock：emoji 自动原色图形，
+            // 标题中文仍跟随 _accent 画笔。返回类型保持 TextBlock（Emoji.Wpf.TextBlock 是其子类）。
+            return new Emoji.Wpf.TextBlock { Text = text, FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) };
         }
 
         private (Border tile, TextBlock value) MakeStatTile(string label)

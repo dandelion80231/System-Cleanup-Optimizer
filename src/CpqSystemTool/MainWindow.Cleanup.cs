@@ -244,7 +244,7 @@ namespace CpqSystemTool
 
             // 日志标题 + 操作按钮（水平同行：左侧标题，右侧按钮）—— 日志在前
             var btnAndHeader = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
-            var logHeader = new TextBlock { Text = "📋 执行日志", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
+            var logHeader = EmojiLabel.Create("📋 执行日志", _accent, 13, bold: true, verticalAlignment: VerticalAlignment.Center);
             DockPanel.SetDock(logHeader, Dock.Left);
             btnAndHeader.Children.Add(logHeader);
 
@@ -327,7 +327,7 @@ namespace CpqSystemTool
             // ===== 第三档：扫描旧资产（先扫描 → 逐项目确认 → 删除） =====
             var btnTier3 = new Button
             {
-                Content = new TextBlock
+                Content = new Emoji.Wpf.TextBlock
                 {
                     Text = "🔍 第三档：多半可删，但需你确认（含旧资产/可能的数据）",
                     TextWrapping = TextWrapping.Wrap,

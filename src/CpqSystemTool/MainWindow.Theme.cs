@@ -608,14 +608,14 @@ namespace CpqSystemTool
             if (dark)
             {
                 SetDarkColors();
-                ThemeToggleBtn.Content = "🌙";
+                ThemeToggleIcon.Text = "🌙";
                 ThemeToggleBtn.Foreground = _textDim;
                 ThemeToggleBtn.ToolTip = "切换到浅色模式";
             }
             else
             {
                 SetLightColors();
-                ThemeToggleBtn.Content = "☀️";
+                ThemeToggleIcon.Text = "☀️";
                 ThemeToggleBtn.Foreground = _textDim;
                 ThemeToggleBtn.ToolTip = "切换到深色模式";
             }
