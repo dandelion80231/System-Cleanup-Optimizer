@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
@@ -26,6 +27,10 @@ namespace CpqSystemTool
         // 动态状态全部落在可重建/可复位的容器与属性上（defStatusHost/defWp/defToggles/fwStatusHost/ruleList/updateBtnHost、
         // ApplyPolicyMode 高亮、_lastDefAction、日志），故操作完成后无需失效，仅靠 _securityRefresh 重刷。
         private readonly PageCache<UIElement> _securityCache = new PageCache<UIElement>();
+
+        // 安全防护页 TP 状态轮询定时器：TP 只能外部（安全中心）改，无事件可感知，靠轮询检测变化。
+        // 页面重建（主题切换）时先 Stop 旧的再建新的，避免多个 timer 并存。
+        private System.Windows.Threading.DispatcherTimer _tpPollTimer;
 
         private UIElement BuildSecurity()
         {
@@ -87,8 +92,8 @@ namespace CpqSystemTool
                 var note = new Emoji.Wpf.TextBlock
                 {
                     Text = allOff
-                        ? "提示：下方 5 个开关可单独微调（无需重启）。⚠ 请勿重启——Windows 11 24H2+ 重启会还原 Defender 配置。恢复请点击右侧「一键恢复 WD」。"
-                        : "提示：下方 5 个开关可单独切换（无需重启）。",
+                        ? "提示：下方 4 个开关可单独微调（无需重启）。⚠ 请勿重启——Windows 11 24H2+ 重启会还原 Defender 配置。恢复请点击右侧「一键恢复 WD」。"
+                        : "提示：下方 4 个开关可单独切换（无需重启）。",
                     Foreground = fullyOk ? _textMain : _warnOrange,
                     FontSize = 11.5,
                     TextWrapping = TextWrapping.Wrap,
@@ -97,20 +102,45 @@ namespace CpqSystemTool
                 defStatusHost.Children.Add(note);
             }
 
+            // ===== 4 个核心开关（2×2 紧凑网格，与"状态行"同一视觉区块） =====
+            // Grid(2★×2★) 承载 4 个 mkTog 复选框：第 1 行 实时保护/行为监控，第 2 行 云保护/样本提交。
+            // 容器用 Grid 而非 StackPanel：SyncDefToggles 重建时 Clear() 后重新挂 4 项即可。
+            var defToggles = new Grid { Margin = new Thickness(0, 10, 0, 4) };
+            defToggles.RowDefinitions.Add(new RowDefinition());
+            defToggles.RowDefinitions.Add(new RowDefinition());
+            defToggles.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            defToggles.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            defInner.Children.Add(defToggles);
+
+            // ===== 一键禁用/恢复（双路同步 Policies + ClearAllPolicies）=====
             // 等宽均分整行：Grid(2×★Star) + 按钮居中、保持原始大小（与安全防护更新按钮行一致）
-            var defWp = new Grid { Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Stretch };
+            var defWp = new Grid { Margin = new Thickness(0, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Stretch };
             defWp.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             defWp.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             defInner.Children.Add(defWp);
 
-            // 前移 defToggles 声明：bDisable/bEnable 的 onDone 闭包会调 SyncDefToggles，
-            // SyncDefToggles 内部要引用 defToggles——必须先声明
-            var defToggles = new StackPanel { Margin = new Thickness(0, 10, 0, 4) };
-            defInner.Children.Add(defToggles);
+            // ===== 临时禁用/恢复（03/04 逻辑：仅 Set-MpPreference，不动 Policies 注册表）=====
+            // 定位：比"一键禁用"更轻——适合"让位给某安装程序"场景，重启后自动还原，无需手动恢复。
+            // 视觉上紧跟「一键禁用/恢复」成行（defWp 之下），次级样式（非 accent 填充）。
+            var tempBar = new Grid { Margin = new Thickness(0, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Stretch };
+            tempBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            tempBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            defInner.Children.Add(tempBar);
 
-            // Defender 按钮：填充状态与上方状态区同步（参考更新管理 RebuildUpdateButtons 模式）
+            // ===== 篡改防护(TP) 状态区（06 逻辑）=====
+            // TP 开时，Windows 会拦截所有外部对 Defender 的运行时修改（含 Set-MpPreference），
+            // 只有安全中心 GUI 能手动切换。本区只读 + 跳转，不让用户直接改 TP（改了也无效）。
+            // 后台线程静默读 IsTamperProtected，读好后直接填充，不显示加载文本。
+            // 视觉：独立区块，位于「临时禁用/恢复」之下，与上方保留呼吸间距。
+            var tpHost = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+            defInner.Children.Add(tpHost);
+
+            // ===== 一键禁用/恢复按钮（填充状态与上方状态区同步，参考更新管理 RebuildUpdateButtons 模式） =====
             // 填充规则：哪个按钮代表"当前实际状态"，哪个就填充；点击后最后操作的按钮也填充
             string _lastDefAction = null;
+            // 上一次读到的 TP 状态（供 RefreshTpStatus(force:false) 判断是否真的变化，避免无谓重建 UI）。
+            // 声明位置须早于下方 tempBar 按钮闭包（那里会调用 RefreshTpStatus）——局部变量作用域自声明处起。
+            bool? _lastTpOn = null;
             bool ShouldFillDef(string actionKey, bool stateDefault)
             {
                 if (_lastDefAction != null)
@@ -135,7 +165,7 @@ namespace CpqSystemTool
                     _lastDefAction = "disable";
                     RebuildDefenderButtons(); // 立即刷新高亮，给点击反馈
                     pb.Visibility = Visibility.Visible;
-                    RunInBg(log, Defender.Disable, "已禁用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); });
+                    RunInBg(log, Defender.Disable, "已禁用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); });
                 });
                 bDisable.HorizontalAlignment = HorizontalAlignment.Center;
                 Grid.SetColumn(bDisable, 0);
@@ -150,12 +180,43 @@ namespace CpqSystemTool
                     _lastDefAction = "restore";
                     RebuildDefenderButtons(); // 立即刷新高亮，给点击反馈
                     pb.Visibility = Visibility.Visible;
-                    RunInBg(log, Defender.Enable, "已启用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); });
+                    RunInBg(log, Defender.Enable, "已启用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); });
                 });
                 bEnable.HorizontalAlignment = HorizontalAlignment.Center;
                 Grid.SetColumn(bEnable, 1);
                 defWp.Children.Add(bEnable);
             }
+
+            // ===== 临时禁用/恢复按钮（挂到已声明的 tempBar） =====
+            var bTempDisable = Btn("🔒 临时禁用 WD", false, () =>
+            {
+                if (!OperationLock.TryEnter("临时禁用 Defender", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                pb.Visibility = Visibility.Visible;
+                RunInBg(log, Defender.TemporaryDisable, "已临时禁用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); });
+            });
+            bTempDisable.HorizontalAlignment = HorizontalAlignment.Center;
+            Grid.SetColumn(bTempDisable, 0);
+            tempBar.Children.Add(bTempDisable);
+
+            var bTempEnable = Btn("🔓 临时恢复 WD", false, () =>
+            {
+                if (!OperationLock.TryEnter("临时恢复 Defender", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                pb.Visibility = Visibility.Visible;
+                RunInBg(log, Defender.TemporaryEnable, "已临时恢复 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); });
+            });
+            bTempEnable.HorizontalAlignment = HorizontalAlignment.Center;
+            Grid.SetColumn(bTempEnable, 1);
+            tempBar.Children.Add(bTempEnable);
+
+            // 可复用的后台刷新函数见下方（RefreshTpStatus）
 
             // ============ 5 个独立 Defender 开关（每个 Get/Set 实时同步） ============
             // 用 PowerShell Set-MpPreference 官方 API，立即生效、不需要重启、不需要 TI 提权。
@@ -221,16 +282,25 @@ namespace CpqSystemTool
                     return chk;
                 };
 
-                defToggles.Children.Add(mkTog("实时保护（含开发人员驱动的保护）",
-                    () => Defender.GetRealtime(), (b, l) => Defender.SetRealtime(b, l)));
-                defToggles.Children.Add(mkTog("行为监控",
-                    () => Defender.GetBehavior(), (b, l) => Defender.SetBehavior(b, l)));
-                defToggles.Children.Add(mkTog("云提供的保护",
-                    () => Defender.GetCloud(), (b, l) => Defender.SetCloud(b, l)));
-                defToggles.Children.Add(mkTog("自动提交样本",
-                    () => Defender.GetSampleSubmit(), (b, l) => Defender.SetSampleSubmit(b, l)));
-                defToggles.Children.Add(mkTog("篡改防护（关后其它被锁开关才可改）",
-                    () => Defender.GetTamper(), (b, l) => Defender.SetTamper(b, l)));
+                // 4 个核心开关排成 2×2（defToggles 是 Grid：第 1 行 实时保护/行为监控，第 2 行 云保护/样本提交）
+                var c0 = mkTog("实时保护（含开发人员驱动的保护）",
+                    () => Defender.GetRealtime(), (b, l) => Defender.SetRealtime(b, l));
+                Grid.SetRow(c0, 0); Grid.SetColumn(c0, 0);
+                var c1 = mkTog("行为监控",
+                    () => Defender.GetBehavior(), (b, l) => Defender.SetBehavior(b, l));
+                Grid.SetRow(c1, 0); Grid.SetColumn(c1, 1);
+                var c2 = mkTog("云提供的保护",
+                    () => Defender.GetCloud(), (b, l) => Defender.SetCloud(b, l));
+                Grid.SetRow(c2, 1); Grid.SetColumn(c2, 0);
+                var c3 = mkTog("自动提交样本",
+                    () => Defender.GetSampleSubmit(), (b, l) => Defender.SetSampleSubmit(b, l));
+                Grid.SetRow(c3, 1); Grid.SetColumn(c3, 1);
+                defToggles.Children.Add(c0);
+                defToggles.Children.Add(c1);
+                defToggles.Children.Add(c2);
+                defToggles.Children.Add(c3);
+                // 篡改防护(TP)不在开关区：TP 开时 Windows 拦截一切外部脚本对 Defender 的改动，只能手动开/关。
+                // 下方独立「TP 状态区」显示真实状态 + 提供跳转安全中心按钮。
 
                 // 修复（异步化后的状态一致性）：SyncDefToggles(true) 改为后台刷新后，开关列表是在
                 // 后台线程刷完缓存、回到 UI 线程执行 BuildToggleList 时才重建的。像「清理策略残留」
@@ -241,6 +311,99 @@ namespace CpqSystemTool
                 BuildDefenderStatus();
                 RebuildDefenderButtons();
             }
+
+            // 可复用的后台刷新函数：进页首次 + 操作 onDone + 重进页 + 定时轮询 都调它
+            // 每次重建 host 子项（tpHost.Clear() + 重新填充），避免累积
+            // force=true（默认）：强制重建 UI，用于进页/操作后等必须刷新的场景。
+            // force=false：供定时轮询使用——读到的 TP 状态与上次一致时直接返回，
+            //   不做 Children.Clear() 重建，避免每轮轮询造成 UI 闪烁与无谓布局开销。
+            void RefreshTpStatus(bool force = true)
+            {
+                // 定时轮询期间若正有耗时操作（禁用/恢复/切开关…）在跑，跳过本轮，
+                // 避免后台刷新冲掉用户正在等待的操作结果 UI
+                if (!force && OperationLock.IsBusy) return;
+                var disp = Dispatcher;
+                new Thread(() =>
+                {
+                    bool tpOn;
+                    try { tpOn = Defender.IsTamperProtectionEnabled(); }
+                    catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); tpOn = true; }
+                    try { disp.Invoke(() =>
+                    {
+                        if (!force && _lastTpOn.HasValue && _lastTpOn.Value == tpOn)
+                            return;             // 状态未变 → 保持现有 UI，不重建
+                        _lastTpOn = tpOn;
+                        tpHost.Children.Clear();
+                        // 与上方 4 开关的 defToggles 同为「2 等宽列」结构：
+                        // 第 0 列放标签，第 1 列放「方框+状态」，使方框左边缘与上方「行为监控」同一竖线。
+                        var row = new Grid { Margin = new Thickness(0, 4, 0, 4) };
+                        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 0: 标签（左半列）
+                        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 1: 状态（右半列）
+                        // 第 0 列：标签
+                        var tpLabel = new Emoji.Wpf.TextBlock
+                        {
+                            Text = "🛡 篡改防护 (TP)",
+                            Foreground = _textMain,
+                            FontSize = 13,
+                            FontWeight = FontWeights.SemiBold,
+                            VerticalAlignment = VerticalAlignment.Center
+                        };
+                        Grid.SetColumn(tpLabel, 0);
+                        // 第 1 列：内部再分「方框（左对齐=与行为监控同竖线）… 按钮（右对齐到行尾）」
+                        var rightBox = new Grid();
+                        rightBox.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 方框+状态
+                        rightBox.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 弹性间隔
+                        rightBox.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 按钮
+                        // 方框 + 状态文字（与上方 4 个开关同款 CheckBox：勾选=已开启，未勾=已关闭）
+                        // 纯指示用途：IsHitTestVisible=false + Cursor=Arrow，TP 只能手动在安全中心改
+                        var tpState = new System.Windows.Controls.CheckBox
+                        {
+                            Content = tpOn ? "已开启（外部脚本无法修改 Defender）" : "已关闭（外部脚本可正常改 Defender）",
+                            IsChecked = tpOn,
+                            IsHitTestVisible = false,
+                            Cursor = Cursors.Arrow,
+                            Foreground = tpOn ? _warnOrange : _successGreen,
+                            FontSize = 12.5,
+                            VerticalAlignment = VerticalAlignment.Center
+                        };
+                        Grid.SetColumn(tpState, 0);
+                        var bOpenSc = Btn("🔗 打开安全中心", false, () => Defender.OpenSecurityCenter());
+                        bOpenSc.VerticalAlignment = VerticalAlignment.Center;
+                        Grid.SetColumn(bOpenSc, 2);
+                        rightBox.Children.Add(tpState);
+                        rightBox.Children.Add(bOpenSc);
+                        Grid.SetColumn(rightBox, 1);
+                        row.Children.Add(tpLabel);
+                        row.Children.Add(rightBox);
+                        tpHost.Children.Add(row);
+                        tpHost.Children.Add(new TextBlock
+                        {
+                            Text = "提示：TP 开启时「一键/临时禁用」会被 Windows 拦截不生效。点「打开安全中心」直达病毒和威胁防护→管理设置页，向下找到「篡改防护」开关手动关闭即可。",
+                            Foreground = _textDim,
+                            FontSize = 11.5,
+                            TextWrapping = TextWrapping.Wrap,
+                            Margin = new Thickness(0, 0, 0, 4)
+                        });
+                    }); } catch { /* 窗口已关闭，忽略 */ }
+                }) { IsBackground = true, Name = "TpStatusLoader" }.Start();
+            }
+
+            // 进页首次后台读 TP
+            RefreshTpStatus();
+
+            // ===== TP 定时轮询（每 10s）=====
+            // 原因：TP 只能用户在「Windows 安全中心」里手动改，本工具无任何事件可感知，
+            //   而 4 个核心开关由本工具自己改（改完立即刷新），故只需对 TP 做外部变化检测。
+            // 采用 force=false：状态未变不重建 UI（无闪烁）；OperationLock.IsBusy 时整轮跳过（不干扰用户操作）。
+            // 页面重建（主题切换）时先停掉旧 timer，避免多个 timer 并存刷同一个 tpHost。
+            if (_tpPollTimer != null) { _tpPollTimer.Stop(); _tpPollTimer = null; }
+            _tpPollTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+            _tpPollTimer.Tick += (s, e) =>
+            {
+                try { RefreshTpStatus(false); }
+                catch (Exception ex) { DebugLog.Ignore(ex); }
+            };
+            _tpPollTimer.Start();
 
             // 清理策略 + 诊断 Runtime 按钮同一行
             var policyBar = new Grid { Margin = new Thickness(0, 4, 0, 0), HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -316,18 +479,170 @@ namespace CpqSystemTool
                 });
             };
 
+            // ===== 注册表快照回滚区（07 逻辑） =====
+            // 改 Policies / 服务 Start 前可先做快照；出问题选快照 reg import 回滚。
+            // 快照文件统一存 cpq_office/configs/regbackup/，文件名含 tag+时间戳+键名。
+            var snapHost = new StackPanel { Margin = new Thickness(0, 10, 0, 4) };
+            defInner.Children.Add(snapHost);
+            snapHost.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = "📋 注册表快照 / 回滚",
+                Foreground = _accent,
+                FontWeight = FontWeights.Bold,
+                FontSize = 13,
+                Margin = new Thickness(0, 0, 0, 6)
+            });
+            // 一行三列：下拉框占左半（2★），「备份当前」「回滚所选」共用右半（各 1★）——布局整齐
+            var snapRow = new Grid { Margin = new Thickness(0, 0, 0, 0), HorizontalAlignment = HorizontalAlignment.Stretch };
+            snapRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
+            snapRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            snapRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            snapHost.Children.Add(snapRow);
+
+            var snapCombo = new ComboBox
+            {
+                MinHeight = 28,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 6, 0),
+                Background = _inputBg,
+                Foreground = _textMain,
+                BorderBrush = _panelBorder,
+                BorderThickness = new Thickness(1)
+            };
+            Grid.SetColumn(snapCombo, 0);
+            snapRow.Children.Add(snapCombo);
+
+            // 快照列表提示（空列表时显示），独立容器防累积：
+            // RefreshSnapshotList 只重建它的子项，避免反复清/加导致 TextBlock 累积
+            var snapHintHost = new StackPanel { Margin = new Thickness(0, 6, 0, 2) };
+            snapHost.Children.Add(snapHintHost);
+
+            void RefreshSnapshotList()
+            {
+                snapHintHost.Children.Clear();
+                var list = Defender.ListSnapshots();
+                snapCombo.Items.Clear();
+                foreach (var f in list)
+                    snapCombo.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = System.IO.Path.GetFileName(f), Tag = f });
+                if (list.Count == 0)
+                    snapHintHost.Children.Add(new TextBlock { Text = "（暂无快照，可先点「备份当前」生成 BEFORE 快照）", Foreground = _textDim, FontSize = 11.5, Margin = new Thickness(0, 2, 0, 2) });
+            }
+
+            // 「备份当前」「回滚所选」挂在 snapRow 右半（col1/col2，与下拉框同一行）
+            var bBackup = Btn("💾 备份当前", false, null);
+            bBackup.HorizontalAlignment = HorizontalAlignment.Stretch;
+            bBackup.Margin = new Thickness(0);
+            Grid.SetColumn(bBackup, 1);
+            snapRow.Children.Add(bBackup);
+            var bRollback = Btn("⏪ 回滚所选", false, null);
+            bRollback.HorizontalAlignment = HorizontalAlignment.Stretch;
+            bRollback.Margin = new Thickness(6, 0, 0, 0);
+            Grid.SetColumn(bRollback, 2);
+            snapRow.Children.Add(bRollback);
+
+            // 列表首次加载：后台取一次
+            var snapDisp = Dispatcher;
+            new Thread(() =>
+            {
+                try { snapDisp.Invoke(() => { RefreshSnapshotList(); }); } catch { }
+            }) { IsBackground = true, Name = "SnapListLoader" }.Start();
+
+            bBackup.Click += (s, e) =>
+            {
+                if (!OperationLock.TryEnter("备份注册表快照", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                pb.Visibility = Visibility.Visible;
+                RunInBg(log, l =>
+                {
+                    var dir = Defender.BackupSnapshots("BEFORE", l);
+                    if (dir != "")
+                        Dispatcher.Invoke(() => RefreshSnapshotList());
+                }, "快照已备份", () =>
+                {
+                    OperationLock.Exit();
+                    pb.Visibility = Visibility.Collapsed;
+                });
+            };
+
+            bRollback.Click += (s, e) =>
+            {
+                if (!(snapCombo.SelectedItem is System.Windows.Controls.ComboBoxItem item) || item.Tag == null)
+                {
+                    MessageBox.Show(this, "请先从列表中选择要回滚的快照文件。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                var f = item.Tag as string;
+                if (string.IsNullOrEmpty(f)) return;
+                // 破坏性回滚：需确认
+                if (MessageBox.Show("确定要用所选快照回滚注册表吗？\n\n将 reg import 还原该文件内容（服务 Start / Defender 策略值）。若涉及服务状态，需重启或重启服务后生效。", "确认回滚", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                    return;
+                if (!OperationLock.TryEnter("回滚注册表快照", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                pb.Visibility = Visibility.Visible;
+                RunInBg(log, l =>
+                {
+                    var ok = Defender.RestoreFromSnapshot(f, l);
+                }, "快照已回滚", () =>
+                {
+                    OperationLock.Exit();
+                    pb.Visibility = Visibility.Collapsed;
+                    Dispatcher.Invoke(() => RefreshSnapshotList());
+                });
+            };
+
             // 默认不高亮底部动作按钮
             ApplyPolicyMode(null);
 
-            // 后台一次性拉取 Defender 状态，避免切页卡顿；UI 先显示骨架，缓存好后瞬间填充
+            // ===== Defender 状态初始化（方案 2：三级策略，首屏初值 O(1) 同步读，后台 PowerShell 校正） =====
+            // 切页卡顿根因：末屏 new Thread 跑 RefreshStatusCache（spawn PowerShell 取 4 值，本机 1-2s），
+            // PowerShell 返回才 Dispatcher.Invoke 填 BuildDefenderStatus——首次进页状态行比骨架晚 1-2s。
+            // 修复：
+            //   ① CacheValid==true（本会话已刷过）→ 缓存值【立即同步】填状态行（0 延迟），后台静默 RefreshStatusCache 校正；
+            //   ② 首次进页（CacheValid==false）→ 先 SeedCacheFromPrefs 用注册表 Prefs O(1) 读实时/行为初值，
+            //      立刻同步渲染"实时保护已禁用"（与页面切换同步出现，不等 PowerShell）；
+            //      同时后台 RefreshStatusCache 拿全部 4 个真实值后覆盖一次（云保护/样本提交校正为准确值）；
+            //   ③ Prefs 键/值都不存在（Defender 从未被改过）→ SeedCacheFromPrefs 返回 false，退回原 loading 占位后台加载。
             pb.Visibility = Visibility.Visible;
             var disp = Dispatcher;
-            new Thread(() =>
+            if (Defender.CacheValid)
             {
-                try { Defender.RefreshStatusCache(); }
-                catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
-                try { disp.Invoke(() =>
+                // 缓存已就绪：立即同步填充，状态行与页面切换同步出现，不等 PowerShell
+                defStatusHost.Children.Remove(defLoading);
+                BuildDefenderStatus();
+                RebuildDefenderButtons();
+                SyncDefToggles(false);
+                bClear.IsEnabled = true;
+                bDiag.IsEnabled = true;
+                pb.Visibility = Visibility.Collapsed;
+                // 后台静默刷新到最新值（若期间有禁用/恢复操作改变了状态），拿到后覆盖一次
+                new Thread(() =>
                 {
+                    try { Defender.RefreshStatusCache(); }
+                    catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                    try { disp.Invoke(() =>
+                    {
+                        BuildDefenderStatus();
+                        RebuildDefenderButtons();
+                        SyncDefToggles(false);
+                    }); } catch { /* 窗口已关闭，忽略 */ }
+                }) { IsBackground = true, Name = "DefenderRefreshSilent" }.Start();
+            }
+            else
+            {
+                bool seeded = false;
+                try { seeded = Defender.SeedCacheFromPrefs(); }
+                catch (Exception ex) { DebugLog.Ignore(ex); }
+                if (seeded)
+                {
+                    // 首屏初值已同步：立即渲染"实时保护已禁用/正常"（0 延迟，与切页同步），
+                    // 后台再 RefreshStatusCache 取全部 4 个真实值覆盖一次（云保护/样本提交由默认校正为准确）
                     defStatusHost.Children.Remove(defLoading);
                     BuildDefenderStatus();
                     RebuildDefenderButtons();
@@ -335,8 +650,38 @@ namespace CpqSystemTool
                     bClear.IsEnabled = true;
                     bDiag.IsEnabled = true;
                     pb.Visibility = Visibility.Collapsed;
-                }); } catch { /* 窗口已关闭，忽略 */ }
-            }) { IsBackground = true, Name = "DefenderInitLoader" }.Start();
+                    new Thread(() =>
+                    {
+                        try { Defender.RefreshStatusCache(); }
+                        catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                        try { disp.Invoke(() =>
+                        {
+                            BuildDefenderStatus();
+                            RebuildDefenderButtons();
+                            SyncDefToggles(false);
+                        }); } catch { /* 窗口已关闭，忽略 */ }
+                    }) { IsBackground = true, Name = "DefenderSeedCorrect" }.Start();
+                }
+                else
+                {
+                    // Prefs 读不到（Defender 从未被改过）：保留 loading 占位，后台 PowerShell 拉取后填充
+                    new Thread(() =>
+                    {
+                        try { Defender.RefreshStatusCache(); }
+                        catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                        try { disp.Invoke(() =>
+                        {
+                            defStatusHost.Children.Remove(defLoading);
+                            BuildDefenderStatus();
+                            RebuildDefenderButtons();
+                            SyncDefToggles(false);
+                            bClear.IsEnabled = true;
+                            bDiag.IsEnabled = true;
+                            pb.Visibility = Visibility.Collapsed;
+                        }); } catch { /* 窗口已关闭，忽略 */ }
+                    }) { IsBackground = true, Name = "DefenderInitLoader" }.Start();
+                }
+            }
 
             root.Children.Add(defCard);
 
@@ -424,7 +769,23 @@ namespace CpqSystemTool
             ruleAddBar.Children.Add(bRemoveSel);
             fwInner.Children.Add(ruleAddBar);
 
-            // 规则列表
+            // 规则列表 DataTemplate：名称 + 方向分两行 TextBlock，防止单行超长触发横向溢出。
+            var ruleItemTemplate = new DataTemplate();
+            var rootPanel = new FrameworkElementFactory(typeof(StackPanel));
+            rootPanel.SetValue(StackPanel.OrientationProperty, Orientation.Vertical);
+            rootPanel.SetValue(StackPanel.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
+            var nameTextBlock = new FrameworkElementFactory(typeof(TextBlock));
+            nameTextBlock.SetValue(TextBlock.TextProperty, new Binding("DisplayName"));
+            nameTextBlock.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
+            nameTextBlock.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.WordEllipsis);
+            var dirTextBlock = new FrameworkElementFactory(typeof(TextBlock));
+            dirTextBlock.SetValue(TextBlock.TextProperty, new Binding("Direction"));
+            dirTextBlock.SetValue(TextBlock.ForegroundProperty, _textDim);
+            dirTextBlock.SetValue(TextBlock.FontSizeProperty, 11d);
+            rootPanel.AppendChild(nameTextBlock);
+            rootPanel.AppendChild(dirTextBlock);
+            ruleItemTemplate.VisualTree = rootPanel;
+
             var ruleList = new System.Windows.Controls.ListBox
             {
                 Background = Brushes.Transparent,
@@ -432,10 +793,13 @@ namespace CpqSystemTool
                 BorderBrush = _panelBorder,
                 BorderThickness = new Thickness(1),
                 Margin = new Thickness(0, 8, 0, 0),
-                MaxHeight = 180
+                MaxHeight = 180,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                ItemTemplate = ruleItemTemplate
             };
-            var ruleScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = ruleList, MaxHeight = 180 };
-            fwInner.Children.Add(ruleScroll);
+            // 强制禁用水平滚动（DependencyProperty SetValue 绕过附加属性的"中间层"）
+            ruleList.SetValue(System.Windows.Controls.ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+            fwInner.Children.Add(ruleList);
 
             // 空状态提示：若 PowerShell 执行失败，真实错误会输出到日志，这里不再盲目归因于权限
             var ruleEmptyHint = new TextBlock
@@ -638,6 +1002,7 @@ namespace CpqSystemTool
                             SyncDefToggles(false);
                         }); } catch { /* 窗口已关闭，忽略 */ }
                     }) { IsBackground = true, Name = "SecurityRefreshLoader" }.Start();
+                    RefreshTpStatus();   // 重刷 TP 状态（TP 只能外部改，重进页必须重读；此前漏掉导致"只有重启软件才刷新"）
                     LoadFirewallData();  // 重刷防火墙配置文件状态 + 规则列表（含空状态提示）
                     LoadUpdateState();   // 重刷 Windows 更新按钮高亮（保留 _lastUpdateAction 字段语义）
                 });

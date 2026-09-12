@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -140,6 +141,120 @@ namespace CpqSystemTool
             vsInner.Children.Add(channelPanel);
             root.Children.Add(vsCard);
 
+            // ===== 卡片（插入）：系统激活（6 卡片 2行3列，从原「激活工具」页移植，置于版本转换下方）=====
+            // 复用本页共享日志框 sharedLog（纯文本 TextBox）与进度条 pb。
+            {
+                var activationMethods = new[]
+                {
+                    new { Id="HWID",     Name="HWID",      Sub="硬件永久激活",       Desc="数字许可证绑定硬件，永久有效（重装后可能失效）", Color=_accent },
+                    new { Id="KMS38",    Name="KMS38",      Sub="激活至2038年",         Desc="KMS 密钥激活，有效期至2038年1月，适合长期使用", Color=new SolidColorBrush(Color.FromRgb(0x34, 0x98, 0xDB)) },
+                    new { Id="Ohook",    Name="Ohook",      Sub="Office 激活",          Desc="仅激活 Microsoft Office 套件，不影响 Windows", Color=new SolidColorBrush(Color.FromRgb(0x9B,0x59,0xB6)) },
+                    new { Id="KMS",      Name="Online KMS", Sub="在线KMS（每180天）",   Desc="在线KMS服务器激活，需每180天续期或配合计划任务", Color=new SolidColorBrush(Color.FromRgb(0xE6,0x7E,0x22)) },
+                    new { Id="TSforge",  Name="TSforge",    Sub="强制激活",             Desc="强制写入激活信息，绕过常规检测（可能被检测）", Color=_warnOrange },
+                    new { Id=Activation.DiagnosticMethodId, Name="诊断", Sub="查看激活状态", Desc="不执行激活，仅显示当前 Windows/Office 激活详情", Color=_textDim },
+                };
+
+                var actCard = Card();
+                actCard.Padding = new Thickness(16, 16, 16, 6);
+                var actInternal = (StackPanel)actCard.Child;
+                actInternal.Children.Add(new Emoji.Wpf.TextBlock { Text = "🎯 激活方式（点击卡片）", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 0, 0, 10) });
+
+                var actCardsPanel = new System.Windows.Controls.Primitives.UniformGrid
+                {
+                    Columns = 3,
+                    Rows = 2,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    Margin = new Thickness(0, 0, 0, 6)
+                };
+
+                var actSelectedBg = _rowSelected;
+                var actHoverBg = _rowHover;
+                var actCards = new List<Border>();
+
+                foreach (var m in activationMethods)
+                {
+                    var methodId = m.Id;
+                    var cardBorder = new Border
+                    {
+                        Background = _isDarkMode ? Brushes.Transparent : _bgCard,
+                        BorderBrush = m.Color,
+                        BorderThickness = new Thickness(2),
+                        CornerRadius = new CornerRadius(10),
+                        Padding = new Thickness(10, 6, 10, 6),
+                        Cursor = Cursors.Hand,
+                        Margin = new Thickness(0, 0, 8, 8),
+                        MinHeight = 46,
+                        Tag = methodId
+                    };
+                    var cardSp = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+                    cardSp.Children.Add(new TextBlock
+                    {
+                        Text = m.Name + "---" + m.Sub,
+                        FontSize = 15,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = m.Color,
+                        TextAlignment = TextAlignment.Center,
+                        HorizontalAlignment = HorizontalAlignment.Center
+                    });
+                    cardSp.Children.Add(new Emoji.Wpf.TextBlock
+                    {
+                        Text = m.Desc,
+                        FontSize = 11,
+                        Foreground = _textDim,
+                        TextWrapping = TextWrapping.Wrap,
+                        TextAlignment = TextAlignment.Center,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness(0, 4, 0, 0),
+                        Opacity = 0.75
+                    });
+                    cardBorder.Child = cardSp;
+                    actCards.Add(cardBorder);
+
+                    cardBorder.MouseEnter += (s, e) =>
+                    {
+                        var b = (Border)s;
+                        if (b.Background != actSelectedBg) b.Background = actHoverBg;
+                    };
+                    cardBorder.MouseLeave += (s, e) =>
+                    {
+                        var b = (Border)s;
+                        if (b.Background != actSelectedBg) b.Background = _isDarkMode ? Brushes.Transparent : _bgCard;
+                    };
+
+                    cardBorder.MouseLeftButtonUp += (s, e) =>
+                    {
+                        var b = (Border)s;
+                        foreach (var other in actCards) other.Background = _isDarkMode ? Brushes.Transparent : _bgCard;
+                        b.Background = actSelectedBg;
+
+                        if (Activation.IsMasMethod(methodId))
+                        {
+                            var msg = "即将联网下载并执行官方 Microsoft Activation Scripts (MAS) 进行【" + methodId + "】激活。\n\n"
+                                    + "• 需要联网访问 get.activated.win\n"
+                                    + "• 脚本来自开源项目 massgrave.dev（采用 GNU GPL v3 许可）\n"
+                                    + "• 会弹出脚本窗口，请按其提示操作（可能需管理员授权）\n\n"
+                                    + "是否继续？";
+                            if (System.Windows.MessageBox.Show(this, msg, "联网激活确认",
+                                    System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning)
+                                != System.Windows.MessageBoxResult.Yes)
+                            {
+                                b.Background = _isDarkMode ? Brushes.Transparent : _bgCard;
+                                return;
+                            }
+                        }
+
+                        pb.Visibility = Visibility.Visible;
+                        // 激活日志写入本页共享纯文本日志框 sharedLog（不再走彩色富日志）
+                        RunInBg(sharedLog, l => Activation.Activate(methodId, l),
+                            methodId == Activation.DiagnosticMethodId ? "诊断完成" : "激活完成",
+                            () => pb.Visibility = Visibility.Collapsed);
+                    };
+                    actCardsPanel.Children.Add(cardBorder);
+                }
+                actInternal.Children.Add(actCardsPanel);
+                root.Children.Add(actCard);
+            }
+
             // ===== 卡片 2：上帝模式 =====
             var godCard = Card();
             var godInner = (StackPanel)godCard.Child;
@@ -260,175 +375,116 @@ namespace CpqSystemTool
             // 各行能独立按内容取高，日志保持 Auto 高度（内容多时由内部 ScrollViewer 滚动）。
             var root = new Grid();
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // Header
-            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // 激活卡片
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // Office 部署
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 日志（Auto，不撑满）
 
-            var headerTb = Header("系统激活 & Office", "基于 MAS (Microsoft Activation Scripts) 激活 Windows/Office。下方为 Office 安装/卸载管理。");
+            var headerTb = Header("office部署", "使用 Office 部署工具 (ODT) 安装 / 卸载 Microsoft Office，可自定义组件与激活方式。");
             Grid.SetRow(headerTb, 0);
             root.Children.Add(headerTb);
 
-            var methods = new[]
+            // 彩色富日志（Office 安装/卸载输出共用，图标行自动渲染彩色 emoji / 绿色矢量勾）
+            var logRich = new ItemsControl
             {
-                new { Id="HWID",     Name="HWID",      Sub="硬件永久激活",       Desc="数字许可证绑定硬件，永久有效（重装后可能失效）", Color=_accent },
-                new { Id="KMS38",    Name="KMS38",      Sub="激活至2038年",         Desc="KMS 密钥激活，有效期至2038年1月，适合长期使用", Color=new SolidColorBrush(Color.FromRgb(0x34, 0x98, 0xDB)) },
-                new { Id="Ohook",    Name="Ohook",      Sub="Office 激活",          Desc="仅激活 Microsoft Office 套件，不影响 Windows", Color=new SolidColorBrush(Color.FromRgb(0x9B,0x59,0xB6)) },
-                new { Id="KMS",      Name="Online KMS", Sub="在线KMS（每180天）",   Desc="在线KMS服务器激活，需每180天续期或配合计划任务", Color=new SolidColorBrush(Color.FromRgb(0xE6,0x7E,0x22)) },
-                new { Id="TSforge",  Name="TSforge",    Sub="强制激活",             Desc="强制写入激活信息，绕过常规检测（可能被检测）", Color=_warnOrange },
-                new { Id=Activation.DiagnosticMethodId, Name="诊断", Sub="查看激活状态", Desc="不执行激活，仅显示当前 Windows/Office 激活详情", Color=_textDim },
+                ItemTemplate = (DataTemplate)FindResource("LogLineTemplate"),
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Margin = new Thickness(0, 4, 0, 0),
+                Background = Brushes.Transparent,
             };
-
-            // Issue 13: 2行3列 网格布局（用 Grid + UniformGrid 实现固定 6 卡片均匀分布）
-            var mainGrid = new Grid();
-            mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            var pb = MakeProgress();
-            var log = MakeLogBox();
-
-            var activationCard = Card();
-            // 执行日志上方的圆角边框底部内边距 16→6，整体往上缩 10px（与下方「执行日志」行留 10px 间距即可）
-            activationCard.Padding = new Thickness(16, 16, 16, 6);
-            var actInner = (StackPanel)activationCard.Child;
-            // 彩色 emoji 页头：Emoji.Wpf.TextBlock 的 emoji 字形自动以原色图形渲染（原型 office-ui-prototype 同一方案）
-            actInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🎯 激活方式（点击卡片）", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 13, Margin = new Thickness(0, 0, 0, 10) });
-
-            var cardsPanel = new System.Windows.Controls.Primitives.UniformGrid
+            // 拆分前 OfficeDeployControl 自带 LogBox 设了 MinHeight=80/MaxHeight=200，空时也常驻可见；
+            // 拆分后改用本页级 logRich，若不给 MinHeight，空 ItemsControl 高度≈0 只剩一条细线，看起来像"默认隐藏"。
+            // 这里套一层 ScrollViewer 并设 MinHeight/MaxHeight，复刻"常驻可见空框、内容多时内部滚动"的体验。
+            var logRichScroll = new ScrollViewer
             {
-                Columns = 3,
-                Rows = 2,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                Margin = new Thickness(0, 0, 0, 6)
+                Content = logRich,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                MinHeight = 90,
+                MaxHeight = 220,
             };
+            var logRichBorder = WrapLogBoxRich(logRichScroll, cornerRadius: 6);
 
-            // Issue 36: 卡片单选高亮（点击的卡片保持高亮，其他自动取消）
-            // 选中态颜色：复用 Theme.cs 的主题字段（_rowSelected/_rowHover），消除重复硬编码
-            var selectedBg = _rowSelected;
-            var hoverBg = _rowHover;
-            var cards = new List<Border>();
-
-            foreach (var m in methods)
+            // 右键复制所有日志内容（ItemsControl 不支持原生文本选择，需提供此功能）。
+            // 注意：这里不用标准 WPF ContextMenu。标准 ContextMenu 有两大问题，正是用户反馈的"菜单框比需求长、外框样式不对"：
+            //   ① 默认模板左侧有固定图标槽/gutter，且框宽会被撑成"内容区宽度"（非文字内容宽度）→ 菜单明显过长；
+            //   ② 默认主题下深/浅色会出现与全站不一致的白色竖边。
+            // 改用与「管理依赖」下拉（Maint.cs MakeMenuItem）一致的自定义 Popup + Border/TextBlock：
+            //   框宽紧贴文字内容（"复制日志"），四周主题色统一、外观与全站一致。
+            var copyLogPopup = new Popup
             {
-                var methodId = m.Id;
-                var cardBorder = new Border
-                {
-                    Background = _isDarkMode ? Brushes.Transparent : _bgCard,
-                    BorderBrush = m.Color,
-                    BorderThickness = new Thickness(2),
-                    CornerRadius = new CornerRadius(10),
-                    Padding = new Thickness(10, 6, 10, 6),
-                    Cursor = Cursors.Hand,
-                    Margin = new Thickness(0, 0, 8, 8),
-                    MinHeight = 46,
-                    Tag = methodId
-                };
-                // v1.20 布局调整：Name + Sub 合并为同一行（如「HWID---硬件永久激活」），整体水平居中，
-                // Desc 为第二行；卡片高度压到约一半（MinHeight=46），六张卡片统一此样式。
-                var cardSp = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-                cardSp.Children.Add(new TextBlock
-                {
-                    Text = m.Name + "---" + m.Sub,
-                    FontSize = 15,
-                    FontWeight = FontWeights.Bold,
-                    Foreground = m.Color,
-                    TextAlignment = TextAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Center
-                });
-                cardSp.Children.Add(new Emoji.Wpf.TextBlock
-                {
-                    Text = m.Desc,
-                    FontSize = 11,
-                    Foreground = _textDim,
-                    TextWrapping = TextWrapping.Wrap,
-                    TextAlignment = TextAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 4, 0, 0),
-                    Opacity = 0.75
-                });
-                cardBorder.Child = cardSp;
-                cards.Add(cardBorder);
+                PlacementTarget = logRichBorder,
+                Placement = PlacementMode.MousePoint,
+                AllowsTransparency = true,
+                StaysOpen = true
+            };
+            var copyMenuPanel = new StackPanel { Background = _windowBg };
+            var copyMenuBorder = new Border
+            {
+                Background = _windowBg,
+                BorderBrush = _panelBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(1),
+                Child = copyMenuPanel
+            };
+            copyLogPopup.Child = copyMenuBorder;
+            // 修复：AllowsTransparency=true 会以独立顶层 HWND 承载并带 WS_EX_TOPMOST，导致弹层浮到最顶层。
+            // 剥离该样式使其落到正常层级（与"管理依赖"/分类下拉一致）。
+            UiShapes.DisablePopupTopmost(copyLogPopup);
 
-                // 悬停提示（仅当卡片未选中时生效）
-                cardBorder.MouseEnter += (s, e) =>
+            // 复制时带上图标对应的 emoji 文本。"check" 是 XAML 绿色矢量勾的哨兵值（非 emoji 字符），必须映射成 ✅，
+            // 否则粘贴出来是 "check" 字样。使用重试机制写入剪贴板，避免 OfficeClickToRun 占用时 OpenClipboard 失败。
+            async void CopyAllLogAsync()
+            {
+                try
                 {
-                    var b = (Border)s;
-                    if (b.Background != selectedBg) b.Background = hoverBg;
-                };
-                cardBorder.MouseLeave += (s, e) =>
-                {
-                    var b = (Border)s;
-                    if (b.Background != selectedBg) b.Background = _isDarkMode ? Brushes.Transparent : _bgCard;
-                };
-
-                // 点击：单选高亮 + 实际激活
-                cardBorder.MouseLeftButtonUp += (s, e) =>
-                {
-                    var b = (Border)s;
-                    // 清空其他卡片高亮
-                    foreach (var other in cards) other.Background = _isDarkMode ? Brushes.Transparent : _bgCard;
-                    // 高亮当前
-                    b.Background = selectedBg;
-
-                    // 二次确认：MAS 为联网下载执行的第三方脚本（需管理员授权）
-                    if (Activation.IsMasMethod(methodId))
-                    {
-                        var msg = "即将联网下载并执行官方 Microsoft Activation Scripts (MAS) 进行【" + methodId + "】激活。\n\n"
-                                + "• 需要联网访问 get.activated.win\n"
-                                + "• 脚本来自开源项目 massgrave.dev（采用 GNU GPL v3 许可）\n"
-                                + "• 会弹出脚本窗口，请按其提示操作（可能需管理员授权）\n\n"
-                                + "是否继续？";
-                        if (System.Windows.MessageBox.Show(this, msg, "联网激活确认",
-                                System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning)
-                            != System.Windows.MessageBoxResult.Yes)
-                        {
-                            b.Background = _isDarkMode ? Brushes.Transparent : _bgCard; // 取消则撤高亮
-                            return;
-                        }
-                    }
-
-                    // 实际激活
-                    pb.Visibility = Visibility.Visible;
-                    RunInBg(log, l => Activation.Activate(methodId, l),
-                        methodId == Activation.DiagnosticMethodId ? "诊断完成" : "激活完成",
-                        () => pb.Visibility = Visibility.Collapsed);
-                };
-                cardsPanel.Children.Add(cardBorder);
+                    var lines = logRich.Items.Cast<OfficeDeployControl.LogEntry>()
+                        .Select(le => $"{le.Timestamp}  {(le.Icon == "check" ? "✅" : le.Icon)} {le.Text}")
+                        .ToList();
+                    await TrySetClipboardTextAsync(string.Join("\n", lines));
+                }
+                catch (Exception ex) { DebugLog.Ignore(ex); }
             }
-            actInner.Children.Add(cardsPanel);
+
+            copyMenuPanel.Children.Add(MakeMenuItem("复制日志", copyLogPopup, () => CopyAllLogAsync()));
+            logRichBorder.PreviewMouseRightButtonDown += (s, e) =>
+            {
+                e.Handled = true;
+                copyLogPopup.IsOpen = true;
+            };
 
             // ----- Office 安装/卸载（v1.20: 使用 OfficeDeployControl，内含卸载按钮）-----
+            // 激活卡片已移至「系统工具」页（版本转换下方），本页仅保留 Office 部署功能。
+            // 用大圆角卡片把部署相关功能框起来，与全站其它页面（系统工具卡片等）视觉一致。
             var officeDeploy = new OfficeDeployControl();
-            actInner.Children.Add(officeDeploy);
-
-            // v1.20 修复：合并成 OfficeDeployControl 时把进度条和日志框一起删掉了，
-            // 结果点击任一激活方式后界面完全没有任何反馈（RunInBg 的输出写进了一个不在视觉树里的 TextBox）。
-            actInner.Children.Add(pb);
-
-            // 共用日志框：MAS 激活的输出（RunInBg(log, …)）与 Office 安装/卸载的输出都汇入这一个框。
-            // OfficeDeployControl 设置 ExternalLogSink 后会自动隐藏自带日志框，页面只保留一个日志区。
-            // 回调已在 UI 线程（控件 AppendLog 内部 Dispatcher.Invoke 之后才调用），可直接操作控件。
-            officeDeploy.ExternalLogSink = s =>
+            // 共用日志框：Office 安装/卸载的输出汇入彩色富日志 logRich
+            // （OfficeDeployControl 设置 ExternalLogSink 后会自动隐藏自带日志框，页面只保留一个日志区）。
+            // LogEntry.Icon=="check" → 绿色矢量对勾；其它 → 彩色 emoji。
+            officeDeploy.ExternalLogSink = entry =>
             {
-                log.AppendText(s + "\n");
-                log.ScrollToEnd();
+                logRich.Dispatcher.Invoke(() =>
+                {
+                    logRich.Items.Add(entry);
+                });
             };
+            var officeCard = Card();
+            var officeCardInner = (StackPanel)officeCard.Child;
+            officeCardInner.Children.Add(officeDeploy);
+            Grid.SetRow(officeCard, 1);
+            root.Children.Add(officeCard);
 
             var logWrap = new StackPanel();
             logWrap.Children.Add(new Emoji.Wpf.TextBlock
             {
                 // 彩色 emoji 页头：📋 由 Emoji.Wpf.TextBlock 渲染原色图形
-                Text = "📋 执行日志（激活 / Office）",
+                Text = "📋 执行日志（Office）",
                 FontWeight = FontWeights.Bold,
                 Foreground = _accent,
                 FontSize = 13,
                 Margin = new Thickness(0, 4, 0, 8)
             });
-            log.Height = 120;
-            logWrap.Children.Add(WrapLogBox(log));
+            logWrap.Children.Add(logRichBorder);
             Grid.SetRow(logWrap, 2);
             root.Children.Add(logWrap);
-
-            Grid.SetRow(activationCard, 1);
-            root.Children.Add(activationCard);
 
             // v1.20 修复：本页三行全是 Auto，内容总高常常超出默认窗口高度。
             // 原来只把 root.MaxHeight 绑到视口 → 超出部分被 ContentArea 直接裁掉且不出滚动条。
