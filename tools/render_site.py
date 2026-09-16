@@ -157,7 +157,7 @@ def process_asset(src_path, kind, prefix, ref_re, tag_fmt):
 def process_css():
     return process_asset(
         CSS_SRC, "CSS", "style",
-        r'<link\s+rel="stylesheet"\s+href="(style\.[0-9a-f]{12}\.css)">',
+        r'<link\s+rel="stylesheet"\s+href="(style(?:\.[0-9a-f]{12})?\.css)"\s*(?:data-page-node-id="[^"]*")?\s*>',
         '<link rel="stylesheet" href="{new_name}">',
     )
 
@@ -165,7 +165,7 @@ def process_css():
 def process_js():
     return process_asset(
         JS_SRC, "JS", "script",
-        r'<script\s+src="(script\.[0-9a-f]{12}\.js)"></script>',
+        r'<script\s+src="(script(?:\.[0-9a-f]{12})?\.js)"></script>',
         '<script src="{new_name}"></script>',
     )
 

@@ -38,8 +38,44 @@ namespace CpqSystemTool
             if (!TryAcquireSingleInstance()) return;
             try { System.IO.File.WriteAllText(TracePath, "=== trace " + System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " ===\n"); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             Trace("OnStartup.start");
+            // 首次启动自动迁移：旧 exe 目录\Config 与 cpq-tool 内容收拢进统一数据根 cpq-tool（幂等，不覆盖、不删旧文件）。
+            // 必须早于下方 ODT 空壳清扫与主窗口创建，让新数据根先就位。
+            try { AppPaths.MigrateLegacyDirs(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
             // 启动时若有待固化标记，把增补列表写进 exe 自身（自包含；失败自动回退 json）
             SoftwareDefPersistence.ApplyPendingBakeIfAny();
+            // 启动时补删上一次卸载因 shell 扩展被 explorer 锁定而没删净的 OneDrive 残留目录
+            // （重启/启动时锁已释放）。放后台线程，避免拖累启动；无标记则立即返回。
+            try
+            {
+                System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try { OneDriveUninstall.TryPendingCleanup(null); }
+                    catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                });
+            }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+            // 同款：补删上一次卸载 Teams 时被锁定的残留目录（teams_pending_cleanup.txt 标记）。
+            try
+            {
+                System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try { TeamsUninstall.TryPendingCleanup(null); }
+                    catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                });
+            }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+            // 同款：启动时清扫上一次 ODT 执行遗留的 cpq-tool/run/odt_run_* 空壳目录
+            // （若程序在 ScheduleRunCleanup 的延迟窗口内退出，fire-and-forget 的清理 Task 会被线程池回收、
+            // 删除从不发生，于是残留空目录。启动时 ODT 不在跑，可安全整目录删除）。
+            try
+            {
+                System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try { OdtSetup.CleanupStaleRunDirs(); }
+                    catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                });
+            }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
             // StartupUri 已移除，此处仅触发 Startup 事件，不再隐式创建窗口
             base.OnStartup(e);
             Trace("OnStartup.mainwindow");
@@ -142,7 +178,8 @@ namespace CpqSystemTool
         {
             try
             {
-                var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log");
+                var path = AppPaths.CrashLogPath;
+                try { System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)); } catch { }
                 var sb = new StringBuilder();
                 sb.AppendLine("==== " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " ====");
                 sb.AppendLine("Where: " + where);

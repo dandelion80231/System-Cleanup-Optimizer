@@ -599,6 +599,7 @@ namespace CpqSystemTool
             UpdateSidebarTitleColors();
             // 驱动清理页已缓存，主题变更后清空缓存以用新主题色重建
             InvalidateDriverStoreCache();
+            InvalidateActivationCache(); // Office 部署页同驱动清理：主题变更后重建
             // 用保存的 key 重建当前页（_activeNavKey 在 Navigate 中更新）
             Navigate(_activeNavKey);
         }
@@ -665,6 +666,7 @@ namespace CpqSystemTool
                         ApplyTheme(_isDarkMode);
                         UpdateSidebarTitleColors();
                         InvalidateDriverStoreCache(); // 主题变更后重建驱动清理页
+                        InvalidateActivationCache(); // Office 部署页同驱动清理：主题变更后重建
                         Navigate(_activeNavKey);
                     }
                 })); } catch { /* 窗口已关闭，忽略 */ }

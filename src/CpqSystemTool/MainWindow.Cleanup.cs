@@ -283,6 +283,12 @@ namespace CpqSystemTool
                     l("=== 开始清理 " + sel.Count + " 项 ===\r\n");
                     // 方案 B：按 Category 分组，跨类别并行、类别内仍串行 —— 全选多类别时整体加速。
                     // log 经 Dispatcher.BeginInvoke 线程安全，并行调用不会损坏 UI；并发度受 MaxDegreeOfParallelism 限流。
+                    // 【修】尾行「建议重启」改为条件提示：全程无 [SKIP]/[PARTIAL]/[!] 时不误导用户去重启（原为无条件打印）
+                    // 【收紧】「未安装」类 [SKIP] 不算脏（跳过是正常结果，重启也变不出来）；
+                    // 只有 被占用/残留/报错（[PARTIAL]、[!]、部分残留、锁定）才提示重启
+                    int dirty = 0;
+                    System.Action<string> l0 = l;
+                    l = s => { l0(s); if (s.Contains("[PARTIAL]") || s.Contains("[FAIL]") || s.Contains("[!]") || s.Contains("部分残留") || s.Contains("锁定") || s.Contains("被占用")) System.Threading.Interlocked.Increment(ref dirty); };
                     var catPar = new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Math.Min(4, Environment.ProcessorCount)) };
                     var groups = CleanupCatalog.Where(d => sel.Contains(d.Id)).GroupBy(d => d.Category).ToList();
                     System.Threading.Tasks.Parallel.ForEach(groups, catPar, group =>
@@ -292,7 +298,9 @@ namespace CpqSystemTool
                             try { def.Action(l); } catch (Exception ex) { l("[!] " + def.Name + " 出错: " + ex.Message + "\r\n"); }
                         }
                     });
-                    l("\r\n[OK] 清理完成！建议重启电脑以释放被占用的文件\r\n");
+                    l(dirty > 0
+                        ? "\r\n[OK] 清理完成！部分项被占用/有残留，建议重启电脑释放后再清一次\r\n"
+                        : "\r\n[OK] 清理完成！全部处理完毕（未安装项已跳过），无需重启\r\n");
                 }, "清理完成", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; _cleanupCache.Invalidate(); });
             }, 100);
             actionBar.Children.Add(btnClean);

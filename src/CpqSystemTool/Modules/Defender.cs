@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Text;
 using Microsoft.Win32;
 
@@ -30,39 +32,49 @@ namespace CpqSystemTool
             "AllowFullScanRealtimeProtection", "AllowScriptScanning"
         };
 
+        // ClearAllPolicies 退路清理：删 GP 子键被 DACL 限制失败时，逐个删这些本工具可能写入的 Disable*/Spynet 值
+        private static readonly string[] RT_DISABLE_VALUE_NAMES =
+        {
+            "DisableRealtimeMonitoring", "DisableBehaviorMonitoring", "DisableIOAVProtection",
+            "DisableOnAccessProtection", "DisableScanOnRealtimeEnable"
+        };
+        private static readonly string[] SPYNET_VALUE_NAMES =
+        {
+            "SpynetReporting", "SubmitSamplesConsent"
+        };
+
         // ===================== 缓存：避免 BuildSecurity 启动 9 次 PowerShell =====================
         // 5 个 Get-MpPreference 值一次性取回缓存，Get* 全部读内存字段（O(1)），
         // 不再每次访问触发 powershell.exe 子进程。
-        private static volatile int _cacheRealtime = 0, _cacheBehavior = 0, _cacheCloud = 2, _cacheSample = 1, _cacheTamper = 5;
+        private static volatile int _cacheRealtime = 0, _cacheBehavior = 0, _cacheCloud = 2, _cacheSample = 1;
         private static volatile bool _cacheValid = false;
         private static readonly object _cacheLock = new object();
 
-        /// <summary>一次 PowerShell 调用拿全部 5 个值，写入缓存。BuildSecurity 入口 + onDone 回调各调一次。</summary>
+        /// <summary>一次 PowerShell 调用拿全部 4 个值，写入缓存。BuildSecurity 入口 + onDone 回调各调一次。
+        /// 注：TP 不走 Get-MpPreference（该字段本机实测常为空），改由 IsTamperProtectionEnabled() 读 Get-MpComputerStatus。</summary>
         public static void RefreshStatusCache()
         {
             lock (_cacheLock)
             {
                 try
                 {
-                    // PowerShell 用 -f 把 5 个值格式化成 pipe 分隔字符串，避开 ConvertTo-Json 的引号转义问题
+                    // PowerShell 用 -f 把 4 个值格式化成 pipe 分隔字符串，避开 ConvertTo-Json 的引号转义问题
                     var s = Exec.RunPowerShellGet(
                         "$ErrorActionPreference='SilentlyContinue'; " +
                         "$p = Get-MpPreference; " +
-                        "'{0}|{1}|{2}|{3}|{4}' -f " +
+                        "'{0}|{1}|{2}|{3}' -f " +
                         "[int]$p.DisableRealtimeMonitoring, " +
                         "[int]$p.DisableBehaviorMonitoring, " +
                         "[int]$p.MAPSReporting, " +
-                        "[int]$p.SubmitSamplesConsent, " +
-                        "[int]$p.TamperProtection", null);
+                        "[int]$p.SubmitSamplesConsent", null);
                     var t = s.Trim();
                     var parts = t.Split('|');
-                    if (parts.Length >= 5)
+                    if (parts.Length >= 4)
                     {
                         if (int.TryParse(parts[0], out int r)) _cacheRealtime = r;
                         if (int.TryParse(parts[1], out int b)) _cacheBehavior = b;
                         if (int.TryParse(parts[2], out int c)) _cacheCloud = c;
                         if (int.TryParse(parts[3], out int sm)) _cacheSample = sm;
-                        if (int.TryParse(parts[4], out int tm)) _cacheTamper = tm;
                         _cacheValid = true;
                     }
                 }
@@ -76,6 +88,57 @@ namespace CpqSystemTool
             {
                 if (!_cacheValid) RefreshStatusCache();
             }
+        }
+
+        /// <summary>本会话内是否已用 PowerShell 刷新过状态缓存（O(1) 判断，供 UI 决定"先同步填缓存 / 后台再刷新"）。
+        /// false = 首次进页或刷新失败，此时 Get* 会触发同步刷新；true = 缓存已是最新或上次成功。</summary>
+        public static bool CacheValid => _cacheValid;
+
+        // Prefs 注册表真实键（Get-MpPreference 的 runtime 底层值）：本机实测存在且 O(1) 可读，无需 PowerShell。
+        // 用途：首次进页时同步读这两项给首屏初值，让"实时保护已禁用"立刻显示，再后台 PowerShell 校正全部 4 值。
+        private const string PREFS_RT_BASE = @"SOFTWARE\Microsoft\Windows Defender\Real-Time Protection";
+        private const string PREFS_SPYNET = @"SOFTWARE\Microsoft\Windows Defender\Spynet";
+
+        /// <summary>用注册表 Prefs 同步"种子"缓存（O(1)，UI 线程可安全调用）：
+        /// 读 Real-Time Protection\DisableRealtimeMonitoring / DisableBehaviorMonitoring（1=禁用）
+        /// 与 Spynet\SpynetReporting / SubmitSamplesConsent（与 runtime 实测一致：SpynetReporting 0=关 1/2=启用，
+        /// SubmitSamplesConsent 1=启用 2/0=关闭）给全部 4 值首屏初值。
+        /// 种子成功后 _cacheValid=true，使 Get* 读缓存而不再同步 spawn PowerShell；首次进页"实时保护已禁用"即可立即渲染。
+        /// 仅当 Prefs 实时/行为两条都读不到（Defender 从未被改过、值全走 runtime 默认）时返回 false，调用方退回后台加载。</summary>
+        public static bool SeedCacheFromPrefs()
+        {
+            lock (_cacheLock)
+            {
+                bool rtFound = TryReadPrefsDword(PREFS_RT_BASE, "DisableRealtimeMonitoring", out int rtVal);
+                bool behFound = TryReadPrefsDword(PREFS_RT_BASE, "DisableBehaviorMonitoring", out int behVal);
+                if (!rtFound && !behFound)
+                    return false; // 实时/行为 Prefs 都读不到 → 无种子价值，走后台 PowerShell
+                if (rtFound) _cacheRealtime = rtVal;          // 1=禁用 0=启用
+                if (behFound) _cacheBehavior = behVal;
+                // 云保护：SpynetReporting 0=Disabled 1=Basic 2=Advanced（与 runtime MAPSReporting 语义一致）
+                if (TryReadPrefsDword(PREFS_SPYNET, "SpynetReporting", out int cloudVal))
+                    _cacheCloud = cloudVal;
+                // 样本提交：SubmitSamplesConsent 1=启用 其余=关闭（GetSampleSubmit 判 ==1）
+                if (TryReadPrefsDword(PREFS_SPYNET, "SubmitSamplesConsent", out int sampleVal))
+                    _cacheSample = sampleVal;
+                _cacheValid = true;
+                return true;
+            }
+        }
+
+        private static bool TryReadPrefsDword(string keyPath, string valueName, out int val)
+        {
+            val = 0;
+            try
+            {
+                using var k = Registry.LocalMachine.OpenSubKey(keyPath);
+                if (k == null) return false;
+                object o = k.GetValue(valueName);
+                if (o is int i) { val = i; return true; }
+                if (o is byte[] b && b.Length >= 4) { val = BitConverter.ToInt32(b, 0); return true; }
+                return false;
+            }
+            catch (Exception ex) { DebugLog.Ignore(ex); return false; }
         }
 
         public static bool LastOperationFullSuccess { get; private set; } = true;
@@ -92,26 +155,7 @@ namespace CpqSystemTool
 
         // ===================== 底层：Get-MpPreference / Set-MpPreference =====================
 
-        // (ReadMpPref 已删除：无调用方，GetXxx 现已直接读注册表/Preference；SetXxx 同步刷新缓存字段)
-
-        /// <summary>
-        /// 读 Policies 注册表值（无值返回 null）。
-        /// ★ 必须走 RegistryHelper：本程序是 32 位进程，裸 Registry.LocalMachine 只会读 32 位视图
-        /// （Wow6432Node），而 Policies 的写入已统一写 64 位视图，直读会导致"设置已生效但状态读不到"。
-        /// </summary>
-        private static int? ReadPolicyDword(string keyPath, string valName)
-        {
-            return RegistryHelper.GetDwordOrNull(Registry.LocalMachine, keyPath, valName);
-        }
-
-        private static bool SetBool(string label, string cmdletParam, bool enable, Action<string> log)
-        {
-            log("[API] " + label + " -> " + (enable ? "启用" : "禁用") + "...");
-            int r = Exec.RunPowerShell("Set-MpPreference -" + cmdletParam + " $" + enable, log);
-            if (r != 0) log("   [!] Set-MpPreference 退出 " + r + "（可能被 TP 拦截）");
-            else log("   [OK] Preferences 已更新");
-            return r == 0;
-        }
+        // (ReadMpPref / ReadPolicyDword 已删除：Get* 现直接读 Get-MpPreference 缓存，无注册表 Policy 优先逻辑，故无调用方)
 
         private static bool SetInt(string label, string cmdletParam, int val, Action<string> log)
         {
@@ -141,13 +185,14 @@ namespace CpqSystemTool
         /// <summary>1. 实时保护（含"开发人员驱动的保护"——Dev Drive 保护是其实时保护子集）。</summary>
         public static bool GetRealtime()
         {
-            var policy = ReadPolicyDword(DEFENDER_RT_POLICY, "DisableRealtimeMonitoring");
-            if (policy.HasValue) return policy.Value == 0;
-            EnsureCache(); return _cacheRealtime == 0;
+            // ponytail: 以 runtime 真实状态为准（Get-MpPreference 缓存），不再优先读 Policies 注册表——
+            // TP 开启时 Policies 残留值(=1)被 Defender 无视，据此判"已禁用"会与 runtime 实际"在跑"脱节，造成假象。
+            EnsureCache();
+            return _cacheRealtime == 0;
         }
         public static bool SetRealtime(bool enable, Action<string> log)
         {
-            bool ok = SetBool("实时保护", "DisableRealtimeMonitoring", enable, log);
+            bool ok = SetInt("实时保护", "DisableRealtimeMonitoring", enable ? 0 : 1, log);
             if (ok) { _cacheRealtime = enable ? 0 : 1; _cacheValid = true; }
             try
             {
@@ -164,13 +209,12 @@ namespace CpqSystemTool
         /// <summary>2. 行为监控（不受 TP 保护）。</summary>
         public static bool GetBehavior()
         {
-            var policy = ReadPolicyDword(DEFENDER_RT_POLICY, "DisableBehaviorMonitoring");
-            if (policy.HasValue) return policy.Value == 0;
-            EnsureCache(); return _cacheBehavior == 0;
+            EnsureCache();
+            return _cacheBehavior == 0;
         }
         public static bool SetBehavior(bool enable, Action<string> log)
         {
-            bool ok = SetBool("行为监控", "DisableBehaviorMonitoring", enable, log);
+            bool ok = SetInt("行为监控", "DisableBehaviorMonitoring", enable ? 0 : 1, log);
             if (ok) { _cacheBehavior = enable ? 0 : 1; _cacheValid = true; }
             try
             {
@@ -187,9 +231,8 @@ namespace CpqSystemTool
         /// <summary>3. 云提供的保护 (MAPSReporting: 0=Disabled, 1=Basic, 2=Advanced)。</summary>
         public static bool GetCloud()
         {
-            var policy = ReadPolicyDword(SPYNET_POLICY, "SpynetReporting");
-            if (policy.HasValue) return policy.Value != 0;  // 0=管理员强制关；1/2=启用
-            EnsureCache(); return _cacheCloud > 0;
+            EnsureCache();
+            return _cacheCloud > 0;   // 0=管理员强制关；1/2=启用
         }
         public static bool SetCloud(bool enable, Action<string> log)
         {
@@ -218,9 +261,8 @@ namespace CpqSystemTool
         /// <summary>4. 自动提交样本 (SubmitSamplesConsent: 1=SendSafeSamples, 2=NeverSend)。</summary>
         public static bool GetSampleSubmit()
         {
-            var policy = ReadPolicyDword(SPYNET_POLICY, "SubmitSamplesConsent");
-            if (policy.HasValue) return policy.Value == 1 || policy.Value == 3;
-            EnsureCache(); return _cacheSample == 1 || _cacheSample == 3;
+            EnsureCache();
+            return _cacheSample == 1 || _cacheSample == 3;
         }
         public static bool SetSampleSubmit(bool enable, Action<string> log)
         {
@@ -247,14 +289,26 @@ namespace CpqSystemTool
         }
 
         /// <summary>5. 篡改防护 (TamperProtection: 0/4=关, 1/5=开)。受自己保护。Features 键受 TP 保护。Policies 没这键（TP 只能用 Features 路径）。</summary>
-        public static bool GetTamper()
+        // ===================== 篡改防护(TP)：只读，不可经脚本改 =====================
+        // Windows 11 下 TP 开启时仅 Windows 安全中心 GUI 能切换；任何脚本/工具/注册表写都被 TP 拦截。
+        // 因此本工具不提供 SetTamper——只提供 IsTamperProtectionEnabled() 读 + OpenSecurityCenter() 跳转手动开关。
+
+        /// <summary>读 Get-MpComputerStatus.IsTamperProtected（runtime 真实状态，与诊断一致）。
+        /// 不要用 Get-MpPreference.TamperProtection 判断——本机实测该字段为空，会误判 TP 关闭，导致禁用操作漏报。</summary>
+        public static bool IsTamperProtectionEnabled()
         {
-            EnsureCache(); return _cacheTamper == 1 || _cacheTamper == 5;
-        }
-        public static bool SetTamper(bool enable, Action<string> log)
-        {
-            // Features 键受 TP 保护（TP 开时 Set-MpPreference 也会拦）——只能尽力
-            return SetInt("篡改防护", "TamperProtection", enable ? 5 : 4, log);
+            try
+            {
+                var s = Exec.RunPowerShellGet(
+                    "$ErrorActionPreference='SilentlyContinue'; " +
+                    "if ((Get-MpComputerStatus).IsTamperProtected) { '1' } else { '0' }", null);
+                s = (s ?? "").Trim();
+                if (s == "1") return true;
+                if (s == "0") return false;
+            }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
+            // 解析失败回退：默认视为开启（保守——让用户先手动关 TP 再操作，避免漏报）
+            return true;
         }
 
         // ===================== 一键禁用/恢复（批量调用前 4 个，不含 TP） =====================
@@ -310,7 +364,8 @@ namespace CpqSystemTool
             }
             catch (Exception ex) { log("   [!!] MDM: " + ex.Message); }
 
-            // 3. 尝试删 GP 子键（RT_POLICY / SPYNET_POLICY / 根键）——DACL 限制下可失败，值已清即够
+            // 3. 尝试删 GP 子键（RT_POLICY / SPYNET_POLICY / 根键）——DACL 限制下删键会失败，
+            //    此时退路逐个删具体 Disable*/Spynet 值，避免残留遗留（实测本机会遗留 DisableRealtimeMonitoring=1 等死值）。
             foreach (var path in new[] { DEFENDER_RT_POLICY, SPYNET_POLICY, DEFENDER_POLICY })
             {
                 total++;
@@ -320,13 +375,225 @@ namespace CpqSystemTool
                     continue;
                 }
                 bool deleted = RegistryHelper.DeleteKeyTree(Registry.LocalMachine, path, log);
-                if (deleted) { log("   [OK] 已删: " + path); ok++; }
-                else { log("   [!!] 删失败: " + path + "（DACL 限制，可接受——值已清）"); }
+                if (deleted) { log("   [OK] 已删: " + path); ok++; continue; }
+                // ponytail: 删键被 DACL 限制失败 → 不放弃，退路清具体值（死值残留会骗 UI 显示"已禁用"）
+                log("   [!] 删子键失败（DACL 限制），退路清理具体值…");
+                var names = path == SPYNET_POLICY ? SPYNET_VALUE_NAMES
+                          : path == DEFENDER_POLICY ? new[] { "DisableAntiSpyware", "DisableAntiVirus" }
+                          : RT_DISABLE_VALUE_NAMES;
+                int cleared = 0;
+                foreach (var name in names)
+                    if (RegistryHelper.DeleteValueChecked(Registry.LocalMachine, path, name, log))
+                        cleared++;
+                if (cleared > 0) { log("   [OK] 退路清掉 " + cleared + " 个值"); ok++; }
+                else log("   [!!] 无具体值可清（可能已被其它程序占用 DACL）");
             }
 
             log(ok >= total ? "=== 完成 ===" : "=== 部分成功 " + ok + "/" + total + " ===");
             log("提示：重新打开 Windows 安全中心验证（切到别的页再回来刷新）。若仍显示管理员管理，把日志发我。");
             return ok;
+        }
+
+        // ===================== 临时禁用/启用（03/04 逻辑，仅 Set-MpPreference，不写 Policies） =====================
+        // 定位：与「一键禁用/恢复」并列的轻量路径——只动 Defender runtime Preferences，
+        // 不碰注册表 Policies、不触发 ClearAllPolicies，适合"临时让位给某安装程序"场景。
+        // TP 开启时 Set-MpPreference 会被拦，故入口先查 TP；TP 开则提示 + 跳转安全中心，不执行。
+
+        /// <summary>临时禁用：实时保护=关、云保护=关、样本=不提交。不动 Policies 注册表。TP 开则提示并跳转，不执行。</summary>
+        public static void TemporaryDisable(Action<string> log)
+        {
+            log("=== 临时禁用 Defender（仅 Preferences，不动 Policies）===");
+            if (IsTamperProtectionEnabled())
+            {
+                log("   ⚠ 篡改防护(TP)已开启：Windows 会拦截 Set-MpPreference，临时禁用不会真正生效。");
+                log("   请先在「Windows 安全中心 → 病毒和威胁防护 → 管理设置」关闭「篡改防护」，再重试。");
+                log("   正在跳转到安全中心设置页…");
+                OpenSecurityCenter();
+                return;
+            }
+            int ok = 0, fail = 0;
+            // 临时禁用走"直接 Set-MpPreference"（不写 Policies），与一键禁用（双路同步）区分
+            if (SetPrefOnly("实时保护", "DisableRealtimeMonitoring", 1, log)) ok++; else fail++;
+            if (SetPrefOnly("行为监控", "DisableBehaviorMonitoring", 1, log)) ok++; else fail++;
+            if (SetPrefOnly("云保护", "MAPSReporting", 0, log)) ok++; else fail++;
+            if (SetPrefOnly("样本提交", "SubmitSamplesConsent", 2, log)) ok++; else fail++;
+            LastOperationFullSuccess = (fail == 0);
+            log("=== 临时禁用完成: " + ok + " 成功, " + fail + " 失败 ===");
+            log("   提示：Windows 重启后 Defender 配置会被还原，临时禁用不需手动恢复。");
+        }
+
+        /// <summary>临时恢复：实时保护=开、云保护=开、样本=发送安全样本。仅 Preferences。TP 开则提示并跳转。</summary>
+        public static void TemporaryEnable(Action<string> log)
+        {
+            log("=== 临时恢复 Defender（仅 Preferences，不动 Policies）===");
+            if (IsTamperProtectionEnabled())
+            {
+                log("   ⚠ 篡改防护(TP)已开启：Windows 会拦截 Set-MpPreference，临时恢复不会真正生效。");
+                log("   请先在「Windows 安全中心 → 病毒和威胁防护 → 管理设置」关闭「篡改防护」，再重试。");
+                log("   正在跳转到安全中心设置页…");
+                OpenSecurityCenter();
+                return;
+            }
+            int ok = 0, fail = 0;
+            if (SetPrefOnly("实时保护", "DisableRealtimeMonitoring", 0, log)) ok++; else fail++;
+            if (SetPrefOnly("行为监控", "DisableBehaviorMonitoring", 0, log)) ok++; else fail++;
+            if (SetPrefOnly("云保护", "MAPSReporting", 2, log)) ok++; else fail++;
+            if (SetPrefOnly("样本提交", "SubmitSamplesConsent", 1, log)) ok++; else fail++;
+            LastOperationFullSuccess = (fail == 0);
+            log("=== 临时恢复完成: " + ok + " 成功, " + fail + " 失败 ===");
+        }
+
+        /// <summary>只写 Set-MpPreference（runtime Preferences），不碰 Policies 注册表。供临时禁用/恢复使用。</summary>
+        private static bool SetPrefOnly(string label, string cmdletParam, int val, Action<string> log)
+        {
+            log("[API] " + label + " -> " + val + " (Preferences only)…");
+            int r = Exec.RunPowerShell("Set-MpPreference -" + cmdletParam + " " + val, log);
+            if (r != 0) log("   [!] Set-MpPreference 退出 " + r + "（可能被 TP 拦截）");
+            else log("   [OK] Preferences 已更新");
+            if (r == 0)
+            {
+                // 同步内存缓存，避免后续 Get* 读到旧值
+                switch (cmdletParam)
+                {
+                    case "DisableRealtimeMonitoring": _cacheRealtime = val; break;
+                    case "DisableBehaviorMonitoring": _cacheBehavior = val; break;
+                    case "MAPSReporting": _cacheCloud = val; break;
+                    case "SubmitSamplesConsent": _cacheSample = val; break;
+                }
+                _cacheValid = true;
+            }
+            return r == 0;
+        }
+
+        // ===================== 安全中心跳转（06 逻辑：直达 病毒和威胁防护 → 管理设置 页） =====================
+
+        /// <summary>直达 Windows 安全中心「病毒和威胁防护 → 管理设置」页（TP 开关所在页，截图页）。
+        /// 三层跳转（按可靠性排序）：
+        ///   1. 主路径 windowsdefender://threatsettings（系统内置协议 + 子路径，Win10 1903+/Win11 通用，
+        ///      直达管理设置页；Win+R 实测可用）。HKCU\Software\Classes\windowsdefender 注册存在性预检通过即用。
+        ///   2. 静默 fallback ms-settings:windows-security-center（系统设置框架，主路径协议未注册/SecHealthUI 包缺失时兜底；
+        ///      只到安全中心主入口不到管理设置子页，但不弹"需要新应用"）。
+        ///   3. TODO（暂不实现）：ms-windows-defender:VirusThreatProtectionSettings——Win11 官方原生支持的 UWP 协议，
+        ///      新装正常系统可用且能直达管理设置页；本机实测弹"需要新应用"是 SecHealthUI app 包被精简/损坏所致
+        ///      （winhelponline：windowsdefender: 与 ms-windows-defender: 都依赖 SecHealthUI 包存在 + 服务已启动，
+        ///      包缺失时两者都会弹错）。本机注册表实测 ms-windows-defender: 仍 FOUND，说明协议注册还在、是 app 包问题。
+        ///      将来若 windowsdefender: 族被微软调整，此协议是比 ms-settings 更强的备选（直达子页）。
+        /// 调用要点：
+        ///   - Process.Start + UseShellExecute=true（默认）：让 Shell 原生接管协议处理；
+        ///   - Task.Run 后台派单：UI 线程立刻返回，不卡 UI；
+        ///   - 已知代价：跳转后 UWP 安全中心（SecHealthUI）冷启动渲染约 0.8-1.2s 期间桌面会"闪黑"——
+        ///     Windows 系统固有行为（ms-settings 走同一宿主同样闪黑），代码层无法消除。
+        /// </summary>
+        public static void OpenSecurityCenter()
+        {
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                // 预检：windowsdefender: 协议注册存在性（HKCU\Software\Classes\windowsdefender）
+                bool wdOk = false;
+                try
+                {
+                    using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Classes\windowsdefender"))
+                        wdOk = (k != null);
+                }
+                catch (Exception ex) { DebugLog.Ignore(ex); }
+
+                if (wdOk)
+                {
+                    // 主路径：windowsdefender://threatsettings 直达管理设置页
+                    try { Process.Start("explorer.exe", "windowsdefender://threatsettings"); return; }
+                    catch (Exception ex) { DebugLog.Ignore(ex); }
+                }
+                // 静默 fallback：ms-settings:windows-security-center（主路径协议未注册或调用失败时兜底）
+                try { Process.Start("explorer.exe", "ms-settings:windows-security-center"); }
+                catch (Exception ex) { DebugLog.Ignore(ex); }
+                // TODO：将来评估 ms-windows-defender:VirusThreatProtectionSettings（Win11 原生，直达子页；
+                //       本机因 SecHealthUI 包精简弹错，新装正常系统可用）
+            });
+        }
+
+        // ===================== 注册表快照：备份 / 列取 / 回滚（02/07 逻辑） =====================
+        // 定位：改 Policies 前先 reg export 两个服务键 + Defender 策略键做快照；出问题 reg import 回滚。
+        // 快照文件统一放 cpq-tool\安全防护\regbackup\（安全防护页自己的数据，不属于 Office 部署），文件名带时间戳（BEFORE/AFTER 配对）。
+
+        /// <summary>快照目录：cpq-tool\安全防护\regbackup\（AppPaths.RegBackupDir）。</summary>
+        private static string SnapDir()
+        {
+            var d = AppPaths.RegBackupDir;
+            Directory.CreateDirectory(d);
+            return d;
+        }
+
+        /// <summary>要纳入快照的 HKLM 键（含 Services 两键 + Defender 策略三键）。</summary>
+        private static readonly string[] SNAP_KEYS =
+        {
+            @"SYSTEM\CurrentControlSet\Services\SecurityHealthService",
+            @"SYSTEM\CurrentControlSet\Services\wscsvc",
+            @"SOFTWARE\Policies\Microsoft\Windows Defender",
+            @"SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection",
+            @"SOFTWARE\Policies\Microsoft\Windows Defender\Spynet",
+            @"SOFTWARE\Microsoft\Windows Defender\Features"
+        };
+
+        private static string SnapStamp() => DateTime.Now.ToString("yyyyMMdd_HHmmss");
+
+        /// <summary>改动前备份：reg export 各快照键 → 安全防护\regbackup\<tag>_<stamp>_<key>.reg。返回快照目录路径（空串=失败）。</summary>
+        public static string BackupSnapshots(string tag, Action<string> log)
+        {
+            log("=== 备份注册表快照（" + tag + "）===");
+            string dir;
+            try { dir = SnapDir(); }
+            catch (Exception ex) { log("   [!!] 无法创建快照目录: " + ex.Message); return ""; }
+            string stamp = SnapStamp();
+            int ok = 0;
+            foreach (var key in SNAP_KEYS)
+            {
+                // 键不存在 reg export 会报错，跳过（只备份实际存在的键）
+                if (!RegistryHelper.KeyExists(Registry.LocalMachine, key))
+                {
+                    log("   [-] 键不存在，跳过: " + key);
+                    continue;
+                }
+                string file = Path.Combine(dir, tag + "_" + stamp + "_" + key.Replace('\\', '_') + ".reg");
+                int r = Exec.RunCmd(new[] { "reg", "export", "HKEY_LOCAL_MACHINE\\" + key, file, "/y" }, log, false);
+                if (r == 0) { ok++; log("   [OK] 已备份: " + Path.GetFileName(file)); }
+                else log("   [!!] 备份失败(" + r + "): " + key);
+            }
+            log("=== 备份完成: " + ok + "/" + SNAP_KEYS.Length + " 个键 -> " + dir + " ===");
+            return ok > 0 ? dir : "";
+        }
+
+        /// <summary>列出快照目录下的 .reg 文件（按文件名倒序，新在前）。文件名含 tag+时间戳+键名。</summary>
+        public static List<string> ListSnapshots()
+        {
+            var list = new List<string>();
+            try
+            {
+                var dir = SnapDir();
+                foreach (var f in Directory.GetFiles(dir, "*.reg"))
+                    list.Add(f);
+                list.Sort((a, b) => string.CompareOrdinal(b, a));
+            }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
+            return list;
+        }
+
+        /// <summary>回滚：把指定快照文件 reg import 回注册表。调用方必须先经 UI 确认（破坏性）。</summary>
+        public static bool RestoreFromSnapshot(string regFile, Action<string> log)
+        {
+            log("=== 回滚注册表快照: " + Path.GetFileName(regFile) + " ===");
+            if (string.IsNullOrEmpty(regFile) || !File.Exists(regFile))
+            {
+                log("   [!!] 快照文件不存在: " + regFile);
+                return false;
+            }
+            int r = Exec.RunCmd(new[] { "reg", "import", regFile }, log, false);
+            if (r == 0)
+            {
+                log("   [OK] 回滚完成。若涉及服务 Start 值，请重启或重启服务后生效。");
+                return true;
+            }
+            log("   [!!] 回滚失败，退出码 " + r + "。");
+            return false;
         }
 
         // ===================== 诊断：读 Get-MpComputerStatus（runtime 实际状态） =====================
@@ -349,10 +616,15 @@ namespace CpqSystemTool
                 if (s.Contains("AMRunningMode=Passive") || s.Contains("AMRunningMode=SxS Passive"))
                     log("   ✅ AMRunningMode=Passive → Defender 不主动扫描，禁用已生效（安全中心 UI 只是陈旧）");
                 else
-                    log("   ⚠ AMRunningMode=Normal → Defender 仍在完全运行，改动被 runtime 自我保护拒绝");
-                log("   RealTimeProtectionEnabled=False → 实时保护真关了");
-                log("   RealTimeProtectionEnabled=True → 实时保护还在跑");
-                log("   IsTamperProtected=True → TP 开着（自我保护拦截了 Set-MpPreference）");
+                    log("   ℹ AMRunningMode=Normal → Defender 引擎在运行（实时保护是否开启看下行 RealTimeProtectionEnabled，Normal≠一定在主动扫描）");
+                if (s.Contains("RealTimeProtectionEnabled=False"))
+                    log("   ✅ RealTimeProtectionEnabled=False → 实时保护真关了（禁用已生效）");
+                else if (s.Contains("RealTimeProtectionEnabled=True"))
+                    log("   ⚠ RealTimeProtectionEnabled=True → 实时保护还在跑（改动被 runtime 拒或未生效）");
+                if (s.Contains("IsTamperProtected=True"))
+                    log("   ⚠ IsTamperProtected=True → TP 开着（会拦截 Set-MpPreference，需先在安全中心关 TP）");
+                else if (s.Contains("IsTamperProtected=False"))
+                    log("   ✅ IsTamperProtected=False → TP 已关，外部脚本可正常改 Defender");
             }
             catch (Exception ex) { log("   [!!] 诊断异常: " + ex.Message); }
         }
@@ -360,6 +632,8 @@ namespace CpqSystemTool
         public static void Disable(Action<string> log)
         {
             log("=== 一键禁用 Defender（前 4 项，不含 TP）===");
+            if (IsTamperProtectionEnabled())
+                log("   ⚠ 检测到篡改防护(TP)已开启：Windows 会拦截对 Defender 的运行时修改，本操作很可能无法真正禁用，仅会留下策略残留。请先在 Windows 安全中心→病毒和威胁防护→管理设置→关闭「篡改防护」，再重试。");
             int ok = 0, fail = 0;
             if (SetRealtime(false, log)) ok++; else fail++;
             if (SetBehavior(false, log)) ok++; else fail++;
@@ -372,6 +646,8 @@ namespace CpqSystemTool
         public static void Enable(Action<string> log)
         {
             log("=== 一键恢复 Defender（前 4 项，不含 TP）===");
+            if (IsTamperProtectionEnabled())
+                log("   ⚠ 检测到篡改防护(TP)已开启：恢复(启用)通常可生效，但 UI 状态请以诊断(RealTimeProtectionEnabled)为准；若仍异常，先手动关闭 TP 再重试。");
             // 先清 Policies 残留（解决"管理员管理"问题）——幂等：清完再写新的
             ClearAllPolicies(log);
             log("");

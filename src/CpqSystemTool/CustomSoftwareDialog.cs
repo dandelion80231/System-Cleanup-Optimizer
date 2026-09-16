@@ -17,6 +17,15 @@ namespace CpqSystemTool
     /// </summary>
     internal static class DialogChrome
     {
+        /// <summary>【P3-15】标准窗（非透明圆角卡）版弹窗样板：居中 owner + 不可调大小 + 不占任务栏。
+        /// 供 ToolWindow/标准 chrome 弹窗一行替代 3 行内联样板；如需覆盖个别属性（如可缩放），调用后再设。
+        /// 注：与 Apply（透明圆角卡）不同源：后者会重写 WindowStyle/AllowsTransparency/背景，不适用于标准 chrome 弹窗。</summary>
+        internal static void ApplyStandard(Window w)
+        {
+            w.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            w.ResizeMode = ResizeMode.NoResize;
+            w.ShowInTaskbar = false;
+        }
         /// <summary>为独立弹窗注入圆角阴影卡所需的 ControlTemplate 与同名主题笔刷（主界面 Window.Resources 不会自动继承到独立窗口）。</summary>
         internal static void Apply(Window w, MainWindow owner)
         {

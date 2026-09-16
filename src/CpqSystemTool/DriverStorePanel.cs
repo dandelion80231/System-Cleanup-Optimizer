@@ -624,6 +624,7 @@ namespace CpqSystemTool
             {
                 fbd.Description = "选择驱动备份保存目录";
                 fbd.ShowNewFolderButton = true;
+                fbd.SelectedPath = AppPaths.EnsureDir(AppPaths.DriverBackupDir);
                 if (fbd.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
                 string dir = fbd.SelectedPath;
                 RunInBg(logf => DriverStore.Export(targets, dir, logf), "驱动备份完成");

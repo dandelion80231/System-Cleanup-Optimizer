@@ -760,7 +760,7 @@ namespace CpqSystemTool
                 using var fs = File.OpenRead(path);
                 if (fs.Length < 2) return false;
                 var header = new byte[2];
-                fs.Read(header, 0, 2);
+                fs.ReadExactly(header);
                 return header[0] == 0x4D && header[1] == 0x5A; // "MZ"
             }
             catch { return false; }

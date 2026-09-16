@@ -334,6 +334,25 @@ namespace CpqSystemTool
         }
 
         /// <summary>
+        /// 给 ItemsControl 日志框加统一圆角外框（用于彩色富日志）。
+        /// </summary>
+        private Border WrapLogBoxRich(UIElement ic, double cornerRadius = 8)
+        {
+            return new Border
+            {
+                Child = ic,
+                Background = _isDarkMode ? Brushes.Transparent : _bgCard,
+                BorderBrush = _panelBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(cornerRadius),
+                Padding = new Thickness(2),
+                Margin = new Thickness(0, 4, 0, 0),
+                VerticalAlignment = VerticalAlignment.Stretch,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+        }
+
+        /// <summary>
         /// 将页面根元素高度约束绑定到内容区(ScrollViewer)的实际渲染高度。
         /// ★ 用 ActualHeight（只读 DependencyProperty，尺寸变化时自动通知）替代手动读 ViewportHeight：
         ///   ViewportHeight 不是 DependencyProperty，绑定只求值一次、缩放后永不更新 → 首帧/缩放后状态陈旧。
@@ -423,6 +442,7 @@ namespace CpqSystemTool
                 }
             }) { IsBackground = true, Name = "RunInBgWorker" }.Start();
         }
+
 
         // 日志滚动降频参数：普通行在行数低于阈值时保持"每行 ScrollToEnd"（与旧行为一致）；
         // 超过阈值后改为每 N 行滚动一次，降低长任务（清理/探针/下载）大量追加日志时的 UI 线程布局压力。

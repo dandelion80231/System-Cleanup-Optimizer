@@ -313,29 +313,23 @@ namespace CpqSystemTool
             bool ok = false;
             try
             {
-                // 1) WMI 格式化计数器（首选）。
-                u = QueryUseCounts("Win32_PerfFormattedData_PerfOS_Memory", totalPhys, u);
-                // WMI 格式化性能计数器首次查询常返回全 0（计数器尚未"cook"），重试一次以取到真实值。
-                if (IsBreakdownEmpty(u))
-                {
-                    System.Threading.Thread.Sleep(80);
-                    u = QueryUseCounts("Win32_PerfFormattedData_PerfOS_Memory", totalPhys, u);
-                }
-                ok = !IsBreakdownEmpty(u);
+                // 1) PDH 直接读取性能计数器（首选，原生 API，无 WMI 冷启动开销；内部已双 collect 处理 cooking）。
+                ok = TryQueryUseCountsPdh(totalPhys, u);
+                if (!ok) Debug.WriteLine("GetUseCounts: PDH 取数失败，回退 WMI。");
 
-                // 2) WMI 原始计数器回退。
+                // 2) WMI 格式化计数器回退。
                 if (!ok)
                 {
-                    Debug.WriteLine("GetUseCounts: WMI formatted class returned empty, trying raw class.");
+                    u = QueryUseCounts("Win32_PerfFormattedData_PerfOS_Memory", totalPhys, u);
+                    ok = !IsBreakdownEmpty(u);
+                    if (!ok) Debug.WriteLine("GetUseCounts: WMI 格式化类为空，回退原始类。");
+                }
+
+                // 3) WMI 原始计数器回退。
+                if (!ok)
+                {
                     u = QueryUseCounts("Win32_PerfRawData_PerfOS_Memory", totalPhys, u);
                     ok = !IsBreakdownEmpty(u);
-                }
-
-                // 3) PDH 直接读取性能计数器回退（绕过 WMI）。
-                if (!ok)
-                {
-                    Debug.WriteLine("GetUseCounts: WMI raw class also empty, falling back to PDH.");
-                    ok = TryQueryUseCountsPdh(totalPhys, u);
                 }
 
                 // 4) 最终降级：从 GetOverview 可靠数据构造一个简化的拆解视图。

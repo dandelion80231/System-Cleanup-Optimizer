@@ -74,9 +74,8 @@ namespace CpqSystemTool
             Title = "系统功能调节";
             Width = 540;
             Height = 580;
-            WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            DialogChrome.ApplyStandard(this);   // 【P3-15】居中/不可调/不占任务栏 三行样板一行化
             WindowStyle = WindowStyle.ToolWindow;
-            ResizeMode = ResizeMode.NoResize;
             Background = _bg;
             Foreground = _fg;
             FontFamily = new FontFamily("Microsoft YaHei");
@@ -428,9 +427,8 @@ namespace CpqSystemTool
 
             Title = "远程桌面端口设置";
             Width = 340; Height = 200;
-            WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            DialogChrome.ApplyStandard(this);   // 【P3-15】居中/不可调/不占任务栏 三行样板一行化
             WindowStyle = WindowStyle.ToolWindow;
-            ResizeMode = ResizeMode.NoResize;
             Background = _bg;
 
             var root = new StackPanel { Margin = new Thickness(16) };

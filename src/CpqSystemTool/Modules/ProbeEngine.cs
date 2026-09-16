@@ -84,8 +84,37 @@ namespace CpqSystemTool
         public static readonly Regex PackageUrlRe = new Regex(@"https?://[^\s""'<>()\\]+?\.(?:zip|7z|rar)(?:\?[^\s""'<>()\\]*)?", RegexOptions.IgnoreCase);
         public static readonly Regex FileRedirectRe = new Regex(@"https?://[^\s""'<>()\\]*?file_redirect\.fcg[^\s""'<>()\\]*", RegexOptions.IgnoreCase);
 
-        public const string KimiWinCdn = "https://kimi-img.moonshot.cn/app/download/windows/kimi_3.1.3.exe";
-        public const string CozeWinCdn = "https://lf3-cdn-tos.bytegoofy.com/obj/tron-demo/7617773946401724698/447322331/1.1.29/win32-x64/Coze-v1.1.29-win32-x64.exe";
+        // 【P1-5 外置直链】内置兑底 CDN 直链硬编码版本号会随厂商发版失效（原注释已承认「可能版本已过期 404，请手动更新探针数据」）。
+        // 现支持 cpq-tool\配置\probe-cdn.json 覆盖（免发版热更，重启生效）；文件缺失/字段缺失时退回下方内置默认值。
+        public const string KimiWinCdnDefault = "https://kimi-img.moonshot.cn/app/download/windows/kimi_3.1.3.exe";
+        public const string CozeWinCdnDefault = "https://lf3-cdn-tos.bytegoofy.com/obj/tron-demo/7617773946401724698/447322331/1.1.29/win32-x64/Coze-v1.1.29-win32-x64.exe";
+
+        /// <summary>probe-cdn.json 覆盖表（声明在 FallbackCdn/VendorMap 之前，保证静态初始化顺序：先读覆盖表再建字典）。
+        /// 文件格式：{"kimi": "https://…/new-kimi.exe", "coze": "https://…/new-coze.exe"}，两字段均可省略（省略=用内置默认）。</summary>
+        private static readonly Dictionary<string, string> CdnOverride = LoadCdnOverrides();
+        public static string KimiWinCdn => CdnOverride.TryGetValue("kimi", out var k) ? k : KimiWinCdnDefault;
+        public static string CozeWinCdn => CdnOverride.TryGetValue("coze", out var c) ? c : CozeWinCdnDefault;
+
+        /// <summary>读 cpq-tool\配置\probe-cdn.json（可选）。解析失败/缺字段一律回退内置默认值，绝不阻断探针主流程。</summary>
+        private static Dictionary<string, string> LoadCdnOverrides()
+        {
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                string p = System.IO.Path.Combine(AppPaths.ConfigDir, "probe-cdn.json");
+                if (!System.IO.File.Exists(p)) return result;
+                string txt = System.IO.File.ReadAllText(p);
+                foreach (var key in new[] { "kimi", "coze" })
+                {
+                    // 该文件只接受两字段平铺格式，正则提取即可（无需引入 JSON 解析器）
+                    string pattern = "\"" + key + "\"\\s*:\\s*\"(https?://[^\"\\s]+)\"";
+                    var m = System.Text.RegularExpressions.Regex.Match(txt, pattern);
+                    if (m.Success) result[key] = m.Groups[1].Value;
+                }
+            }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
+            return result;
+        }
 
         public static readonly Dictionary<string, string> FallbackCdn = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -272,6 +301,9 @@ namespace CpqSystemTool
         // 性能优化：Classify 会对每个候选链接调用一次，原来每次调用都 new 4 个 Regex
         // （构造 + JIT 编译 + 缓存预热，是纯浪费）。提为静态只读：编译一次、永久复用。
         private static readonly Regex ReExe = new Regex(@"\.exe(\?|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        // 【P3-18】原为 PickRecommended（ProbeEngine 类）第三兜底内的局部 new Regex（每次推荐都构造+JIT，同 ReExe 段注释所述纯浪费），提为静态只读与上方四兄弟同列；
+        // ProbeEngine.PickRecommended 跨类使用，故 internal 而非 private
+        internal static readonly Regex ReNonInstaller = new Regex(@"\.(js|css|html|htm|json|xml|txt|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|eot)(\?|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex ReX64 = new Regex(@"x64|x86[_-]?64|win64|amd64|64bit", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex ReNoX64 = new Regex(@"no-?x64", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex ReArm64 = new Regex(@"arm64|aarch64", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -304,7 +336,8 @@ namespace CpqSystemTool
     internal static class ProbeEngine
     {
         // 重定向步数硬上限：手动跟随重定向（AllowAutoRedirect=false）时避免无限循环/环回
-        private const int MAX_REDIRECTS = 10;
+        // 【修 P2-10】原 MAX_REDIRECTS 命名暗示通用，实际仅 VerifyExeAsync 递归深度使用，改名明示作用域。
+        private const int VERIFY_MAX_REDIRECTS = 10;
 
         private static readonly HttpClient Http = new HttpClient(new HttpClientHandler
         {
@@ -315,17 +348,23 @@ namespace CpqSystemTool
             Timeout = TimeSpan.FromSeconds(60)  // 探针请求给足 60 秒超时，避免网络慢时误判
         };
 
-        // 初始化 TLS 安全协议：确保使用 TLS 1.2+，兼容现代 HTTPS 服务器
-        // .NET Framework 4.8 默认可能只启用 TLS 1.0/1.1，需要显式启用 TLS 1.2
-        static ProbeEngine()
+        /// <summary>快速路径（ProbeSiteFastAsync）专用共享客户端：SocketsHttpHandler 带 10 分钟连接寿命轮转，
+        /// 解决原「每次 new/dispose HttpClientHandler」的两大缺陷——① 放弃 TCP 连接复用（TIME_WAIT 堆积）
+        /// ② dispose 时 keep-alive 连接仍活跃可能抛 ObjectDisposedException 竞态。
+        /// 防挂起语义保留：每次调用仍只 new 一个 CancellationTokenSource（per-call CTS），连接生命周期由 PooledConnectionLifetime 治理。
+        /// 与 Downloader.cs 的 SocketsHttpHandler 同款配置（纯直连 + 连接寿命轮转）。</summary>
+        private static readonly HttpClient FastHttp = new HttpClient(new SocketsHttpHandler
         {
-            var original = System.Net.ServicePointManager.SecurityProtocol;
-            System.Net.ServicePointManager.SecurityProtocol |=
-                System.Net.SecurityProtocolType.Tls12 |
-                System.Net.SecurityProtocolType.Tls13;
-            var modified = System.Net.ServicePointManager.SecurityProtocol;
-            System.Diagnostics.Debug.WriteLine($"[DIAG] SecurityProtocol: {original} -> {modified}");
-        }
+            AllowAutoRedirect = false,   // 探针要手动跟随重定向并记录每一步，必须关自动重定向
+            UseProxy = false,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+        })
+        {
+            Timeout = TimeSpan.FromSeconds(30)  // 原 per-call client 的超时不变，行为等价
+        };
+
+        // 注：net10 默认已启用 TLS 1.2/1.3，无需也不应再设置已过时的 ServicePointManager.SecurityProtocol
+        // （旧代码的全局 TLS 初始化在 net10 下既冗余又触发 SYSLIB0014，已移除）。
 
         // UA 池：近期 Chrome/Edge 桌面 UA（Win11 x64），按静态计数器轮换，避免固定单一 UA 被目标站按指纹识别。
         // 不再在 DefaultRequestHeaders 写死 UA，改为每个请求自行带一个池内 UA。
@@ -502,7 +541,7 @@ namespace CpqSystemTool
                     }
                     else
                     {
-                        logf("   ⚠️ VendorMap 直链验证失败（可能 404），请手动更新探针数据。");
+                        logf("   ⚠️ VendorMap 直链验证失败（可能 404）。可免发版修复：在 cpq-tool\\配置\\probe-cdn.json 写入新直链 {\"kimi\": \"…\", \"coze\": \"…\"}，重启后生效；或手动更新探针数据。");
                     }
                 }
             }
@@ -523,11 +562,11 @@ namespace CpqSystemTool
                         if (string.IsNullOrEmpty(result.Recommended)) result.Recommended = rec.Url;
                         logf("   ✅ 兜底命中: " + rec.Url);
                     }
-                    else logf("   ⚠️ 兜底 CDN 直链验证失败（可能版本已过期 404），请在探针中更新版本号或改回官网实时抓取。");
+                    else logf("   ⚠️ 兜底 CDN 直链验证失败（可能版本已过期 404）。可免发版修复：在 cpq-tool\\配置\\probe-cdn.json 写入新直链（{\"kimi\": \"…\", \"coze\": \"…\"}），重启生效；或手动更新探针数据/改回官网实时抓取。");
                 }
                 else
                 {
-                    logf("   ⚠️ 兜底 CDN 直链验证失败（可能版本已过期 404），请在探针中更新版本号或改回官网实时抓取。");
+                    logf("   ⚠️ 兜底 CDN 直链验证失败（可能版本已过期 404）。可免发版修复：在 cpq-tool\\配置\\probe-cdn.json 写入新直链（{\"kimi\": \"…\", \"coze\": \"…\"}），重启生效；或手动更新探针数据/改回官网实时抓取。");
                     result.Rows.Add(MakeCdnFailedRow(trimmed, vendorKey));
                 }
             }
@@ -536,28 +575,19 @@ namespace CpqSystemTool
         }
 
         // 无浏览器快速路径：HTTP 抓取入口 HTML/JSONP，扫描直链并验证
-        // 注意：不使用静态 Http 客户端，而是每次创建新的，避免连接池复用导致的间歇性超时
+        // 使用共享 FastHttp 客户端（SocketsHttpHandler + PooledConnectionLifetime），不再每次 new/dispose handler
         private static async Task<BrowserProbeResult> ProbeSiteFastAsync(string entryUrl, bool skipDownloadCheck, Action<string> logf)
         {
             try
             {
                 logf("   [DIAG] ProbeSiteFastAsync: entryUrl=" + entryUrl);
-                // 使用独立 HttpClient，避免共享连接池的间歇性超时问题
-                using var handler = new HttpClientHandler
-                {
-                    AllowAutoRedirect = false,
-                    UseProxy = false,
-                };
-                using var client = new HttpClient(handler)
-                {
-                    Timeout = TimeSpan.FromSeconds(30)
-                };
+                // 共享 FastHttp（SocketsHttpHandler，连接寿命轮转）；防挂起靠下方 per-call CTS，不再每次 new handler
                 var req = new HttpRequestMessage(HttpMethod.Get, entryUrl);
                 ApplyBrowserHeaders(req, entryUrl);
-                logf("   [DIAG] HttpGetAsync 发送请求: " + entryUrl + ", SecurityProtocol=" + System.Net.ServicePointManager.SecurityProtocol);
+                logf("   [DIAG] HttpGetAsync 发送请求: " + entryUrl);
                 
                 using var cts = new CancellationTokenSource(60000);
-                using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+                using var resp = await FastHttp.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
                 int code = (int)resp.StatusCode;
                 logf("   [DIAG] HttpGetAsync 收到响应: StatusCode=" + code + ", Content-Type=" + (resp.Content.Headers.ContentType?.MediaType ?? "null"));
                 
@@ -710,10 +740,9 @@ namespace CpqSystemTool
 
             // 第三兜底：连 .exe 直链都没有时，返回首条「非封禁、非低信任、URL 合法、且不是脚本/配置/页面文件」的候选（可能是官网落地页）。
             // 这样「推荐直链」框至少展示最可信入口，而不是空白；同时避免把 .js/.css 等页面资源误当作安装包推荐。
-            var nonInstallerExt = new Regex(@"\.(js|css|html|htm|json|xml|txt|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|eot)(\?|$)", RegexOptions.IgnoreCase);
             var fallbackAny = cands.FindAll(s => !s.Denylisted && !s.LowTrust
                 && Uri.IsWellFormedUriString(s.Url, UriKind.Absolute)
-                && !nonInstallerExt.IsMatch(s.Url));
+                && !ProbeData.ReNonInstaller.IsMatch(s.Url));
             return fallbackAny.Count > 0 ? fallbackAny[0] : null;
         }
 
@@ -760,7 +789,7 @@ namespace CpqSystemTool
                 using var cts = new CancellationTokenSource(timeoutMs);
                 var req = new HttpRequestMessage(HttpMethod.Get, url);
                 ApplyBrowserHeaders(req, url);
-                logf?.Invoke("[DIAG] HttpGetAsync 发送请求: " + url + ", SecurityProtocol=" + System.Net.ServicePointManager.SecurityProtocol);
+                logf?.Invoke("[DIAG] HttpGetAsync 发送请求: " + url);
                 using var resp = await Http.SendAsync(req, cts.Token);
                 int code = (int)resp.StatusCode;
                 logf?.Invoke("[DIAG] HttpGetAsync 收到响应: StatusCode=" + code + ", Content-Type=" + (resp.Content.Headers.ContentType?.MediaType ?? "null"));
@@ -789,24 +818,32 @@ namespace CpqSystemTool
             }
         }
 
+        // 【修 P2-10】超时统一单一预算：原实现每层递归各自 new CTS（15s/层），N 跳重定向最坏 15×N 秒；
+        // 现顶层建单一 15s 总预算（CancellationToken），递归传递同一 token，整条重定向链共享 15s：
+        // 第 15s 时整链作废，每层 SendAsync 仍受该 token 约束（防挂起语义保留，不再叠加倍数）。
         private static async Task<VerifyResult> VerifyExeAsync(string rawUrl, int depth)
         {
-            if (depth > MAX_REDIRECTS) return new VerifyResult { url = rawUrl, status = "TOO_MANY_REDIRECTS", verified = false, redirects = depth };
+            using var budget = new CancellationTokenSource(ProbeData.VerifyTimeout);
+            return await VerifyExeAsync(rawUrl, depth, budget.Token).ConfigureAwait(false);
+        }
+
+        private static async Task<VerifyResult> VerifyExeAsync(string rawUrl, int depth, CancellationToken totalBudget)
+        {
+            if (depth > VERIFY_MAX_REDIRECTS) return new VerifyResult { url = rawUrl, status = "TOO_MANY_REDIRECTS", verified = false, redirects = depth };
             if (!Uri.IsWellFormedUriString(rawUrl, UriKind.Absolute)) return new VerifyResult { url = rawUrl, status = "INVALID_URL", verified = false, redirects = depth };
             try
             {
-                using var cts = new CancellationTokenSource(ProbeData.VerifyTimeout);
                 var req = new HttpRequestMessage(HttpMethod.Get, rawUrl);
                 ApplyBrowserHeaders(req, rawUrl);
                 req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 1023);
-                using var resp = await Http.SendAsync(req, cts.Token);
+                using var resp = await Http.SendAsync(req, totalBudget);
                 int code = (int)resp.StatusCode;
                 var loc = resp.Headers.Location;
                 var ct = (resp.Content.Headers.ContentType?.MediaType ?? "").ToLowerInvariant();
                 if (loc != null && (code == 301 || code == 302 || code == 303 || code == 307 || code == 308))
                 {
                     var next = loc.IsAbsoluteUri ? loc.AbsoluteUri : new Uri(new Uri(rawUrl), loc.ToString()).AbsoluteUri;
-                    return await VerifyExeAsync(next, depth + 1);
+                    return await VerifyExeAsync(next, depth + 1, totalBudget).ConfigureAwait(false);
                 }
                 return new VerifyResult
                 {

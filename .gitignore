@@ -33,6 +33,8 @@ autosave.json
 .workbuddy/
 .cleanup_trash/
 .archive_reports/
+# 本地完成标记（构建/脚本落点，非源码）
+_done.txt
 backup/
 # 临时 diff 对比文件，不应提交
 cr_tmp/
@@ -77,3 +79,13 @@ site-dist/
 
 # 发布产物目录（dotnet publish 输出，含 exe/dll/pdb/runtimes 与源码副本，不入库）
 src/publish/
+
+# 本地产物 / 调查文档（不入 git）
+ocr_*.txt
+OCR审查工作流.md
+代码审核-优化建议.md
+src/CpqSystemTool/publish_out*.txt
+src/CpqSystemTool/publish_err*.txt
+src/CpqSystemTool/_publish.out
+src/CpqSystemTool/_winrt_probe.cs.txt
+_site_*.html

@@ -38,9 +38,10 @@ DEF_DL = os.path.join(ROOT, "site-src", "download.html")
 DEF_VER = os.path.join(ROOT, "site-src", "version.json")
 DEF_VERS = os.path.join(ROOT, "site-src", "versions.json")
 
-ANCHOR_TABS = '<div class="dl-tabs" role="tablist" aria-label="选择下载版本">'
-ANCHOR_PANELS = '<div class="dl-panels">'
-ANCHOR_CHLOGS = '<div class="chlog-panels">'
+# 容错锚点（正则）：容器 div 可能被编辑器追加 data-page-node-id 等属性（v1.20 站点合并后实测），按 class 名宽松匹配
+ANCHOR_TABS = r'<div class="dl-tabs"[^>]*>'
+ANCHOR_PANELS = r'<div class="dl-panels"[^>]*>'
+ANCHOR_CHLOGS = r'<div class="chlog-panels"[^>]*>'
 
 DEP_DEPRECATED = ["dl-meta", "dl-actions", "dl-btn ", "dl-desc", "chlog-section", "dl-card"]
 
@@ -98,10 +99,10 @@ def validate(html, expect_new, old_counts):
 
 
 def insert_after(html, anchor, block):
-    idx = html.find(anchor)
-    if idx < 0:
+    m = re.search(anchor, html)
+    if not m:
         fail("找不到插入锚点: %s" % anchor)
-    cut = idx + len(anchor)
+    cut = m.end()
     return html[:cut] + "\n" + block.rstrip("\n") + "\n" + html[cut:]
 
 
@@ -159,19 +160,20 @@ def main():
     print("读入: 现有 %d 个版本，当前 active=%s，新版本=%s (%d B / %.2f MB)" % (len(tabs), old, ver, args.size, size_mb))
 
     # ---- 1) 降级旧 latest（去掉 active + aria/tabindex + 「最新」徽标）----
+    # 容忍 data-page-node-id 属性（v1.20 站点合并后编辑器普遍追加）
     html = re.sub(
-        r'<button class="dl-tab active" role="tab" aria-selected="true" aria-controls="panel-([^"]+)" tabindex="0" data-ver="([^"]+)">([^<]*)</button>',
-        r'<button class="dl-tab" role="tab" aria-selected="false" aria-controls="panel-\1" tabindex="-1" data-ver="\2">\3</button>',
+        r'<button class="dl-tab active" role="tab" aria-selected="true" aria-controls="panel-([^"]+)" tabindex="0" data-ver="([^"]+)"( data-page-node-id="[^"]*")?>([^<]*)</button>',
+        r'<button class="dl-tab" role="tab" aria-selected="false" aria-controls="panel-\1" tabindex="-1" data-ver="\2"\3>\4</button>',
         html, count=1)
     html = re.sub(
-        r'<div class="dl-panel active" role="tabpanel" id="panel-([^"]+)" data-panel="([^"]+)">',
-        r'<div class="dl-panel" role="tabpanel" id="panel-\1" data-panel="\2">',
+        r'<div class="dl-panel active" role="tabpanel" id="panel-([^"]+)" data-panel="([^"]+)"( data-page-node-id="[^"]*")?>',
+        r'<div class="dl-panel" role="tabpanel" id="panel-\1" data-panel="\2"\3>',
         html, count=1)
     html = re.sub(
-        r'<div class="chlog-panel active" data-panel="([^"]+)">',
-        r'<div class="chlog-panel" data-panel="\1">',
+        r'<div class="chlog-panel active" data-panel="([^"]+)"( data-page-node-id="[^"]*")?>',
+        r'<div class="chlog-panel" data-panel="\1"\2>',
         html, count=1)
-    html = re.sub(r'(<h3 class="dl-ver">[^<]*<span[^>]*>)（最新 · ', r"\1（", html, count=1)
+    html = re.sub(r'(<h3 class="dl-ver"(?: data-page-node-id="[^"]*")?>[^<]*<span[^>]*>)（最新 · ', r"\1（", html, count=1)
     # 顶部「本站直接托管 v1.01 – vX.XX 全部 exe」文案
     html = re.sub(r'本站直接托管 v1\.01\s*[–-]\s*v1\.\d+ 全部 exe',
                   "本站直接托管 v1.01 – %s 全部 exe" % ver, html, count=1)

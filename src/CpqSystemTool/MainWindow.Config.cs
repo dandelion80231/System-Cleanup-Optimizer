@@ -817,21 +817,12 @@ namespace CpqSystemTool
 
 
                         var dlg = new System.Windows.Forms.FolderBrowserDialog();
-
-
-
                         dlg.Description = "选择保存源码的目录";
-
-
-
+                        dlg.ShowNewFolderButton = true;
+                        string initDir = AppPaths.EnsureDir(AppPaths.SourceExportDir); // 固定默认：数据根\源码（exe 挪位时随数据根自动跟上）
+                        if (System.IO.Directory.Exists(initDir)) dlg.SelectedPath = initDir;
                         if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-
-
-
                         {
-
-
-
                             string target = dlg.SelectedPath;
 
 

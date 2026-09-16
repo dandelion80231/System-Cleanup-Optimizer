@@ -189,7 +189,8 @@ namespace CpqSystemTool
               BorderThickness=""1"" CornerRadius=""0""
               MaxHeight=""{TemplateBinding MaxDropDownHeight}""
               MinWidth=""{Binding ActualWidth, ElementName=Border}"">
-        <ScrollViewer>
+        <!-- CanContentScroll=False 关闭整行吸附滚动→像素滚动，消除 MaxDropDownHeight 不能被行高整除时末项后残留的半行空白；HorizontalScrollBarVisibility=Disabled 避免长文本触发横向滚动条占位 -->
+        <ScrollViewer CanContentScroll=""False"" HorizontalScrollBarVisibility=""Disabled"">
           <ItemsPresenter x:Name=""ItemsPresenter"" KeyboardNavigation.DirectionalNavigation=""Contained"" SnapsToDevicePixels=""{TemplateBinding SnapsToDevicePixels}""/>
         </ScrollViewer>
       </Border>

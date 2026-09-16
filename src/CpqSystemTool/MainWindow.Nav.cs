@@ -37,7 +37,7 @@ namespace CpqSystemTool
                 new NavItem { Key = "privacy",   Title = "隐私设置",   Icon = "🔒", Build = BuildPrivacy },
                 new NavItem { Key = "systools",  Title = "系统工具",   Icon = "🧰", Build = BuildSystemTools },
                 new NavItem { Key = "memory",    Title = "内存工具",   Icon = "🧠", Build = BuildMemory },
-                new NavItem { Key = "activation",Title = "激活工具", Icon = "🔑", Build = BuildActivation },
+                new NavItem { Key = "activation",Title = "office部署", Icon = "🔑", Build = BuildActivation },
                 new NavItem { Key = "sysinfo",   Title = "系统信息",   Icon = "📊", Build = BuildSystemInfo },
                 new NavItem { Key = "maint",     Title = "维护工具",   Icon = "🧰", Build = BuildMaintenanceTools },
                 new NavItem { Key = "driverstore", Title = "驱动清理", Icon = "\uD83E\uDDE9", Build = BuildDriverStore },

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Threading.Tasks;
 
 namespace CpqSystemTool
 {
@@ -283,10 +284,18 @@ namespace CpqSystemTool
             pb.Visibility = Visibility.Visible;
             RunInBg(null, l =>
             {
-                var overview = MemoryAnalyzer.GetOverview();
-                var use = MemoryAnalyzer.GetUseCounts(overview.TotalPhys, overview);
-                var procs = MemoryAnalyzer.GetProcessWorkingSets(10);
-                try { Dispatcher.Invoke(() => applyUi(overview, use, procs)); } catch { /* 窗口已关闭，忽略 */ }
+                var overview = MemoryAnalyzer.GetOverview();   // 快，且 GetUseCounts 需要 TotalPhys，先同步取
+                // 拆解计数(PDH/WMI) 与 进程工作集扫描 互不影响，并行重叠耗时（点击更跟手）。
+                var useTask = Task.Run(() => MemoryAnalyzer.GetUseCounts(overview.TotalPhys, overview));
+                var procTask = Task.Run(() => MemoryAnalyzer.GetProcessWorkingSets(10));
+                Task.WaitAll(useTask, procTask);
+                var use = useTask.Result;
+                var procs = procTask.Result;
+                // 【修 P2-11】原裸 catch 同时吞掉「窗口已关闭（Dispatcher 关停）」与「applyUi 逻辑 bug」两类异常，
+                // 后者被静默丢弃。收窄为仅捕获 Dispatcher 关停特征异常（WPF 关停时 Invoke 抛 InvalidOperationException）；
+                // 其余异常向外抛，由 RunInBgCore 统一记入 UI 日志（[!] 异常: …）而非静默丢进 DebugLog。
+                try { Dispatcher.Invoke(() => applyUi(overview, use, procs)); }
+                catch (System.InvalidOperationException) { /* Dispatcher 已关停（窗口已关闭），忽略 */ }
             }, "内存分析完成", () => pb.Visibility = Visibility.Collapsed);
         }
 

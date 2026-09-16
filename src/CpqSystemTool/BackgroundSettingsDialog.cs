@@ -154,6 +154,8 @@ namespace CpqSystemTool
             // 使用标准单边框窗口，确保标题栏×关闭按钮在所有主题下都稳定响应
             WindowStyle = WindowStyle.SingleBorderWindow;
             ResizeMode = ResizeMode.CanResize;
+            // 【P3-15】本弹窗故意不用 DialogChrome.ApplyStandard：可缩放（CanResize）+ 保留任务栏常驻（大窗口便于与主窗并排调参），
+            // 与其余固定尺寸弹窗不同属预期差异，非漏配。
             Background = owner._windowBg;
             Foreground = owner._textMain;
             FontFamily = new FontFamily("Microsoft YaHei");
@@ -541,7 +543,8 @@ namespace CpqSystemTool
                 var dlg = new Microsoft.Win32.OpenFileDialog
                 {
                     Title = "选择深色背景",
-                    Filter = "图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif|所有文件|*.*"
+                    Filter = "图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif|所有文件|*.*",
+                    InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)
                 };
                 if (dlg.ShowDialog() == true)
                 {
@@ -571,7 +574,8 @@ namespace CpqSystemTool
                 var dlg = new Microsoft.Win32.OpenFileDialog
                 {
                     Title = "选择浅色背景",
-                    Filter = "图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif|所有文件|*.*"
+                    Filter = "图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif|所有文件|*.*",
+                    InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)
                 };
                 if (dlg.ShowDialog() == true)
                 {
@@ -3267,7 +3271,8 @@ namespace CpqSystemTool
                     Filter = "SVG 文件|*.svg|所有文件|*.*",
                     FileName = "mesh-gradient.svg",
                     DefaultExt = ".svg",
-                    Title = "导出网格渐变为 SVG"
+                    Title = "导出网格渐变为 SVG",
+                    InitialDirectory = AppPaths.EnsureDir(AppPaths.WallpaperDir)
                 };
                 if (dlg.ShowDialog() == true)
                 {

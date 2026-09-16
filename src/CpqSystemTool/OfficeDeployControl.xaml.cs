@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -13,6 +14,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 
@@ -95,13 +97,21 @@ namespace CpqSystemTool
             InitializeComponent();
             InitializeComponents();
             SetupBindings();
-            // 还原合并时丢失的「已装组件自动识别」：打开即按本机实际安装的 Office 预勾选组件 / 架构 / 语言 / 版本
+            // 还原合并时丢失的「已装组件自动识别」：打开即按本机实际安装的 Office 预勾选组件 / 架构 / 语言 / 版本。
+            // 内部已做 C2R 台账 ∪ 磁盘已装组件并集（含无 C2R 台账时的磁盘兜底），故单独一行即可，无需额外调用。
             DetectInstalledOffice();
-            // 同步补探测 Outlook 两种形态：新版（Store/AppX，不在 C2R 台账，走 IsNewOutlookInstalledFast 快路径）
-            // + 经典版标记；已装则勾选网格复选框。改为同步执行，消除"切页后 ~1s 才勾上 Outlook"的延迟。
+            // 同步探测经典版 Outlook（C2R 套件应用）：已装则勾选网格复选框。
+            // 新版 Outlook（OutlookForWindows，Store/AppX）不在组件区驱动，由用户在应用内一键切换获取。
+            // 改为同步执行，消除"切页后 ~1s 才勾上 Outlook"的延迟。
             DetectOutlookStates();
             // 探测本机当前套件版本/更新通道，填「更新通道」状态区并决定「切通道/切版本」按钮可用性
             DetectCurrentChannel();
+
+            // 选项行 Grid 的一次性左缘校准：首帧渲染后，用 WPF TransformToVisual 精确测量
+            // 「安装位置」标签 (LabelLocation) 相对 OptionGrid 的左缘 X，再用 RenderTransform 把
+            // 安装位置提醒 (LocationHintText，目前在水平 StackPanel 里跟在 ARM 后面) 的左缘精确对齐。
+            // 只在 Loaded 时执行一次（不挂 LayoutUpdated/SizeChanged → 不做每帧 RenderTransform → 不闪）。
+            Loaded += (s, e) => CalibrateHintRowLeftEdgeOnce();
 
             // 运行时间计时器（每 1 秒更新一次）
             _elapsedTimer = new DispatcherTimer
@@ -115,6 +125,26 @@ namespace CpqSystemTool
                     ? $"已用: {elapsed.Seconds} 秒"
                     : $"已用: {elapsed.Minutes}:{elapsed.Seconds:D2}";
             };
+        }
+
+        /// <summary>
+        /// 一次性校准安装位置提醒 (LocationHintText) 的左缘，精确对齐「安装位置」标签 (LabelLocation) 左缘。
+        /// 只在首帧 Loaded 时执行一次；用 RenderTransform 纯渲染位移（不触发重排、不闪烁）。
+        /// 若未来字体 / DPI / 窗口尺寸变化导致位置漂移，可在此重新计算并更新 RenderTransform。
+        /// </summary>
+        private void CalibrateHintRowLeftEdgeOnce()
+        {
+            if (LabelLocation == null || LocationHintText == null) return;
+            // 标签相对 OptionGrid 的渲染坐标（WPF 官方 API：TransformToVisual 返回 控件→目标 的变换矩阵，
+            // 把本地点 (0,0) 变换到目标坐标系，即 标签左上角在 OptionGrid 中的 X/Y）
+            Point labelTopLeft = LabelLocation.TransformToVisual(OptionGrid).Transform(new Point(0, 0));
+            // 安装位置提醒 相对 OptionGrid 的渲染坐标
+            Point hintTopLeft = LocationHintText.TransformToVisual(OptionGrid).Transform(new Point(0, 0));
+            // 让 LocationHintText 左缘对齐 标签左缘
+            double delta = labelTopLeft.X - hintTopLeft.X;
+            // 纯渲染位移，不触碰 Margin / 列宽，不触发布局循环，不闪烁
+            LocationHintText.RenderTransform = new TranslateTransform(delta, 0);
+            LocationHintText.RenderTransformOrigin = new Point(0, 0.5); // 沿水平中线位移，避免垂直漂移
         }
 
         private void InitializeComponents()
@@ -199,12 +229,41 @@ namespace CpqSystemTool
                 if (EditionCombo.SelectedIndex >= 0) SelectedEdition = EditionCombo.SelectedIndex;
             };
 
+            // 安装位置下拉（Office 装到其他盘）：第 0 项固定默认（系统盘 C:\，不挂 junction），
+            // 其余项 = 本机全部固定磁盘盘符（由 OfficeInstallLocation.GetFixedDiskDrives() 提供，
+            // Content 由盘符 + 容量/卷名简述组成，Tag=盘符根路径；该方法不可用时兜底只保留默认项）
+            LocationCombo.Items.Clear();
+            LocationCombo.Items.Add(new ComboBoxItem { Content = "默认（系统盘 C:\\）", Tag = "default" });
+            try
+            {
+                foreach (var d in OfficeInstallLocation.GetFixedDiskDrives())
+                {
+                    string label;
+                    try
+                    {
+                        var dr = new DriveInfo(d + "\\");
+                        if (dr.IsReady)
+                        {
+                            double gb = dr.TotalFreeSpace / 1073741824.0;
+                            label = d.TrimEnd('\\') + "（" + dr.VolumeLabel + "，可用 " + gb.ToString("0.#") + " GB）";
+                        }
+                        else
+                        {
+                            label = d.TrimEnd('\\') + "（未就绪）";
+                        }
+                    }
+                    catch { label = d.TrimEnd('\\'); }
+                    LocationCombo.Items.Add(new ComboBoxItem { Content = label, Tag = d });
+                }
+            }
+            catch { /* GetFixedDiskDrives 不可用时只保留默认项，不影响主流程 */ }
+            LocationCombo.SelectedIndex = 0;
+
             // ODT 路径绑定
             SetupPathBox.Text = SetupExePath;
             SetupPathBox.TextChanged += (s, e) =>
             {
                 SetupExePath = SetupPathBox.Text ?? string.Empty;
-                OdtSetup.SetCacheDir(Path.GetDirectoryName(SetupExePath) ?? SetupExePath);
             };
 
             // 按钮命令（用 lambda 包装以适配 ICommand）
@@ -243,7 +302,14 @@ namespace CpqSystemTool
                     configKey = Registry.LocalMachine.OpenSubKey(p);
                     if (configKey != null) break;
                 }
-                if (configKey == null) return; // 未安装 Office：保留硬编码默认
+                if (configKey == null)
+                {
+                    // 无 C2R 台账（未装 C2R 版 Office / 老版永久授权 / 被精简）→ 纯磁盘兜底：
+                    // 按 Office16 目录各组件 exe 真实存在性勾选，使网格仍反映磁盘实际装了哪些组件。
+                    var diskOnly = DetectDiskInstalledComponents();
+                    foreach (var c in _components) c.IsSelected = diskOnly.Contains(c.DisplayName);
+                    return; // 架构/语言/版本无从判定（注册表读不到），保留默认
+                }
 
                 using (configKey)
                 {
@@ -286,15 +352,13 @@ namespace CpqSystemTool
                     bool hasSuite = false;
                     foreach (var pid in productIds)
                     {
-                        if (pid.StartsWith("O365ProPlusRetail", StringComparison.OrdinalIgnoreCase)
-                            || pid.StartsWith("ProPlus", StringComparison.OrdinalIgnoreCase))
-                        {
-                            hasSuite = true;
-                        }
-                        if (pid.StartsWith("VisioPro", StringComparison.OrdinalIgnoreCase) || pid.StartsWith("VisioStd", StringComparison.OrdinalIgnoreCase))
-                            toSelect.Add("Visio");
-                        if (pid.StartsWith("ProjectPro", StringComparison.OrdinalIgnoreCase) || pid.StartsWith("ProjectStd", StringComparison.OrdinalIgnoreCase))
-                            toSelect.Add("Project");
+                        // 套件判定：ProPlus / O365 / Business / Home 任一前缀（覆盖 O365Business、EEANoTeams、家庭版等非纯 ProPlus 套件）。
+                        if (IsSuitePid(pid)) hasSuite = true;
+                        // 单品命中（按组件名开头匹配，不随套件）：装了独立单品就勾对应组件，与套件取并集。
+                        // Word/Excel/PowerPoint/Access/Publisher/OneNote/Visio/Project。
+                        // Outlook 经典版走下方套件−ExcludedApps + 新版 AppX 探测，不在此单品匹配（避免与新版混淆）。
+                        var comp = MapPidToComponent(pid);
+                        if (comp != null) toSelect.Add(comp);
                     }
 
                     if (hasSuite)
@@ -317,8 +381,14 @@ namespace CpqSystemTool
                         }
                     }
 
-                    // 未识别到任何可映射组件：清空所有勾选（与有组件时语义一致，避免残留硬编码默认）。
-                    // 不再 early-return 跳过 foreach，统一走下方重置；架构/语言/版本无从判定时才在清空后安全返回。
+                    // ===== A 方案：磁盘兜底并集 =====
+                    // C2R 台账可能滞后于用户手动装/删组件（手动装了 Access 独立版却没回写 ExcludedApps /
+                    // ProductReleaseIds）。按 Office16 目录各组件 exe 真实存在性补勾选，与上面 C2R 结果取并集。
+                    // 单向增强：只补勾，不误删 C2R 已勾的；C2R 未装/无台账时纯靠磁盘也能识别。
+                    foreach (var diskComp in DetectDiskInstalledComponents())
+                        toSelect.Add(diskComp);
+
+                    // 未识别到任何可映射组件（C2R + 磁盘都为空）：清空所有勾选（与有组件时语义一致，避免残留硬编码默认）。
                     if (toSelect.Count == 0)
                     {
                         foreach (var c in _components) c.IsSelected = false;
@@ -341,10 +411,10 @@ namespace CpqSystemTool
                     else if (langs.IndexOf("en-us", StringComparison.OrdinalIgnoreCase) >= 0)
                         SelectedLanguage = "en-US";
 
-                    // 版本：根据检测到的套件产品匹配最贴近的 Edition 下标
-                    var suitePid = productIds.FirstOrDefault(p =>
-                        p.StartsWith("O365ProPlusRetail", StringComparison.OrdinalIgnoreCase)
-                        || p.StartsWith("ProPlus", StringComparison.OrdinalIgnoreCase));
+                    // 版本：多 PID 共存时优先选 O365ProPlusRetail（365 订阅），避免 2016 ProPlusRetail 排在前面时误判。
+                    var suitePid = productIds.Where(IsSuitePid)
+                        .OrderByDescending(p => p.StartsWith("O365ProPlusRetail", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                        .FirstOrDefault();
                     if (suitePid != null) SelectedEdition = MapProductToEdition(suitePid);
 
                     // 同步 UI 下拉（构造晚期调用，下拉已填充）
@@ -360,19 +430,80 @@ namespace CpqSystemTool
         }
 
         /// <summary>
-        /// 同步探测 Outlook 两种形态的安装状态，用于同步网格「Outlook」复选框与经典版标记：
-        /// - 新版 Outlook（OutlookForWindows，Store/AppX）：AppxManager.IsNewOutlookInstalledFast() 纯同步判定（WindowsApps 前缀通配 + 注册表兜底，无 PowerShell）；
+        /// 磁盘兜底探测：C2R 台账（注册表）滞后于用户手动装/删组件时（如手动装了 Access 独立版却没回写
+        /// ExcludedApps），按 Office16 目录下各组件可执行文件是否真实存在，返回磁盘上已装组件的
+        /// DisplayName 集合。供 DetectInstalledOffice 与「C2R 台账结果」取并集，使勾选反映磁盘真实状态。
+        /// 全程同步、仅 File.Exists、不启动进程、任何异常返回空集合（保守，不影响主流程）。
+        /// </summary>
+        private static HashSet<string> DetectDiskInstalledComponents()
+        {
+            var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                // 候选 Office 安装根目录（32/64 位 × C2R root/老版 MSI 两种落点）。
+                // 多根可共存（如 64 位 C2R 套件 + 32 位独立 MSI 版 Visio/Project 在企业机常见），
+                // 旧实现 Array.Find 只扫第一个存在的根、漏掉其余根里的 32 位单品 → 现改为所有存在根取并集。
+                var roots = new[]
+                {
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Microsoft Office\root\Office16"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Microsoft Office\Office16"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Microsoft Office\root\Office16"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Microsoft Office\Office16"),
+                };
+
+                // 组件 → 可执行文件名映射（C2R 单机 exe 名）。任一存在即视为该组件磁盘已装。
+                // Outlook 此处也探测：经典版 OUTLOOK.EXE 在 Office16 下；新版 AppX 由 DetectOutlookStates 单独补。
+                var map = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { "Word", new[] { "WINWORD.EXE" } },
+                    { "Excel", new[] { "EXCEL.EXE" } },
+                    { "PowerPoint", new[] { "POWERPNT.EXE" } },
+                    { "Access", new[] { "MSACCESS.EXE" } },
+                    { "Publisher", new[] { "MSPUB.EXE" } },
+                    { "Outlook", new[] { "OUTLOOK.EXE" } },
+                    { "OneNote", new[] { "ONENOTE.EXE", "ONENOTE16.EXE" } },
+                    { "Visio", new[] { "VISIO.EXE", "VISIO32.EXE", "VISIO64.EXE" } },
+                    { "Project", new[] { "MSPROJECT.EXE", "MSPROJ.EXE" } },
+                };
+                foreach (var root in roots)
+                {
+                    if (!Directory.Exists(root)) continue;
+                    foreach (var kv in map)
+                    {
+                        foreach (var exe in kv.Value)
+                            if (File.Exists(Path.Combine(root, exe)))
+                            {
+                                found.Add(kv.Key);
+                                break;
+                            }
+                    }
+                }
+
+                // OneDrive（MDOB / 独立 OneDrive）由 OneDriveSetup.exe 安装，程序目录在
+                // Program Files\Microsoft OneDrive 或 Program Files (x86)\Microsoft OneDrive（版本号子目录），
+                // 不在 Office16 目录下，须单独探测。复用 IsStandaloneInstalled（已覆盖 64/32 位两个根），
+                // 使网格「OneDrive」勾选反映磁盘真实状态（C2R 台账排除 onedrive 时仍能在磁盘兜底里补勾回来）。
+                if (OneDriveUninstall.IsStandaloneInstalled())
+                    found.Add("OneDrive");
+            }
+            catch { /* 探测失败保守返回空，不影响 C2R 主路径 */ }
+            return found;
+        }
+
+        /// <summary>
+        /// 同步探测经典版 Outlook（C2R 套件应用）安装状态，用于同步网格「Outlook」复选框与经典版标记：
         /// - 经典版 Outlook（C2R 套件应用）：IsClassicOutlookInstalled() 读注册表瞬时判定，记入 _classicOutlookInstalled 供强制卸载弹窗使用。
+        /// - 新版 Outlook（OutlookForWindows，Store/AppX）不在组件区驱动，由用户在新版 Outlook 应用内一键切换获取；
+        ///   其探测仅用于强制卸载弹窗（ExecuteFullUninstall）展示"可移除新版"选项，不参与组件区勾选。
         /// 全程同步、不启动进程，结果在 UI 线程直接勾选复选框，消除「切页后 ~1s 才勾上 Outlook」的延迟。
         /// </summary>
         private void DetectOutlookStates()
         {
             try
             {
-                bool newInstalled = AppxManager.IsNewOutlookInstalledFast();
                 bool classicInstalled = IsClassicOutlookInstalled();
                 _classicOutlookInstalled = classicInstalled;
-                if (newInstalled || classicInstalled)
+                if (classicInstalled)
                 {
                     var item = _components.FirstOrDefault(c => c.Component == ComponentCatalog.Outlook);
                     if (item != null) item.IsSelected = true;
@@ -475,6 +606,46 @@ namespace CpqSystemTool
             return false;
         }
 
+        /// <summary>套件 PID 判定：C2R 台账里属于「Office 全家桶」的 ProductReleaseId。</summary>
+        /// 覆盖全部 7 个版本套件形态（与 OfficeInstall.ProductIds 同源口径）：
+        ///   O365 订阅系（O365ProPlus* / O365Business* / O365ProPlusEEANoTeams*）；
+        ///   ProPlus 永久授权系（ProPlus{2016,2019,2021,2024}{Retail,Volume} / 裸 ProPlusRetail/ProPlusVolume）；
+        ///   Home 家庭/家庭商务系（Home{2016,2019,2021,2024}{,Business}Retail）。
+        /// 用「前缀」而非「子串」判定，避免把单品 PID（Word/Excel…）误判成套件。
+        private static bool IsSuitePid(string pid)
+        {
+            if (string.IsNullOrEmpty(pid)) return false;
+            return pid.StartsWith("O365", StringComparison.OrdinalIgnoreCase)
+                || pid.StartsWith("ProPlus", StringComparison.OrdinalIgnoreCase)
+                || pid.StartsWith("Home", StringComparison.OrdinalIgnoreCase)
+                || pid.StartsWith("Business", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// 单品 PID → 可勾选组件名（10 组件之一），非单品返回 null。
+        /// 微软 ODT 单品 ProductId 固定形态：&lt;组件&gt;&lt;版本&gt;&lt;渠道&gt;，
+        /// 组件 ∈ {Word, Excel, PowerPoint, Access, Publisher, OneNote, Visio, Project}。
+        /// 用「以组件名开头」匹配（区分大小写不敏感），保证：
+        ///   ① 不随套件的独立单品（Word2021Retail / Access2024Volume / OneNote2021Volume / Publisher2021Volume / VisioPro2024Retail / ProjectStd…）能识别；
+        ///   ② 套件 PID（ProPlus*/O365*/Home*）开头不是组件名，不会误判出单品。
+        /// Outlook 单品无独立 C2R ProductId（经典版随套件、新版走 AppX），故不在此表，
+        /// 经典版由「套件−ExcludedApps」+ 新版 AppX 探测（DetectOutlookStates）覆盖。
+        /// </summary>
+        private static string MapPidToComponent(string pid)
+        {
+            if (string.IsNullOrEmpty(pid)) return null;
+            // 长组件名在前，避免 PowerPoint 被 PowerPoi* 误截、OneNote 与 Other 混淆。
+            var rules = new[]
+            {
+                "PowerPoint", "OneNote", "Publisher", "Project", "Visio",
+                "Word", "Excel", "Access",
+            };
+            foreach (var r in rules)
+                if (pid.StartsWith(r, StringComparison.OrdinalIgnoreCase))
+                    return r;
+            return null;
+        }
+
         /// <summary>套件 ProductId → OfficeInstall.Editions 下标（与 ProductIds / Channels 一一对应）。</summary>
         private static int MapProductToEdition(string pid)
         {
@@ -531,19 +702,32 @@ namespace CpqSystemTool
 
                 using (configKey)
                 {
-                    var products = (configKey.GetValue("ProductReleaseIds") as string) ?? string.Empty;
-                    var suite = products
-                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                        .Select(p => p.Trim())
-                        .FirstOrDefault(p => p.Length > 0
-                            && (p.StartsWith("O365ProPlusRetail", StringComparison.OrdinalIgnoreCase)
-                                || p.StartsWith("ProPlus", StringComparison.OrdinalIgnoreCase)));
-                    if (string.IsNullOrEmpty(suite)) return false;
+                // 匹配优先级：O365ProPlusRetail（365 订阅）> ProPlus（裸 2016 等）。
+                // 用 List + OrderByDescending 保证多 PID 共存时优先选订阅版，
+                // 避免 2016 ProPlusRetail 排在前面时 FirstOrDefault 永远匹配到 2016。
+                var products = (configKey.GetValue("ProductReleaseIds") as string) ?? string.Empty;
+                var allPids = products
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(p => p.Trim())
+                    .Where(p => p.Length > 0
+                        && (p.StartsWith("O365ProPlusRetail", StringComparison.OrdinalIgnoreCase)
+                            || p.StartsWith("ProPlus", StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
+                // O365ProPlusRetail 排最前（订阅版 365 优先级最高）
+                allPids.Sort((a, b) =>
+                {
+                    int scoreA = a.StartsWith("O365ProPlusRetail", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+                    int scoreB = b.StartsWith("O365ProPlusRetail", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+                    return scoreB.CompareTo(scoreA);
+                });
+                var suite = allPids.FirstOrDefault();
+                if (string.IsNullOrEmpty(suite)) return false;
 
                     suitePid = suite;
-                    // 通道键名带空格："Update Channel"
-                    var ch = configKey.GetValue("Update Channel") as string;
-                    channel = string.IsNullOrEmpty(ch) ? string.Empty : ch.Trim();
+                    // 真实键名是 UpdateChannel（无空格），旧代码误读带空格的 "Update Channel" 永远读到 null；
+                    // 且其取值可能是 CDN URL 而非通道名，须归一化为 ODT 标准通道名
+                    var ch = configKey.GetValue("UpdateChannel") as string ?? configKey.GetValue("Update Channel") as string;
+                    channel = NormalizeRawChannel(ch ?? string.Empty);
                     return true;
                 }
             }
@@ -589,25 +773,29 @@ namespace CpqSystemTool
             bool officeInstalled = IsOfficeInstalled();
             bool oneDriveInstalled = OneDriveUninstall.IsStandaloneInstalled();
             bool teamsInstalled = TeamsUninstall.IsStandaloneInstalled();
-            bool classicOutlookInstalled = IsClassicOutlookInstalled();
             bool newOutlookInstalled = AppxManager.IsNewOutlookInstalledFast();
 
-            // 闸门1：Office / OneDrive / Teams / 新旧 Outlook 都没装，直接取消（避免弹出一堆禁用项的空弹窗）
+            // 闸门1：Office / OneDrive / Teams / 新版 Outlook 都没装，直接取消（避免弹出一堆禁用项的空弹窗）
             if (!officeInstalled && !oneDriveInstalled && !teamsInstalled
-                && !classicOutlookInstalled && !newOutlookInstalled)
+                && !newOutlookInstalled)
             {
-                AppendLog("  [!] 未检测到本机已安装 Office / OneDrive / Teams，已取消全量卸载。");
+                AppendLog("  [!] 未检测到本机已安装 Office / OneDrive / Teams / 新版 Outlook，已取消全量卸载。");
                 SetStatus("ℹ️ 未检测到可卸载组件，已取消");
                 return;
             }
 
-            // 读取上次偏好（OneDrive / Teams 默认不勾，但记住上次选择）
+            // 读取上次偏好（null = 尚未做过选择）
             var prefs = UninstallPrefs.Load();
+            // OneDrive 默认态：本机检测到 OneDrive 客户端（PF/PF(x86)\Microsoft OneDrive，MDOB 或独立 OneDrive 均覆盖）
+            // → 默认勾选（「全量卸载」按钮本意 = 删掉本机实际存在的组件）；未检测到 → 默认不勾（本就没有，跳过即可）。
+            // 两种情况下，用户一旦在弹窗里做过选择即被记住（prefs 非 null 时沿用），不会反复打回默认。
+            bool oneDriveDefault = oneDriveInstalled ? (prefs.OneDrive ?? true) : (prefs.OneDrive ?? false);
+            bool teamsDefault = prefs.Teams ?? false;
 
-            // 自定义三选项确认弹窗（宿主窗口经 Window.GetWindow 取得，转型 MainWindow 供 DialogChrome.Apply 用主题笔刷）
+            // 自定义多选项确认弹窗（宿主窗口经 Window.GetWindow 取得，转型 MainWindow 供 DialogChrome.Apply 用主题笔刷）
             var owner = Window.GetWindow(this) as MainWindow;
             var dlg = new UninstallConfirmDialog(owner, officeInstalled, oneDriveInstalled, teamsInstalled,
-                classicOutlookInstalled, newOutlookInstalled, prefs.OneDrive, prefs.Teams)
+                newOutlookInstalled, oneDriveDefault, teamsDefault)
             {
                 Owner = owner
             };
@@ -619,14 +807,17 @@ namespace CpqSystemTool
                 return;
             }
 
-            // 持久化本次偏好（仅 OneDrive / Teams 参与；Office 始终默认勾选，不参与）
-            UninstallPrefs.Save(dlg.UninstallOneDrive, dlg.UninstallTeams);
+            // 持久化本次偏好（仅 OneDrive / Teams 参与；Office 始终默认勾选，不参与）。
+            // 只回写「实际显示项」的勾选值：组件未安装（项隐藏）时 dlg 值恒为 false，若照写会覆盖用户
+            // 上次记住的偏好（违反“记住上次选择”），故保留隐藏项的旧值。
+            UninstallPrefs.Save(
+                oneDriveInstalled ? dlg.UninstallOneDrive : (prefs.OneDrive ?? false),
+                teamsInstalled ? dlg.UninstallTeams : (prefs.Teams ?? false));
 
             // 放宽闸门：最终执行项 = 「已勾选 且 本机已安装」。无任何可执行项则取消。
             bool doOffice = dlg.UninstallOffice && officeInstalled;
             bool doOneDrive = dlg.UninstallOneDrive && oneDriveInstalled;
             bool doTeams = dlg.UninstallTeams && teamsInstalled;
-            bool keepClassic = dlg.KeepClassicOutlook && classicOutlookInstalled;
             bool doNewOutlook = dlg.UninstallNewOutlook && newOutlookInstalled;
             if (!doOffice && !doOneDrive && !doTeams && !doNewOutlook)
             {
@@ -639,27 +830,35 @@ namespace CpqSystemTool
             {
                 try
                 {
+                    AppendLog(GetVersionSelfCheck());
                     SetInstalling(true);
                     SetStatus("正在卸载所选组件...");
                     int done = 0;
                     int total = (doOffice ? 1 : 0) + (doOneDrive ? 1 : 0) + (doTeams ? 1 : 0) + (doNewOutlook ? 1 : 0);
 
-                    // ① Office（全量，C2R）；勾选「保留经典版 Outlook」时改为 ODT 修改部署，仅移除其余套件应用、保留经典版
+                    // ① Office（全量，C2R）
                     if (doOffice)
                     {
-                        if (keepClassic)
+                        AppendLog("==== 开始全量卸载 Office（C2R）====");
+                        // 先拆 junction 壳（若 Office 之前装在其他盘）：ODT 全卸不会删 C 盘的 junction 壳，
+                        // 且必须先于卸载清残留执行——否则 CleanLeftovers 的 Remove-Item -Recurse 会穿透
+                        // junction 递归删除目标盘的真实数据。拆壳失败仅记日志，不阻塞卸载主流程。
+                        try
                         {
-                            AppendLog("==== 卸载 Office（保留经典版 Outlook）====");
-                            OdtKeepClassicOutlook(AppendLog);
-                            done++;
+                            if (OfficeInstallLocation.IsJunctionActive("64") || OfficeInstallLocation.IsJunctionActive("32"))
+                            {
+                                string offRoot = OfficeInstallLocation.GetOfficeRootPath("64");
+                                if (OfficeInstallLocation.IsJunction(offRoot))
+                                    OfficeInstallLocation.RemoveJunctionShell(offRoot, AppendLog);
+                                offRoot = OfficeInstallLocation.GetOfficeRootPath("32");
+                                if (OfficeInstallLocation.IsJunction(offRoot))
+                                    OfficeInstallLocation.RemoveJunctionShell(offRoot, AppendLog);
+                            }
                         }
-                        else
-                        {
-                            AppendLog("==== 开始全量卸载 Office（C2R）====");
-                            bool ok = OfficeInstall.Uninstall(AppendLog);
-                            if (ok) { AppendLog("  [完成] Office 卸载结束"); done++; }
-                            else { AppendLog("  [!] Office 卸载未成功（未实际执行或 ODT 失败），Office 仍在，请查看日志"); }
-                        }
+                        catch (Exception jx) { AppendLog("  [!] 拆 junction 壳异常（不阻塞卸载）: " + jx.Message); }
+                        bool ok = OfficeInstall.Uninstall(AppendLog);
+                        if (ok) { AppendLog("  [完成] Office 卸载结束"); done++; }
+                        else { AppendLog("  [!] Office 卸载未成功（未实际执行或 ODT 失败），Office 仍在，请查看日志"); }
                     }
 
                     // ①.5 新版 Outlook（Store/AppX 应用）卸载
@@ -669,15 +868,21 @@ namespace CpqSystemTool
                         try
                         {
                             AppxManager.Uninstall(new List<string> { "Microsoft.OutlookForWindows_8wekyb3d8bbwe" }, AppendLog);
+                            // B 层（C 方案）：卸包后清 AppX 残留注册表状态键，避免残留键让 IsNewOutlookInstalledFast
+                            // 注册表兜底误判"新版 Outlook 还在"导致网格复选框误勾。best-effort，失败不阻塞。
+                            AppxManager.RemoveNewOutlookResidualRegistryKeys(AppendLog);
+                            // A 方案（治本）：清 WindowsApps 下 Microsoft.OutlookForWindows_* 残留目录壳
+                            // （Remove-AppxPackage 删包后目录常残留，导致主路径目录命中仍勾选）。best-effort。
+                            AppxManager.RemoveNewOutlookWindowsAppsResidual(AppendLog);
                             AppendLog("  [完成] 新版 Outlook 卸载结束"); done++;
                         }
                         catch (Exception noEx) { AppendLog("  [!] 新版 Outlook 卸载异常: " + noEx.Message); }
                     }
 
-                    // ② OneDrive（独立云同步客户端）
+                    // ② OneDrive（云同步客户端；可能为 ODT 套件自带，也可能独立手装）
                     if (doOneDrive)
                     {
-                        AppendLog("==== 开始卸载独立 OneDrive 客户端 ====");
+                        AppendLog("==== 开始卸载 OneDrive 客户端 ====");
                         try { OneDriveUninstall.Uninstall(AppendLog); AppendLog("  [完成] OneDrive 卸载结束"); done++; }
                         catch (Exception odEx) { AppendLog("  [!] OneDrive 卸载异常: " + odEx.Message); }
                     }
@@ -717,14 +922,14 @@ namespace CpqSystemTool
         {
             private static string FilePath() => Path.Combine(AppPaths.ConfigDir, "uninstall_prefs.json");
 
-            public static (bool OneDrive, bool Teams) Load()
+            public static (bool? OneDrive, bool? Teams) Load()
             {
                 try
                 {
                     string f = FilePath();
-                    if (!File.Exists(f)) return (false, false);
+                    if (!File.Exists(f)) return (null, null); // 无记录 → null（与“记录为 false”区分）
                     var obj = MiniJson.Parse(File.ReadAllText(f, Encoding.UTF8));
-                    bool od = false, ts = false;
+                    bool? od = null, ts = null;
                     if (obj is Dictionary<string, object> d)
                     {
                         if (d.TryGetValue("OneDrive", out var o1))
@@ -736,7 +941,7 @@ namespace CpqSystemTool
                 }
                 catch
                 {
-                    return (false, false);
+                    return (null, null);
                 }
             }
 
@@ -757,6 +962,23 @@ namespace CpqSystemTool
             }
         }
 
+        /// <summary>
+        /// 用户在「安装位置」下拉中选择的非默认目标盘根路径（= ComboBoxItem.Tag）。
+        /// 选「默认（系统盘 C:\）」或未选时返回 null，表示不挂 junction、走原默认流程。
+        /// 调用方（安装主流程）据此决定是否用 OfficeInstallLocation.EnsureJunction 重定向 Office 根目录。
+        /// </summary>
+        private string GetSelectedInstallLocation()
+        {
+            if (LocationCombo.SelectedItem is ComboBoxItem item
+                && item.Tag is string tag
+                && !string.IsNullOrWhiteSpace(tag)
+                && !string.Equals(tag, "default", StringComparison.OrdinalIgnoreCase))
+            {
+                return tag;
+            }
+            return null;
+        }
+
         private void OnInstallExecute()
         {
             // 全不选分流（区分「全点掉=全卸」与「新系统误触」两种语义）：
@@ -768,12 +990,6 @@ namespace CpqSystemTool
                 return;
             }
 
-            // 网格「Outlook」复选框现在代表「新版 Outlook（OutlookForWindows，Store/AppX 应用）」，
-            // 由 AppX 单独安装/卸载（复用 AppxManager，与 AppX 商店页同一套代码），不进 ODT。
-            // 此处捕获用户意图（UI 线程），ODT 跑完后再接 AppX 装/卸。
-            bool outlookSelected = _components
-                .Any(c => c.Component == ComponentCatalog.Outlook && c.IsSelected);
-
             // 捕获：OneDrive 组件是否被「取消勾选」（在 UI 线程取，代表用户当前意图）。
             // 勾选=保留/安装；取消勾选=不装。取消勾选且本机存在「独立 OneDrive 云同步客户端」
             // （OneDriveSetup.exe 安装，非 C2R 套件组件）时，ODT 装完（rc=0）后二次确认并干净卸载它
@@ -781,15 +997,19 @@ namespace CpqSystemTool
             bool onedriveDeselected = _components
                 .Any(c => c.Component == ComponentCatalog.OneDrive && !c.IsSelected);
 
+            // 提前在 UI 线程捕获安装位置（GetSelectedInstallLocation 读 LocationCombo，后台线程不可读）
+            string uiCapturedInstallLocation = GetSelectedInstallLocation();
+            string uiCapturedArchitecture = SelectedArchitecture;
+
             var t = new Thread(() =>
             {
                 try
                 {
-                    OdtSetup.SetCacheDir(Path.GetDirectoryName(SetupExePath) ?? SetupExePath);
+                    AppendLog(GetVersionSelfCheck());
 
-                    // 【版本冲突前置拦截】：用户选了某版本但本机已装 Office 且 auto-align 会替换时，
-                    // 必须在「跑 ODT 下载+执行」之前就弹窗警告（后台线程无法直接弹框，所以提前算好结果）。
-                    // 复用构造期 DetectCurrentChannel() 已缓存的 _installedSuitePid，避免后台线程重复读注册表。
+                    // 【版本冲突前置拦截】：本机已装 Office 且用户勾选了套件内应用、所选版本 ≠ 已装版本时，
+                    // BuildArgs 的 auto-align 会把版本静默替换成本机版本 → 跑完 ODT 实际无变化（NoOp）。
+                    // 必须在启动 ODT 之前拦截并提醒；若用户确实想要更低/不同版本，引导其用「切换到其他版本」（= 卸载重装旧版）。
                     bool userPickedDifferentFromInstalled = false;
                     string userVersionName = "";
                     string installedVersionName = "";
@@ -803,8 +1023,12 @@ namespace CpqSystemTool
                         if (installedEd >= 0 && installedEd < OfficeInstall.Editions.Length)
                             installedVersionName = OfficeInstall.Editions[installedEd];
                     }
-                    // 只要本机有已装 Office 且用户选择 ≠ 本机已装，就触发拦截（auto-align 会偷偷换版本）
-                    if (!string.IsNullOrEmpty(installedVersionName) && !string.IsNullOrEmpty(userVersionName)
+                    // 仅当用户勾选了套件内应用（auto-align 才会触发，与 BuildArgs 一致）且所选 ≠ 已装时才拦截，
+                    // 避免误拦「仅装独立产品（Visio/Project）到不同版本」这类合法场景。
+                    var suiteSel = _components
+                        .Where(c => !string.IsNullOrEmpty(c.Component.ExcludeAppId))
+                        .ToList();
+                    if (suiteSel.Count > 0 && !string.IsNullOrEmpty(installedVersionName) && !string.IsNullOrEmpty(userVersionName)
                         && !string.Equals(userVersionName, installedVersionName, StringComparison.OrdinalIgnoreCase))
                     {
                         userPickedDifferentFromInstalled = true;
@@ -817,20 +1041,24 @@ namespace CpqSystemTool
                         autoAlignConfirmed = this.Dispatcher.Invoke<bool>(() =>
                         {
                             var r = MessageBox.Show(Window.GetWindow(this),
-                                "⚠️ 检测到本机已装 Office，您的选择将被自动对齐：\n\n"
+                                "⚠️ 版本冲突：安装将「无变化」\n\n"
                                 + "本机已装：" + installedVersionName + "（PID=" + suitePid + "）\n"
-                                + "您选择的是：" + userVersionName + "\n\n"
-                                + "为确保兼容性，产品版本将被替换为「" + installedVersionName + "」继续安装。\n\n"
-                                + "是否继续？",
-                                "版本自动对齐提示",
+                                + "您选择的：" + userVersionName + "\n\n"
+                                + "由于本机已装 Office，继续安装会被自动对齐为「" + installedVersionName + "」，"
+                                + "实际等同于什么都不做（NoOp）。\n\n"
+                                + "若您确实想安装【更低或不同】的版本，请点「否」，随后改用「切换到其他版本」（= 卸载重装旧版）。\n\n"
+                                + "仍要继续这次无意义的对齐安装吗？",
+                                "版本冲突：安装将无变化",
                                 MessageBoxButton.YesNo,
-                                MessageBoxImage.Warning) == MessageBoxResult.Yes;
-                            return r;
+                                MessageBoxImage.Warning);
+                            return r == MessageBoxResult.Yes;
                         });
                         if (!autoAlignConfirmed)
                         {
-                            AppendLog("  [已取消] 用户拒绝版本自动对齐，未执行安装。");
-                            SetStatus("已取消（版本对齐冲突）");
+                            // 用户选择改用「切换到其他版本」：在 UI 线程打开切换版本对话框
+                            this.Dispatcher.Invoke(() => OnSwitchEditionExecute());
+                            AppendLog("  [已取消] 版本冲突，已打开「切换到其他版本」供重新部署目标版本。");
+                            SetStatus("已打开切换版本");
                             return;
                         }
                     }
@@ -846,8 +1074,12 @@ namespace CpqSystemTool
                     if (odtHasWork)
                     {
                     // Phase 1: ODT shell 下载（determinate + 百分比）
-                    IsIndeterminateProgress = false;
-                    ElapsedVisibility = Visibility.Collapsed;
+                    // 直接触碰 WPF 绑定属性 IsIndeterminateProgress / ElapsedVisibility，后台线程必须切 UI 线程
+                    RunOnUi(() =>
+                    {
+                        IsIndeterminateProgress = false;
+                        ElapsedVisibility = Visibility.Collapsed;
+                    });
                     SetProgress(0);
                     SetStatus("正在下载 ODT 组件...");
 
@@ -867,17 +1099,81 @@ namespace CpqSystemTool
                     AppendLog("config.xml 已生成（" + args.Products.Count + " 个 Product）");
 
                     // Phase 2: Office 安装（indeterminate + 运行时间）
-                    IsIndeterminateProgress = true;
-                    _installStartTime = DateTime.Now;
-                    ElapsedVisibility = Visibility.Visible;
-                    _elapsedTimer.Start();
+                    // 后台线程直接赋值 WPF 绑定属性 + DispatcherTimer.Start() 会抛线程亲和性异常，
+                    // 必须切到创建 _elapsedTimer 的 UI 线程执行
+                    RunOnUi(() =>
+                    {
+                        IsIndeterminateProgress = true;
+                        _installStartTime = DateTime.Now;
+                        ElapsedVisibility = Visibility.Visible;
+                        _elapsedTimer.Start();
+                    });
                     SetStatus("正在安装 Office...");
+
+                    // === 安装位置（Office 装到其他盘）===
+                    // 用户选了非默认盘时，在跑 ODT 前挂 junction 把 Office 根目录重定向到目标盘。
+                    // 约束：只服务「全新安装」——本机已装 Office 时选其他盘无效（迁移未实现），
+                    // 此时放弃 junction、按默认 C 盘安装（安全第一，本批不做迁移）。
+                    string targetRoot = uiCapturedInstallLocation;
+                    bool elevateOdt = false;    // 非管理员且需挂 junction 时，ODT 提权执行（UAC）
+                    if (!string.IsNullOrEmpty(targetRoot))
+                    {
+                        if (IsOfficeInstalled())
+                        {
+                            AppendLog("  [!] 本机已装 Office：「选其他盘」仅对全新安装有效，迁移功能暂未提供；"
+                                + "已放弃 junction，将按默认 C 盘安装（" + targetRoot + " 未使用）。");
+                            targetRoot = null;
+                        }
+                        else
+                        {
+                            // targetRoot 形如 "D:"（GetFixedDiskDrives 返回盘符+冒号），补反斜杠供 mklink/CreateDirectory 使用
+                            string targetDir = targetRoot.EndsWith("\\") ? targetRoot : targetRoot + "\\";
+                            string officeRoot = OfficeInstallLocation.GetOfficeRootPath(uiCapturedArchitecture);
+                            bool ok = OfficeInstallLocation.EnsureJunction(officeRoot, targetDir, AppendLog);
+                            if (ok)
+                            {
+                                AppendLog("已通过 junction 将 Office 安装位置重定向到 " + targetRoot);
+                            }
+                            else if (!MemoryAnalyzer.IsAdministrator())
+                            {
+                                // 当前非管理员（CreateJunction 需写系统盘根目录）→ 改为 UAC 提权跑 ODT，
+                                // 由提权子进程内部完成挂 junction + 安装（RunElevated 返回 ODT 退出码）。
+                                AppendLog("  [提权] 当前进程非管理员，挂 junction 失败；改为以管理员提权执行 ODT（需 UAC 确认，junction + 安装一并在提权进程完成）");
+                                elevateOdt = true;
+                            }
+                            else
+                            {
+                                AppendLog("  [!] junction 创建失败（" + officeRoot + " → " + targetRoot + "），已回退默认 C 盘安装");
+                            }
+                        }
+                    }
 
                     // 提交 ODT 前后各读一次 C2R 台账 ExcludedApps，用于事后校验移除是否真的生效
                     // （退出码 0 已被证明不可信：C2R 引擎未响应时 ODT 空转也返回 0）。
                     var excludedBefore = OdtSetup.ReadExcludedApps();
                     var pidsBefore = OdtSetup.ReadProductReleaseIds();
-                    int rc = OdtSetup.RunConfig(setup, xml, AppendLog);
+                    int rc;
+                    if (elevateOdt)
+                    {
+                        // 提权执行：args[0]=setup.exe 完整路径（RunElevated 以 FileName 启动），junction 在提权子进程内完成
+                        rc = OfficeInstallLocation.RunElevated(
+                            new[] { setup, "/configure", xml },
+                            Path.GetDirectoryName(setup) ?? OdtSetup.GetOdtDir(),
+                            AppendLog);
+                        AppendLog(rc == 0
+                            ? "  [完成] 提权执行 ODT 成功，Office 安装至 junction 目标 " + targetRoot
+                            : "  [!] 提权执行 ODT 退出码 " + rc + "，详见日志");
+                    }
+                    else
+                    {
+                        // 默认 / 已挂 junction（当前进程即管理员）：走原 RunConfig（一行语义不变）
+                        // ODT 执行会阻塞数分钟（下载 Office 包）。原 RunConfig 捕获 stdout 到进程结束才输出，
+                        // 期间日志完全静默。此处包一层「轮询进度」：RunConfig 放独立后台线程跑，
+                        // 轮询线程每 3s 重扫 Office 落盘字节量（基线在启动前取）显示「已写入 N MB」。
+                        // expectDownload：提前判定本次配置会不会下载新组件（新装/重装）——会→进度日志显示「已写入 N MB」，
+                        // 不会（纯删减/排除/无变更）→显示「组件配置中」（删减 C2R 不下载新字节，显示 0 MB 会误导）。
+                        rc = WaitOdtWithProgress(setup, xml, AppendLog, OdtSetup.OdtWillDownload(args, excludedBefore, pidsBefore));
+                    }
 
                     // C2R 台账的写入是引擎异步落盘的，ODT 返回瞬间可能还没写完。
                     // 故轮询最多 3 次（每次间隔 2 秒，总计约 6 秒）：一旦前后不再相等说明已生效，提前结束。
@@ -901,8 +1197,12 @@ namespace CpqSystemTool
                     var outcome = OdtSetup.VerifyRemoveResult(excludedBefore, excludedAfter, targetExcluded, rc, AppendLog,
                         args.RemoveProductIds, pidsAfter);
 
-                    _elapsedTimer.Stop();
-                    IsIndeterminateProgress = false;
+                    // 后台线程：_elapsedTimer.Stop() + 直接赋值 IsIndeterminateProgress 必须切 UI 线程
+                    RunOnUi(() =>
+                    {
+                        _elapsedTimer.Stop();
+                        IsIndeterminateProgress = false;
+                    });
                     SetProgress(100);
                     if (rc == -2)
                     {
@@ -928,76 +1228,54 @@ namespace CpqSystemTool
                     }
 
                     // 独立 OneDrive 云同步客户端的干净卸载：仅当 ① OneDrive 组件被取消勾选
-                    // 且 ② ODT 装成功（rc=0）且 ③ 本机确实装了独立客户端 时触发。
-                    // ODT 只会排 C2R 套件里的 Groove，管不到 OneDriveSetup.exe 装的这个独立客户端，
-                    // 故须额外卸。先弹二次确认（说明会卸独立 OneDrive 客户端、保留同步数据）。
+                    // 且 ② ODT 装成功（rc=0）且 ③ 本机确实装了 OneDrive 客户端 时触发。
+                    // ODT 只会排 C2R 套件里的 Groove，管不到 OneDriveSetup.exe 安装/更新的这个
+                    // MDOB 客户端目录（PF(x86)\Microsoft OneDrive），故须额外卸。先弹二次确认
+                    // （说明会卸 OneDrive 客户端、保留同步数据）。措辞中性（不主张套件自带/独立手装，避免归属误判）。
+                    // OneDrive 客户端（MDOB/独立）由 OneDriveSetup 管理，可能落在 64 位 PF 或 32 位 PF(x86) 的
+                    // \Microsoft OneDrive（版本号子目录），ODT 套件排除 Groove 只管不到它，故须额外卸。
                     if (rc == 0 && onedriveDeselected && OneDriveUninstall.IsStandaloneInstalled())
                     {
                         bool confirmed;
+                        string odDesc = "检测到本机装有 OneDrive 客户端（OneDriveSetup 管理，位于 Program Files 或 Program Files (x86) 的 \\Microsoft OneDrive，保留同步数据目录）。\n";
                         try
                         {
                             confirmed = this.Dispatcher.Invoke(() =>
                                 MessageBox.Show(
-                                    "检测到本机装有「独立 OneDrive 云同步客户端」（OneDriveSetup 安装，不归 ODT 管理）。\n"
-                                    + "你已取消勾选 OneDrive 组件，是否一并干净卸载该独立客户端？\n\n"
-                                    + "卸载将：结束进程 → 官方卸载 → 清理 3 个程序目录与 6 项注册表残留。\n"
+                                    odDesc
+                                    + "你已取消勾选 OneDrive 组件，是否一并干净卸载该客户端？\n\n"
+                                    + "卸载将：结束进程 → 官方卸载 → 清理程序目录与注册表残留。\n"
                                     + "会保留你的 OneDrive 同步数据目录（%LOCALAPPDATA%\\OneDrive）。\n\n确定继续吗？",
-                                    "确认卸载独立 OneDrive 客户端",
+                                    "确认卸载 OneDrive 客户端",
                                     MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes);
                         }
                         catch (Exception mbEx) { AppendLog("[!] 确认框异常: " + mbEx.Message); confirmed = false; }
 
                         if (confirmed)
                         {
-                            AppendLog("开始干净卸载独立 OneDrive 客户端...");
+                            AppendLog("开始干净卸载 OneDrive 客户端...");
                             try
                             {
                                 OneDriveUninstall.Uninstall(AppendLog);
-                                SetStatus("✅ 安装完成，并已干净卸载独立 OneDrive 客户端");
+                                SetStatus("✅ 安装完成，并已干净卸载 OneDrive 客户端");
                             }
                             catch (Exception odEx)
                             {
-                                AppendLog("[!] 独立 OneDrive 客户端卸载异常: " + odEx.Message);
-                                SetStatus("⚠️ 独立 OneDrive 卸载出错，请查看日志");
+                                AppendLog("[!] OneDrive 客户端卸载异常: " + odEx.Message);
+                                SetStatus("⚠️ OneDrive 卸载出错，请查看日志");
                             }
                         }
                         else
                         {
-                            AppendLog("  [已跳过] 用户未确认卸载独立 OneDrive 客户端。");
+                            AppendLog("  [已跳过] 用户未确认卸载 OneDrive 客户端。");
                         }
                     }
                     } // end if (odtHasWork)
 
-                    // === 新版 Outlook（OutlookForWindows，Store/AppX 应用）装/卸 ===
-                    // 与 ODT 相互独立：勾选且未装 → 安装；取消勾选且已装 → 卸载。
-                    // ODT 成败不影响此步（新版是 Store 应用，不由 ODT 管理）。
-                    try
-                    {
-                        bool newOutlookNow = AppxManager.IsNewOutlookInstalledFast();
-                        if (outlookSelected && !newOutlookNow)
-                        {
-                            AppendLog("==== 安装新版 Outlook（Store/AppX 应用）====");
-                            AppxManager.Install("9NRX63209R7B", AppendLog);
-                            SetProgress(100);
-                            SetStatus("✅ 新版 Outlook 安装完成（Store 应用）");
-                        }
-                        else if (!outlookSelected && newOutlookNow)
-                        {
-                            AppendLog("==== 卸载新版 Outlook（Store/AppX 应用）====");
-                            AppxManager.Uninstall(new List<string> { "Microsoft.OutlookForWindows_8wekyb3d8bbwe" }, AppendLog);
-                            SetProgress(100);
-                            SetStatus("✅ 新版 Outlook 已卸载（Store 应用）");
-                        }
-                        else
-                        {
-                            SetProgress(100);
-                            if (!odtHasWork) SetStatus("✅ 已完成（无变更）");
-                        }
-                    }
-                    catch (Exception olEx)
-                    {
-                        AppendLog("[!] 新版 Outlook（AppX）装/卸异常: " + olEx.Message);
-                    }
+                    // 新版 Outlook（OutlookForWindows）不再由本组件区驱动：用户在新版 Outlook 应用内一键切换获取，
+                    // 强力卸载弹窗内单独提供可移除项（见 ExecuteFullUninstall / UninstallConfirmDialog）。
+                    SetProgress(100);
+                    if (!odtHasWork) SetStatus("✅ 已完成（无变更）");
                 }
                 catch (Exception ex)
                 {
@@ -1007,17 +1285,21 @@ namespace CpqSystemTool
                 finally
                 {
                     // 停止计时器，显示最终耗时
-                    _elapsedTimer.Stop();
+                    // 停止计时器，显示最终耗时（后台线程：_elapsedTimer.Stop() + 绑定属性赋值必须切 UI 线程）
                     var totalElapsed = DateTime.Now - _installStartTime;
-                    if (_elapsedVisibility == Visibility.Visible)
+                    RunOnUi(() =>
                     {
-                        ElapsedTime = $"总耗时: {totalElapsed.Minutes}:{totalElapsed.Seconds:D2}";
-                    }
-                    else
-                    {
-                        ElapsedVisibility = Visibility.Collapsed;
-                        ElapsedTime = "";
-                    }
+                        _elapsedTimer.Stop();
+                        if (_elapsedVisibility == Visibility.Visible)
+                        {
+                            ElapsedTime = $"总耗时: {totalElapsed.Minutes}:{totalElapsed.Seconds:D2}";
+                        }
+                        else
+                        {
+                            ElapsedVisibility = Visibility.Collapsed;
+                            ElapsedTime = "";
+                        }
+                    });
 
                     SetInstalling(false);
                 }
@@ -1063,9 +1345,7 @@ namespace CpqSystemTool
             if (dlg.ShowDialog() == true)
             {
                 string file = dlg.FileName;
-                string dir = Path.GetDirectoryName(file) ?? string.Empty;
                 SetupExePath = file;
-                OdtSetup.SetCacheDir(dir);
                 SetupPathBox.Text = file;
                 AppendLog("ODT 路径已更新: " + file);
                 SetStatus("ODT 路径已设置");
@@ -1172,13 +1452,10 @@ namespace CpqSystemTool
                 // 排除项 = 全部套件应用 − 勾选的 = 未勾选的
                 foreach (var ex in allSuiteIds.Where(id => !selectedSuiteIds.Contains(id)))
                     product.ExcludeApps.Add(ex);
-                // Teams 与 Lync（Skype for Business）默认都不保留：两者都不在 UI 组件目录中展示给用户，
-                // 但必须始终保持排除——否则 ODT 全量替代语义会把已排除的它们意外装回。
-                // 手动加入 ExcludeApps，确保 config.xml 始终包含 <ExcludeApp ID="Lync"/> 与 <ExcludeApp ID="Teams"/>。
-                // Outlook 经典版与新版（OutlookForWindows）默认强制排除：经典版由本工具统一不通过 ODT 部署，
-                // 新版是独立 Store/AppX 应用、ODT 的 ExcludeApp 仅用于阻止随 Office 部署，真正的安装/卸载由 AppX 负责。
-                // 故无论用户如何勾选，只要走 ODT 套件部署就始终排除这两 ID。
-                foreach (var forced in new[] { "Lync", "Teams", "Outlook", "OutlookForWindows" })
+                // Lync/Teams 不在 UI 目录、恒定排除；OutlookForWindows（新版 MSIX）不是 ODT 套件组件，
+                // 不进勾选体系、恒定排除（新版由应用内一键切换获取，强力卸载弹窗内单独移除）。
+                // 经典版 Outlook 改回随组件区勾选受控（勾选=保留、不勾选=排除），故不在此强制列表。
+                foreach (var forced in new[] { "Lync", "Teams", "OutlookForWindows" })
                     if (product.ExcludeApps.All(x => !string.Equals(x, forced, StringComparison.OrdinalIgnoreCase)))
                         product.ExcludeApps.Add(forced);
                 args.Products.Add(product);
@@ -1229,49 +1506,6 @@ namespace CpqSystemTool
             }
 
             return args;
-        }
-
-        /// <summary>
-        /// 卸载 Office 套件中除「经典版 Outlook」外的全部应用（ODT 修改部署）：供用户在强制卸载弹窗勾选「保留经典版 Outlook」时使用。
-        /// 生成仅含套件、且 ExcludeApps 排除除 Outlook 外所有套件应用 + 强制排除 Lync/Teams 的 config，
-        /// 让 ODT 移除 Word/Excel/... 但保留经典版 Outlook。无本机套件信息时直接返回（不执行）。
-        /// </summary>
-        private void OdtKeepClassicOutlook(Action<string> log)
-        {
-            if (!TryGetInstalledSuite(out var suitePid, out var channel))
-            {
-                log("  [!] 未检测到本机套件，无法以「保留经典版 Outlook」方式卸载，已跳过。");
-                return;
-            }
-            int ed = MapProductToEdition(suitePid);
-            var args = new OfficeInstallArguments
-            {
-                Architecture = SelectedArchitecture,
-                Channel = string.IsNullOrEmpty(channel) ? OfficeInstall.Channels[ed] : channel,
-                Version = "MatchInstalled"
-            };
-            var product = new OfficeProductConfig
-            {
-                ProductId = OfficeInstall.ProductIds[ed],
-                Languages = { SelectedLanguage }
-            };
-            // 套件全部应用（含 Groove/OneDrive/Lync/Teams/OutlookForWindows），保留 Outlook，其余全排除
-            var suiteAll = new[] { "Word", "Excel", "PowerPoint", "OneNote", "Access", "Publisher", "Groove", "OneDrive", "Lync", "Teams", "OutlookForWindows" };
-            foreach (var id in suiteAll)
-                if (!string.Equals(id, "Outlook", StringComparison.OrdinalIgnoreCase))
-                    product.ExcludeApps.Add(id);
-            args.Products.Add(product);
-            try
-            {
-                string setup = OdtSetup.Ensure(log, _ => { });
-                if (setup == null) { log("  [!] ODT setup.exe 获取失败，「保留经典版 Outlook」卸载中止。"); return; }
-                string xml = ConfigXmlBuilder.Build(args);
-                int rc = OdtSetup.RunConfig(setup, xml, log);
-                log(rc == 0
-                    ? "  [完成] 已保留经典版 Outlook，其余 Office 组件已卸载。"
-                    : "  [!] ODT 退出码 " + rc + "，保留经典版 Outlook 卸载可能未完全生效，请查看日志。");
-            }
-            catch (Exception ex) { log("  [!] 保留经典版 Outlook 卸载异常: " + ex.Message); }
         }
 
         #region -- 更新通道 / 版本切换（A 方案：订阅版真·切通道 + 永久版重部署切版本）--
@@ -1374,6 +1608,8 @@ namespace CpqSystemTool
             var editionIdx = MapProductToEdition(_installedSuitePid);
             var archIdx = ArchCombo.SelectedItem as string;
             var lang = SelectedLanguage;
+            // 提前在 UI 线程捕获架构（ArchCombo 后台线程不可读），后台线程体改用局部变量
+            string uiCapturedArchitecture = archIdx ?? "64";
             string targetFinal = target;
             int edIdx = editionIdx;
             string before = _installedChannel;
@@ -1386,9 +1622,9 @@ namespace CpqSystemTool
             {
                 try
                 {
+                    AppendLog(GetVersionSelfCheck());
                     SetInstalling(true);
                     SetStatus($"正在切换更新通道（{before} → {targetFinal}，不重装）...");
-                    OdtSetup.SetCacheDir(Path.GetDirectoryName(SetupExePath) ?? SetupExePath);
                     AppendLog("==== 切换更新通道：" + before + " → " + targetFinal + "（订阅版原地对齐，不重装）====");
 
                     string setup = OdtSetup.Ensure(AppendLog, p => { SetProgress(p); SetStatus($"准备 ODT: {p}%"); });
@@ -1402,7 +1638,7 @@ namespace CpqSystemTool
                     // 纯改通道包：只带 <Updates Channel>，不带 <Add> 产品。
                     var args = new OfficeInstallArguments
                     {
-                        Architecture = ArchCombo.SelectedItem as string ?? "64",
+                        Architecture = uiCapturedArchitecture,
                         Channel = string.Empty,
                         Version = "MatchInstalled",
                         UpdateChannel = targetFinal,
@@ -1413,7 +1649,7 @@ namespace CpqSystemTool
                     string xml = ConfigXmlBuilder.Build(args);
                     AppendLog("  已生成仅含 <Updates Channel=\"" + targetFinal + "\"> 的 config.xml");
 
-                    int rc = OdtSetup.RunConfig(setup, xml, AppendLog);
+                    int rc = WaitOdtWithProgress(setup, xml, AppendLog, false); // 纯改通道（MatchInstalled）：不下载新组件，expectDownload=false
 
                     // 回读注册表「Update Channel」校验是否真的变更（轮询 C2R 台账异步落盘）
                     string after = before;
@@ -1423,8 +1659,12 @@ namespace CpqSystemTool
                         if (!string.IsNullOrEmpty(after) && !string.Equals(after, before, StringComparison.OrdinalIgnoreCase)) break;
                         System.Threading.Thread.Sleep(2000);
                     }
-                    _elapsedTimer.Stop();
-                    IsIndeterminateProgress = false;
+                    // 后台线程：_elapsedTimer.Stop() + 直接赋值 IsIndeterminateProgress 必须切 UI 线程
+                    RunOnUi(() =>
+                    {
+                        _elapsedTimer.Stop();
+                        IsIndeterminateProgress = false;
+                    });
                     SetProgress(100);
 
                     if (rc == -2) { AppendLog("  [!] ODT 打印 usage（配置无效、未真正执行），详见日志。"); SetStatus("❌ ODT 未真正执行（config 无效）"); }
@@ -1452,6 +1692,44 @@ namespace CpqSystemTool
             for (int i = 0; i < ChannelOptions.Length; i++)
                 if (string.Equals(ChannelOptions[i].Value, ch, StringComparison.OrdinalIgnoreCase)) return i;
             return -1;
+        }
+
+        /// <summary>
+        /// 把注册表读到的「原始通道值」归一化为 ODT 标准通道名（Current/MonthlyEnterprise/SemiAnnual）。
+        /// C2R 台账里 UpdateChannel 的取值有三种形态（本机实测）：
+        ///   ① ODT 标准名（如 "Current"）——直接保留；
+        ///   ② 永久版 PID（如 "PerpetualVL2019"）——原样返回（DetectCurrentChannel 已按 Volume/Perpetual 识别）；
+        ///   ③ CDN 端点 URL（如 http://officecdn.microsoft.com/pr/492350f6-…）——按 GUID→通道名映射转友好名。
+        /// 注意真实键名是 <b>UpdateChannel（无空格）</b>，旧代码误读带空格的 "Update Channel" 导致永远读到空。
+        /// GUID 表来源：微软官方 M365 更新通道文档（officecdn.microsoft.com/pr/&lt;guid&gt; 与各通道对应）。</summary>
+        private static string NormalizeRawChannel(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+            raw = raw.Trim();
+            // 形态②：永久版 PID（PerpetualVL2019/2024），直接保留供上层按 Volume 识别
+            if (raw.IndexOf("PerpetualVL", StringComparison.OrdinalIgnoreCase) >= 0) return raw;
+            // 形态③：CDN URL（或裸 GUID），取 /pr/ 后的 36 位 GUID 段查表
+            if (raw.IndexOf("officecdn.microsoft.com", StringComparison.OrdinalIgnoreCase) >= 0
+                || System.Text.RegularExpressions.Regex.IsMatch(raw,
+                     @"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"))
+            {
+                int slash = raw.LastIndexOf('/');
+                string guid = slash >= 0 ? raw.Substring(slash + 1) : raw;
+                // 去掉可能的查询串
+                int q = guid.IndexOf('?');
+                if (q > 0) guid = guid.Substring(0, q);
+                switch (guid.ToLowerInvariant())
+                {
+                    case "492350f6-3a01-4f97-b9c0-c7c6ddf67d60": return "Current";
+                    case "64256afe-f5d9-4f86-8936-8840a6a4f5be": return "CurrentPreview";
+                    case "55336b82-a18d-4dd6-b5f6-9e5095c314a6": return "MonthlyEnterprise";
+                    case "7ffbc6bf-bc32-4f92-8982-f9dd17fd3114": return "SemiAnnual";
+                    case "b8f9b850-328d-4355-9145-c59439a0c4cf": return "SemiAnnualPreview";
+                    default: break;
+                }
+            }
+            // 形态①：已是标准名（Current/MonthlyEnterprise/SemiAnnual/BetaChannel…），原样保留
+            return raw;
         }
 
         /// <summary>目标更新通道选择弹窗（单选列表，Current/MonthlyEnterprise/SemiAnnual）。返回选中值，取消返回 null。</summary>
@@ -1518,6 +1796,9 @@ namespace CpqSystemTool
             int edIdx = target;
             string pid = OfficeInstall.ProductIds[target];
             string ch = OfficeInstall.Channels[target];
+            // 提前在 UI 线程捕获架构与语言（ArchCombo 后台线程不可读），后台线程体改用局部变量
+            string uiCapturedArchitecture = ArchCombo.SelectedItem as string ?? "64";
+            string uiCapturedLanguage = SelectedLanguage;
 
             IsIndeterminateProgress = true;
             _installStartTime = DateTime.Now;
@@ -1527,31 +1808,72 @@ namespace CpqSystemTool
             {
                 try
                 {
+                    AppendLog(GetVersionSelfCheck());
                     SetInstalling(true);
                     SetStatus("正在重新部署 Office（" + edName + "）...");
-                    OdtSetup.SetCacheDir(Path.GetDirectoryName(SetupExePath) ?? SetupExePath);
                     AppendLog("==== 切换版本（重新部署）：" + edName + "（" + pid + " / " + ch + "）====");
 
                     string setup = OdtSetup.Ensure(AppendLog, p => { SetProgress(p); SetStatus($"准备 ODT: {p}%"); });
                     if (setup == null) { AppendLog("  [!] ODT setup.exe 获取失败，切换未执行。"); SetStatus("❌ ODT setup.exe 获取失败"); return; }
 
+                    // 保持原版本的组件集：先读本机 C2R 台账当前套件 PID 的 ExcludedApps（逗号分隔值），
+                    // 填入新版本的 OfficeProductConfig.ExcludeApps，使重新部署后组件集与本机一致。
+                    // 读不到 C2R 台账时（新装/无台账）不排除，退化为全量安装。
+                    // 注意：ReadExcludedApps 的 key 是完整注册表值名（如 "O365ProPlusRetail.ExcludedApps"），
+                    // 须用 pid + ".ExcludedApps" 匹配，而非裸 pid。
+                    var keepExcluded = new List<string>();
+                    try
+                    {
+                        var excludedDict = OdtSetup.ReadExcludedApps();
+                        string suffixKey = pid + ".ExcludedApps";
+                        if (excludedDict != null && excludedDict.TryGetValue(suffixKey, out var excludedCsv)
+                            && !string.IsNullOrWhiteSpace(excludedCsv))
+                        {
+                            keepExcluded.AddRange(excludedCsv
+                                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+                            AppendLog("  [组件保持] 本机排除列表: " + string.Join(",", keepExcluded));
+                        }
+                        else
+                        {
+                            AppendLog("  [组件保持] 未找到本机排除列表（新装或无台账），将装全量组件");
+                        }
+                    }
+                    catch { /* 读台账异常不影响切换：退化为全量安装 */ }
+
                     var args = new OfficeInstallArguments
                     {
-                        Architecture = ArchCombo.SelectedItem as string ?? "64",
+                        Architecture = uiCapturedArchitecture,
                         Channel = ch,
                         Version = "MatchInstalled",
                         ForceAppShutdown = true,
                         AcceptEula = true,
                         DisplayFull = false
                     };
-                    args.Products.Add(new OfficeProductConfig { ProductId = pid, Languages = { SelectedLanguage } });
+                    var productCfg = new OfficeProductConfig
+                    {
+                        ProductId = pid,
+                        Languages = { uiCapturedLanguage }
+                    };
+                    if (keepExcluded.Count > 0)
+                    {
+                        productCfg.ExcludeApps.AddRange(keepExcluded);
+                        AppendLog("  [组件保持] 沿用本机原排除列表（" + string.Join(",", keepExcluded) + "）");
+                    }
+                    args.Products.Add(productCfg);
+
+                    // 提交前再读一次 C2R 台账快照，用于 ODT 跑完后判定台账是否已落盘（异步写入）。
+                    var excludedBefore = OdtSetup.ReadExcludedApps();
 
                     string xml = ConfigXmlBuilder.Build(args);
                     AppendLog("  已生成重新部署 config.xml（" + pid + " / " + ch + "）");
 
-                    int rc = OdtSetup.RunConfig(setup, xml, AppendLog);
-                    _elapsedTimer.Stop();
-                    IsIndeterminateProgress = false;
+                    int rc = WaitOdtWithProgress(setup, xml, AppendLog, false); // 重新部署/改通道（MatchInstalled）：不下载新组件，expectDownload=false
+                    // 后台线程：_elapsedTimer.Stop() + 直接赋值 IsIndeterminateProgress 必须切 UI 线程
+                    RunOnUi(() =>
+                    {
+                        _elapsedTimer.Stop();
+                        IsIndeterminateProgress = false;
+                    });
                     SetProgress(100);
 
                     if (rc == 0)
@@ -1564,9 +1886,34 @@ namespace CpqSystemTool
                         AppendLog("  [!] ODT 退出码 " + rc + "，重新部署可能未成功，详见日志。");
                         SetStatus("❌ 重新部署 ODT 退出码 " + rc);
                     }
+                    // C2R 台账写入是引擎异步落盘的，ODT 返回瞬间可能还没写完。
+                    // 轮询最多 3 次（每次间隔 2 秒，总计约 6 秒）等台账变化后再刷新 UI，
+                    // 与主安装流程（1163-1172 行）一致；前后相等说明台账已不再变化，提前结束。
+                    var excludedAfter = OdtSetup.ReadExcludedApps();
+                    for (int i = 0; i < 3 && DictValuesEqual(excludedBefore, excludedAfter); i++)
+                    {
+                        System.Threading.Thread.Sleep(2000);
+                        excludedAfter = OdtSetup.ReadExcludedApps();
+                    }
                     DetectCurrentChannel();
+                    // 刷新版本下拉框：ODT 重新部署完成后 C2R 台账已更新，重读套件 PID
+                    // 同步 EditionCombo / SelectedEdition，让「版本」字段显示真实当前版本。
+                    try
+                    {
+                        if (TryGetInstalledSuite(out var newPid, out _))
+                        {
+                            int newEd = MapProductToEdition(newPid);
+                            if (newEd >= 0 && newEd < OfficeInstall.Editions.Length)
+                            {
+                                SelectedEdition = newEd;
+                                RunOnUi(() => { EditionCombo.SelectedIndex = newEd; });
+                                AppendLog("  [版本刷新] 当前已装版本下拉已同步为 " + OfficeInstall.Editions[newEd]);
+                            }
+                        }
+                    }
+                    catch { /* 刷新失败不影响主流程：台账已刷新，仅下拉显示滞后 */ }
                 }
-                catch (Exception ex) { AppendLog("  [!] 切换版本异常: " + ex.Message); SetStatus("❌ 切换异常"); }
+                catch (Exception ex) { AppendLog("  [!] 切换版本异常: " + ex.Message); AppendLog("  [堆栈] " + ex.StackTrace); SetStatus("❌ 切换异常"); }
                 finally { SetInstalling(false); }
             });
             t.Start();
@@ -1591,6 +1938,7 @@ namespace CpqSystemTool
             Button ok = new Button { Content = "确定", MinWidth = 90, Padding = new Thickness(14, 4, 14, 4), IsDefault = true };
             Button cancel = new Button { Content = "取消", MinWidth = 90, Padding = new Thickness(14, 4, 14, 4), IsCancel = true, Margin = new Thickness(8, 0, 0, 0) };
             btns.Children.Add(ok); btns.Children.Add(cancel);
+            ok.Click += (_, __) => w.DialogResult = true;   // 修复：点「确定」关闭对话框并返回选择
             root.Children.Add(btns);
             w.Content = root;
 
@@ -1601,6 +1949,126 @@ namespace CpqSystemTool
         #endregion
 
         #endregion
+
+        /// <summary>后台线程里跑 ODT：RunConfig 放独立后台线程（阻塞到 ODT 结束），
+        /// 另起进度轮询线程每 3s 重扫 Office 落盘字节量（基线在 ODT 启动前取）驱动进度。
+        /// ODT 引擎没有百分比查询接口（setup.exe /? 仅 /download /configure /customize /help，
+        /// 旧版 /progress 开关已不存在），故用「执行前后 Office 落盘字节差量」作真实进度指标：
+        /// 状态栏显示「已写入 N MB」（高水位、只升不降，防 temp→root 拷贝期双计/清理期回落），
+        /// 每 200MB 打一条日志；轮询默认 3s，单次扫描过慢时自动放宽到 5/10s（防大 Office/HDD 上与下载抢 I/O）。
+        /// 通道切换/减组件等场景差量 ≤ 0，状态显示「配置变更中」。ODT 结束后恢复进度条到 100。返回 ODT 退出码。</summary>
+        private int WaitOdtWithProgress(string setup, string xml, Action<string> log, bool expectDownload)
+        {
+            int rc = 0;
+            // 基线必须在 ODT 启动前取（此刻 C2R agent 尚未开始本次下载）
+            long baseBytes = OdtSetup.OverlayStoreBytesSnapshot();
+            var odtThread = new System.Threading.Thread(() => { rc = OdtSetup.RunConfig(setup, xml, log); })
+            { IsBackground = true };
+            odtThread.Start();
+            // 开头日志按「会不会下载」切措辞：下载期 → “正在下载/安装”；删减/排除/无变更 → “正在应用组件配置”
+            log(expectDownload
+                ? "ODT 引擎运行中（正在下载/安装 Office 组件，可能需数分钟）..."
+                : "ODT 引擎运行中（正在应用组件配置：删减/排除，无新增下载，可能需数分钟）...");
+            if (baseBytes >= 0)
+                log("  [*] ODT 无百分比接口，进度以磁盘实测写入量显示（每 3s 重扫）");
+            else
+            {
+                log("  [!] 落盘字节基线读取失败，本次仅显示 ODT 运行状态");
+                // 基线不可用时轮询线程不再刷状态，避免状态栏卡在前置文案（如"准备中..."）
+                SetStatus("ODT 运行中（无法统计写入量，计时中）...");
+            }
+
+            // 进度轮询线程：每 3s 重扫 Office root + C2R 下载临时目录（实测 4.7GB/1.1 万文件约 340ms，可承受）。
+            // 纯本地文件统计，无副作用（旧方案起 setup.exe 副进程查 /progress，ODT 单实例锁下会阻塞整个执行期）。
+            //
+            // 多线程下载不影响统计准确性（落盘字节是物理量，线程多只是涨得快），但有一个失真点：
+            // C2R delta 安装时先下载到 OfficeC2R* temp、再拷入 root、最后删 temp——重叠期双计、
+            // 清理后总量回落，「已写入 MB」会看起来倒退。故用高水位（历史最大差量）驱动显示/日志，保证不回退。
+            long maxWritten = 0; // 高水位，只升不降
+            int sleepMs = 3000; // 自适应刷新间隔：扫描慢了放宽，避免扫盘与 C2R 下载抢 I/O
+            bool slowLogged = false;
+            // —— 周期性「一直在跑」日志：每 10s 写「已用 Xs · 已写入 N MB」；外加状态栏「校验/对齐中」标注 ——
+            long odtStartTick = Environment.TickCount64; // 本次 ODT 计时基准（自包含，不依赖卸载路径可能未设的 _installStartTime）
+            long lastAliveTick = odtStartTick;           // 上次打周期日志的时刻
+            int lastSeenMb = -1;                         // 最近一次见到的 mb 值（用于判断「有无进展」）
+            long lastProgressTick = odtStartTick;         // 上次 mb 发生变化时的基准时刻
+            var pollThread = new System.Threading.Thread(() =>
+            {
+                while (odtThread.IsAlive)
+                {
+                    try
+                    {
+                        if (baseBytes >= 0)
+                        {
+                            long sw0 = Environment.TickCount64;
+                            long total = OdtSetup.OverlayStoreBytesSnapshot();
+                            long scanMs = Environment.TickCount64 - sw0;
+                            // 扫描耗时 ∝ Office 体量（本机 4.7G 约 340ms；大机/HDD 可到 1s+）：
+                            // >1.5s 放宽到 10s，>800ms 放宽到 5s，否则恢复 3s（快机可恢复）
+                            if (scanMs > 1500) sleepMs = 10000;
+                            else if (scanMs > 800) sleepMs = 5000;
+                            else sleepMs = 3000;
+                            if (sleepMs > 3000 && !slowLogged)
+                            {
+                                slowLogged = true;
+                                log("  [*] 磁盘扫描耗时 " + (scanMs / 1000.0).ToString("0.#") + "s，进度刷新间隔自动放宽至 " + (sleepMs / 1000) + "s（避免与下载抢 I/O，数字本身不受影响）");
+                            }
+                            if (total >= 0)
+                            {
+                                long written = total - baseBytes;
+                                if (written > maxWritten) maxWritten = written;
+                                int mb = (int)(maxWritten / 1048576);
+                                long nowT = Environment.TickCount64;
+
+                                // 追踪「进展」：mb 变化才更新基准时刻；30s 无新写入 = 校验/对齐/下载尾段
+                                if (mb != lastSeenMb) { lastSeenMb = mb; lastProgressTick = nowT; }
+                                bool verifying = (nowT - lastProgressTick >= 30000);
+
+                                // 状态栏（每次轮询刷新）：
+                                //  · 下载期（expectDownload）：有进展→「下载/安装中」；30s 无新写入→「校验/对齐中」
+                                //  · 无新增下载（删减/排除/改通道）：统一「正在应用组件配置」
+                                if (expectDownload)
+                                {
+                                    if (verifying)
+                                        SetStatus($"ODT 校验/对齐配置中，已写入 {mb} MB（30s 无新写入，属正常：校验、配置对齐或下载尾段）");
+                                    else if (written < 0 && maxWritten == 0)
+                                        SetStatus("ODT 应用配置变更中（落盘字节减少，如通道切换/减组件）");
+                                    else
+                                        SetStatus($"ODT 下载/安装中，已写入 {mb} MB");
+                                }
+                                else
+                                {
+                                    SetStatus(written < 0 && maxWritten > 0
+                                        ? $"ODT 正在应用组件配置（删减/排除），落盘字节变动中，当前 {mb} MB"
+                                        : "ODT 正在应用组件配置（删减/排除，无新增下载）");
+                                }
+
+                                // 周期性「一直在跑」日志：每 10s 一条。下载期 →「已写入 N MB」；无新增下载 →「组件配置中」
+                                // （删减/排除不会下载新字节，写「0 MB」会误导）。
+                                if (nowT - lastAliveTick >= 10000)
+                                {
+                                    lastAliveTick = nowT;
+                                    int sec = (int)((nowT - odtStartTick) / 1000);
+                                    log(expectDownload
+                                        ? "  [ODT] 已用 " + sec + "s · 已写入 " + mb + " MB"
+                                        : "  [ODT] 已用 " + sec + "s · 组件配置中");
+                                }
+                            }
+                        }
+                    }
+                    catch { /* 快照失败：跳过本轮，不中断轮询 */ }
+                    System.Threading.Thread.Sleep(sleepMs);
+                }
+            }) { IsBackground = true };
+            pollThread.Start();
+
+            odtThread.Join();
+            // ODT 结束后等待轮询线程自然退出（下一轮 3s 内检测到 IsAlive=false）
+            pollThread.Join(5000);
+            RunOnUi(() => { IsIndeterminateProgress = false; });
+            SetProgress(100);
+            return rc;
+        }
 
         #region -- Log & UI helpers --
 
@@ -1681,7 +2149,7 @@ namespace CpqSystemTool
         private void AppendLog(string text)
         {
             if (text == null) return;
-            Dispatcher.Invoke(() =>
+            void DoLog()
             {
                 string ts = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
                 string icon = PickLogIcon(text);
@@ -1701,28 +2169,79 @@ namespace CpqSystemTool
                 {
                     try { sink(entry); } catch { /* 忽略 */ }
                 }
-            });
+            }
+            // UI 线程直接执行（日志框即时刷新）；后台线程用 BeginInvoke 非阻塞投递，
+            // 避免同步 Invoke 在 UI 线程忙时死锁/抛线程亲和性异常。
+            if (Dispatcher.CheckAccess()) DoLog();
+            else Dispatcher.BeginInvoke(DoLog);
         }
 
         private void SetProgress(int value)
         {
-            Dispatcher.Invoke(() => ProgressValue = Math.Max(0, Math.Min(100, value)));
+            int v = Math.Max(0, Math.Min(100, value));
+            if (Dispatcher.CheckAccess()) { ProgressValue = v; }
+            else Dispatcher.BeginInvoke(() => ProgressValue = v);
+        }
+
+        /// <summary>返回「版本自检」一行：vX.Y.Z + exe 最后修改时间 + SHA256 前 8 位。用于日志首行，让用户确认跑的是哪个版本 exe。</summary>
+        private static string GetVersionSelfCheck()
+        {
+            try
+            {
+                string ver = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "?";
+                string loc = Environment.ProcessPath;
+                if (string.IsNullOrEmpty(loc)) loc = Assembly.GetExecutingAssembly().Location;
+                if (string.IsNullOrEmpty(loc) || !File.Exists(loc))
+                {
+                    return "自检: v" + ver + " | 构建未知 | SHA ?";
+                }
+                string mtime = new FileInfo(loc).LastWriteTime.ToString("yyyy-MM-dd HH:mm");
+                string sha = "";
+                try
+                {
+                    using var fs = new FileStream(loc, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    var h = string.Concat(System.Security.Cryptography.SHA256.HashData(fs).Take(4).Select(b => b.ToString("x2")).ToArray());
+                    sha = h;
+                }
+                catch { /* 读不到 SHA 不影响自检 */ }
+                return $"自检: v{ver} | 构建 {mtime} | SHA {sha}";
+            }
+            catch { return "自检: 版本信息读取失败"; }
         }
 
         private void SetStatus(string msg)
         {
-            Dispatcher.Invoke(() => StatusMessage = msg);
+            if (Dispatcher.CheckAccess()) { StatusMessage = msg; }
+            else Dispatcher.BeginInvoke(() => StatusMessage = msg);
         }
 
         private void SetInstalling(bool val)
         {
-            Dispatcher.Invoke(() =>
+            // 必须用 BeginInvoke（非阻塞）：若用 Invoke（同步），后台线程每次调用都会占住 UI 线程消息泵，
+            // DispatcherTimer（_elapsedTimer 的 tick）正是在消息泵里触发的，被挤掉后"已用 X 秒"数字停止更新。
+            Dispatcher.BeginInvoke(() =>
             {
                 _isInstalling = val;
                 OnPropertyChanged(nameof(IsInstalling));
                 // 通知 Command 重新评估 CanExecute
                 CommandManager.InvalidateRequerySuggested();
             });
+        }
+
+        /// <summary>
+        /// 线程安全的 UI 线程执行器：把直接触碰 WPF 绑定属性（IsIndeterminateProgress /
+        /// ElapsedVisibility / ElapsedTime）与 DispatcherTimer（_elapsedTimer.Start/Stop）的
+        /// 操作统一收口到创建它们的 UI 线程。
+        /// 若当前已在 UI 线程（如切换通道/切换版本在 new Thread 之前、UI 线程里执行）则直接跑，
+        /// 避免不必要的投递开销；若在后台线程（安装/卸载工作线程体）则切到 UI 线程。
+        /// 后台线程用 BeginInvoke 非阻塞投递，避免 Dispatcher.Invoke 跨线程同步死锁。
+        /// </summary>
+        private void RunOnUi(Action action)
+        {
+            if (Dispatcher.CheckAccess())
+                action();
+            else
+                Dispatcher.BeginInvoke(action);   // 非阻塞投递，避免跨线程同步 Invoke 死锁
         }
 
         /// <summary>

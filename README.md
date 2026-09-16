@@ -4,7 +4,7 @@
 >
 > **技术栈**: WPF (C# / .NET 10) · 单文件 exe · 零安装 · 双击即跑 · 管理员权限自动提权
 >
-> **版本**: v1.19
+> **版本**: v1.20
 >
 > **项目主页**: [https://github.com/dandelion80231/System-Cleanup-Optimizer](https://github.com/dandelion80231/System-Cleanup-Optimizer)
 >
@@ -33,7 +33,8 @@
     - [14. 维护工具](#14-维护工具)
     - [15. 驱动清理](#15-驱动清理)
     - [16. 自定义背景](#16-自定义背景)
-    - [17. 配置管理](#17-配置管理)
+    - [17. Office 部署](#17-office-部署)
+    - [18. 配置管理](#18-配置管理)
 - [技术架构](#技术架构)
 - [界面与交互实现](#界面与交互实现)
 - [构建与部署](#构建与部署)
@@ -61,6 +62,7 @@
 | 隐私设置 | 隐私注册表开关 | 12 项独立开关 |
 | 系统工具 | 上帝模式/还原点/版本切换 | 3 个独立子模块 |
 | 内存工具 | 只读内存仪表盘/使用拆解 + 内存优化（清 Standby/空工作集） | MemoryAnalyzer + MainWindow.Memory |
+| Office 部署 | Office 2016–2024/M365 组件化安装/卸载 + ODT 引导下载 | OfficeDeployControl + OfficeDeploy/OfficeInstall（16 个版本选项、bezzad 多线程下载、操作日志持久化） |
 | 激活工具 | 集成 MAS 五种激活方式 | 6 张卡片 (5 激活 + 1 诊断) |
 | 系统信息 | 硬件/软件信息汇总与导出 | WMI + 注册表 + P/Invoke |
 | 维护工具 | 官网 exe 直链探针 + 探针环境管理 | WebView2 Runtime / Node+Playwright 双驱动 |
@@ -87,12 +89,12 @@
 
 ### 下载与运行
 
-1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cpq-system-tool.pages.dev/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.19.exe`）。
+1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cpq-system-tool.pages.dev/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.20.exe`）。
 2. 双击运行即可，**无需安装**。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入单文件 exe。
 3. 首次使用建议：先创建系统还原点，再进行优化配置。
 
-> 当前版本 `系统清理与优化工具_v1.19.exe`：6,794,631 字节（约 6.48 MB），SHA256：
-> `CF69681FA11D987013B3333C9E1FB628D1BDB06A069FE61543D257AC83D0AB46`
+> 当前版本 `系统清理与优化工具_v1.20.exe`：10,094,204 字节（约 9.63 MB），SHA256：
+`5f60265f2fea8e7ca599f02b258651584306fe1b91bc2ba5e61f18c2e2a384e6`
 
 ### 通用操作约定
 
@@ -463,7 +465,11 @@
 
 > 用户可在「配置管理」页面设置自定义背景，支持 5 种渐变模式，背景设置自动保存并在下次启动时恢复。
 
-### 17. 配置管理
+### 17. Office 部署
+
+Office 部署器（`OfficeDeployControl`）：组件卡片网格（Word/Excel/PowerPoint/Outlook/OneNote/OneDrive/Access/Publisher/Visio/Project 可勾选）+ ODT 引导程序自动下载（首次运行拉取到 `cpq-tool\Office 部署\odt\`）；按 `OfficeInstall.cs` 的 16 个版本选项（M365 → 2024/2021/2019/2016 专业增强零售/批量 + 各代家庭版）生成安装配置并调用 ODT 执行；下载走 bezzad 多线程分块；「强力卸载」组件化卸载已装 Office；操作日志持久化到 `cpq-tool\Office 部署\log\`（上限 2000 行、每日单文件、超 7 天自动归档）。
+
+### 18. 配置管理
 
 **核心能力**: 全局配置导出/导入、自动保存、源码包导出、背景图设置。
 
@@ -644,7 +650,7 @@ dotnet build -c Release
 
 ### 分发
 
-只需分发单个 `系统清理与优化工具_v1.19.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
+只需分发单个 `系统清理与优化工具_v1.20.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
 
 ---
 
@@ -674,7 +680,12 @@ dotnet build -c Release
 
 ## 版本更新记录
 
-最新版本为 **v1.19**（.NET 10 构建，2026-09-03）。各版本完整变更见 [CHANGELOG.md](CHANGELOG.md)。
+最新版本为 **v1.20**（.NET 10 构建，2026-09-10）。各版本完整变更见 [CHANGELOG.md](CHANGELOG.md)。
+
+### v1.20（2026-09-10）
+
+- Office 部署修复：补回全量卸载分支；版本选项扩为 16 项（M365 → 2016 家庭版）；ODT/操作日志持久化（上限 2000 行、每日单文件、超 7 天自动归档）；数据目录合并为 exe 旁单一 `cpq-tool` 根目录（按页面子文件夹、换位置自动跟随）；全驱清理增加运行时目录保护（`.pi` / `Roaming\npm` / `pi-desktop`）。
+- 清理优化页：uv 缓存进第一档、Tier3 签名规则命中单列、合计≥1GB 自动折 GB、日志单行化；AppX 页新增描述列并修正系统应用误判；对话框视觉居中、禁用态灰字、换主题重画背景图。
 
 ### v1.19（2026-09-03）
 

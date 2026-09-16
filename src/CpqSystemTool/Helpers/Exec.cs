@@ -44,7 +44,16 @@ namespace CpqSystemTool
                 catch (DecoderFallbackException)
                 {
                     try { return Encoding.GetEncoding("GBK").GetString(bytes); }
-                    catch { return Encoding.UTF8.GetString(bytes); }
+                    catch
+                    {
+                        string s = Encoding.UTF8.GetString(bytes);
+                        // 【P3-21】三级都解不出时，若 U+FFFD 替换字符占主导（>50%）说明源是二进制/损坏数据，
+                        // 整段入日志只会刷屏噪声；给占位符便于定位是哪条命令的输出
+                        int fffd = 0;
+                        for (int i = 0; i < s.Length; i++) if (s[i] == '\uFFFD') fffd++;
+                        if (fffd > 0 && fffd * 2 > s.Length) return "[二进制输出，解码失败]";
+                        return s;
+                    }
                 }
             }
 
@@ -68,6 +77,12 @@ namespace CpqSystemTool
             try { p.WaitForExit(5000); } catch (Exception ex) { DebugLog.Ignore(ex); }   // 等其真正退出，之后读取 ExitCode 才不会抛
 
             if (pid <= 0) return;
+            bool stillAlive;
+            try { stillAlive = !p.HasExited; } catch (Exception ex) { DebugLog.Ignore(ex); stillAlive = false; }
+            if (!stillAlive) return;
+            // 【防 PID 复用误杀】仅当目标进程仍存活才 taskkill /t：此时 pid 必然仍属原进程（未退出就不会被系统重新分配）；
+            // 反之若父进程已退出则跳过——/t 递归只能从「活着的父」挂接进程树，父已死则孙进程本就够不到，
+            // 而 taskkill 去敲一个可能已被复用给无关新进程的 pid 才是危险源（系统清理工具误杀后果重）。
             try
             {
                 // taskkill 位于 System32；/t 递归终止子进程树，/f 强制
@@ -106,20 +121,20 @@ namespace CpqSystemTool
         //  PowerShell
         // ================================================================
 
-        /// <summary>执行 PowerShell 脚本，日志输出返回值。</summary>
-        public static int RunPowerShell(string script, Action<string> log)
+        /// <summary>执行 PowerShell 脚本，日志输出返回值。timeoutMs 可选，默认 15 分钟（快命令够用；长任务传大值）。</summary>
+        public static int RunPowerShell(string script, Action<string> log, int timeoutMs = PROCESS_TIMEOUT_MS)
         {
-            var (exitCode, stdout, stderr) = RunPS(script);
+            var (exitCode, stdout, stderr) = RunPS(script, timeoutMs);
             // 修复：log 可能为 null（同文件 RunPowerShellGet 用的是 log?.Invoke），直接 log(...) 会 NRE 被吞成 -1
             if (!string.IsNullOrWhiteSpace(stdout)) log?.Invoke(stdout.Trim());
             if (!string.IsNullOrWhiteSpace(stderr)) log?.Invoke("   [PS-ERR] " + stderr.Trim());
             return exitCode;
         }
 
-        /// <summary>执行 PowerShell 脚本，返回 stdout（用于查询类，如统计大小）。非零退出码/ stderr 会通过 log 输出。</summary>
-        public static string RunPowerShellGet(string script, Action<string> log)
+        /// <summary>执行 PowerShell 脚本，返回 stdout（用于查询类，如统计大小）。非零退出码/ stderr 会通过 log 输出。timeoutMs 可选，默认 15 分钟。</summary>
+        public static string RunPowerShellGet(string script, Action<string> log, int timeoutMs = PROCESS_TIMEOUT_MS)
         {
-            var (exitCode, stdout, stderr) = RunPS(script);
+            var (exitCode, stdout, stderr) = RunPS(script, timeoutMs);
             if (exitCode != 0)
             {
                 log?.Invoke($"[PS-EXIT={exitCode}]");
@@ -128,12 +143,12 @@ namespace CpqSystemTool
             return stdout ?? "";
         }
 
-                public static (int exitCode, string stdout, string stderr) RunPowerShellGetFull(string script, Action<string> log)
+                public static (int exitCode, string stdout, string stderr) RunPowerShellGetFull(string script, Action<string> log, int timeoutMs = PROCESS_TIMEOUT_MS)
         {
-            var (exitCode, stdout, stderr) = RunPS(script);
+            var (exitCode, stdout, stderr) = RunPS(script, timeoutMs);
             return (exitCode, stdout, stderr);
         }
-        private static (int exitCode, string stdout, string stderr) RunPS(string script)
+        private static (int exitCode, string stdout, string stderr) RunPS(string script, int timeoutMs = PROCESS_TIMEOUT_MS)
         {
             try
             {
@@ -166,8 +181,8 @@ namespace CpqSystemTool
                     p.ErrorDataReceived += (s, e) => { if (e.Data != null) sbErr.AppendLine(e.Data); };
                     p.BeginOutputReadLine();
                     p.BeginErrorReadLine();
-                    KillIfTimeout(p, PROCESS_TIMEOUT_MS);
-                    p.WaitForExit();   // 等待异步输出事件排空（Kill 后也会快速返回）
+                    KillIfTimeout(p, timeoutMs);
+                    p.WaitForExit(15000);   // 【P2 复审】加 15s 栅栏：极端内核挂起时 KillTree/taskkill 都救不出的进程会卡死无限 WaitForExit；有界等待后继续走输出排空（被杀进程管道 EOF 已关闭，WaitAll 不挂起）
                     // 清洗 PowerShell 在非交互重定向下把错误序列化成 CLIXML 的噪声（#< CLIXML ... </Objs>），
                     // 否则日志框会被一坨 XML 刷屏（如 Edge 缓存清理时文件被占用）。
                     return (p.ExitCode, SanitizeClixml(sbOut.ToString()), SanitizeClixml(sbErr.ToString()));
@@ -191,7 +206,11 @@ namespace CpqSystemTool
         {
             if (string.IsNullOrWhiteSpace(s)) return s;
             string t = s.Trim();
-            // ① CLIXML 序列化错误
+            // ① CLIXML 序列化错误。
+            // 【P3-20】<S S= 宽松匹配是有意的：CLIXML 错误块形态为 <S S="Error">…</S>，完整标签匹配
+            // 会漏掉截断/带属性的变体（SendAsync 输出中途被杀等）；误伤路径（普通输出恰好含该子串）
+            // 由 SanitizeClixmlStructured 内部兑底：未匹配到 <S S="(?:Error|Warning)"> 时退化为仅剥壳原文本，
+            // 不会丢失信息。保持宽松优先召回，不收紧。
             if (t.StartsWith("#< CLIXML", StringComparison.Ordinal) || t.Contains("<Objs") || t.Contains("<S S="))
                 return SanitizeClixmlStructured(t);
             // ② 裸 PowerShell 错误记录：仅在识别到错误样板时才清洗，避免误伤普通输出
@@ -270,8 +289,8 @@ namespace CpqSystemTool
         //  CMD / 通用子进程
         // ================================================================
 
-        /// <summary>执行命令行程序。capture=true 时把 stdout 输出到日志。</summary>
-        public static int RunCmd(string[] args, Action<string> log, bool capture = false)
+        /// <summary>执行命令行程序。capture=true 时把 stdout 输出到日志；workingDirectory 非空时设子进程 CWD；timeoutMs 可选，默认 15 分钟（快命令够用；长任务传大值）。</summary>
+        public static int RunCmd(string[] args, Action<string> log, bool capture = false, string workingDirectory = null, int timeoutMs = PROCESS_TIMEOUT_MS)
         {
             if (args == null || args.Length == 0) return -1;
             try
@@ -279,7 +298,7 @@ namespace CpqSystemTool
                 // .vbs 不是 PE 可执行文件：UseShellExecute=false 直接启动会报 ERROR_BAD_EXE_FORMAT（0xC1"不是有效 Win32 应用程序"）。
                 // 必须显式用 64 位 cscript.exe 执行（//nologo //B 静默无窗）。
                 if (args[0].EndsWith(".vbs", StringComparison.OrdinalIgnoreCase))
-                    return RunVbs(args, log, capture);
+                    return RunVbs(args, log, capture, timeoutMs);
                 var cmdline = BuildArgs(args);
                 var psi = new ProcessStartInfo(args[0], cmdline)
                 {
@@ -288,6 +307,10 @@ namespace CpqSystemTool
                     RedirectStandardOutput = capture,
                     RedirectStandardError = capture
                 };
+                // 关键：固定子进程 CWD。不设时子进程继承父进程 CWD（双击 exe 启动=桌面/所在目录），
+                // ODT 等引擎会据此在 CWD 下建日志/数据文件夹，导致桌面冒出无名文件夹。
+                if (!string.IsNullOrEmpty(workingDirectory) && Directory.Exists(workingDirectory))
+                    psi.WorkingDirectory = workingDirectory;
                 using (var p = Process.Start(psi))
                 {
                     if (p == null) { log?.Invoke("  [!] 无法启动: " + args[0]); return -1; }
@@ -298,8 +321,8 @@ namespace CpqSystemTool
                         // 后台排空防大输出阻塞，再用 DecodeCjk 自适应解码（UTF-8 优先、失败回退 GBK）。
                         var outTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardOutput.BaseStream));
                         var errTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardError.BaseStream));
-                        KillIfTimeout(p, PROCESS_TIMEOUT_MS);
-                        p.WaitForExit();
+                        KillIfTimeout(p, timeoutMs);
+                        p.WaitForExit(15000);   // 【P2 复审】加 15s 栅栏防 KillTree/taskkill 均无效的极端内核挂起场景导致永久阻塞
                         System.Threading.Tasks.Task.WaitAll(outTask, errTask);
                         var outp = DecodeCjk(outTask.Result);
                         if (!string.IsNullOrWhiteSpace(outp)) log?.Invoke(outp.Trim());
@@ -307,7 +330,7 @@ namespace CpqSystemTool
                         if (!string.IsNullOrWhiteSpace(errp)) log?.Invoke("   [STDERR] " + errp.Trim());
                         return p.ExitCode;
                     }
-                    KillIfTimeout(p, PROCESS_TIMEOUT_MS);
+                    KillIfTimeout(p, timeoutMs);
                     return p.ExitCode;
                 }
             }
@@ -315,19 +338,17 @@ namespace CpqSystemTool
         }
 
         /// <summary>执行命令行程序，返回 stdout。
-        /// 修正：原注释写「encoding=null 时用 .NET 默认（国内中文 Windows 是 GBK/CP936）」，与实现不符——
-        /// 下面是先把 StandardOutputEncoding / StandardErrorEncoding 固定设为 UTF-8，只有 encoding 非 null
-        /// 时才覆盖。即 encoding=null 的默认解码是 UTF-8（现代 UWP 应用如 winget、msix、PowerShell 7 输出 UTF-8）；
-        /// 若目标程序确实按本地代码页输出（国内中文 Windows 是 GBK/CP936），需显式传入
-        /// Encoding.GetEncoding("GBK") 覆盖该默认。</summary>
-        public static string RunCmdGet(string[] args, Action<string> log, System.Text.Encoding encoding = null)
+        /// 【P3-19】encoding 参数为死参数（仅保留签名兼容，传值不生效）：输出统一走自适应解码
+        /// （原始字节 + DecodeCjk：UTF-8 严格解析优先、失败回退 GBK、再失败保留原文），
+        /// 覆盖 cscript(GBK) / winget(UWP UTF-8) 等全部已知调用场景；调用方无需也不应再传 encoding。</summary>
+        public static string RunCmdGet(string[] args, Action<string> log, System.Text.Encoding encoding = null, int timeoutMs = PROCESS_TIMEOUT_MS)
         {
             if (args == null || args.Length == 0) return "";
             try
             {
                 // 同上：.vbs 走 cscript
                 if (args[0].EndsWith(".vbs", StringComparison.OrdinalIgnoreCase))
-                    return RunVbsGet(args, log);
+                    return RunVbsGet(args, log, timeoutMs);
                 var cmdline = BuildArgs(args);
                 var psi = new ProcessStartInfo(args[0], cmdline)
                 {
@@ -338,7 +359,7 @@ namespace CpqSystemTool
                 };
                 // 不再在此设定 StandardOutputEncoding/StandardErrorEncoding：RunCmdGet 直接读原始字节 +
                 // DecodeCjk 自适应解码（UTF-8 优先、失败回退 GBK），覆盖 cscript 等 GBK 输出程序。
-                // encoding 参数保留以兼容调用方签名（现已由自适应解码统一处理，此处不再单独生效）。
+                // 【P3-19】encoding 参数为签名兼容保留的死参数（见方法 doc），显式 _ = 抑制 unused 警告。
                 _ = encoding;
                 using (var p = Process.Start(psi))
                 {
@@ -346,8 +367,8 @@ namespace CpqSystemTool
                     // 修复乱码：同上，直接读原始字节 + DecodeCjk 自适应解码（UTF-8 优先、失败回退 GBK）
                     var outTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardOutput.BaseStream));
                     var errTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardError.BaseStream));
-                    KillIfTimeout(p, PROCESS_TIMEOUT_MS);
-                    p.WaitForExit();
+                    KillIfTimeout(p, timeoutMs);
+                    p.WaitForExit(15000);   // 【P2 复审】加 15s 栅栏防 KillTree/taskkill 均无效的极端内核挂起场景导致永久阻塞
                     System.Threading.Tasks.Task.WaitAll(outTask, errTask);
                     // 修复：stderr 此前收集后从未使用，命令失败时完全没有诊断信息；仅在非空时输出
                     var errp = DecodeCjk(errTask.Result);
@@ -362,8 +383,8 @@ namespace CpqSystemTool
         //  VBS（cscript 显式执行，规避 ERROR_BAD_EXE_FORMAT）
         // ================================================================
 
-        /// <summary>用 64 位 cscript 执行 .vbs 脚本（返回退出码）。</summary>
-        private static int RunVbs(string[] args, Action<string> log, bool capture)
+        /// <summary>用 64 位 cscript 执行 .vbs 脚本（返回退出码）。timeoutMs 可选，默认 15 分钟。</summary>
+        private static int RunVbs(string[] args, Action<string> log, bool capture, int timeoutMs = PROCESS_TIMEOUT_MS)
         {
             try
             {
@@ -377,8 +398,8 @@ namespace CpqSystemTool
                         // Process 按 UTF-8 解必乱码）：直接读原始字节，后台排空后用 DecodeCjk 自适应解码。
                         var outTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardOutput.BaseStream));
                         var errTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardError.BaseStream));
-                        KillIfTimeout(p, PROCESS_TIMEOUT_MS);
-                        p.WaitForExit();
+                        KillIfTimeout(p, timeoutMs);
+                        p.WaitForExit(15000);   // 【P2 复审】加 15s 栅栏防 KillTree/taskkill 均无效的极端内核挂起场景导致永久阻塞
                         System.Threading.Tasks.Task.WaitAll(outTask, errTask);
                         var outp = DecodeCjk(outTask.Result);
                         if (!string.IsNullOrWhiteSpace(outp)) log?.Invoke(outp.Trim());
@@ -386,15 +407,15 @@ namespace CpqSystemTool
                         if (!string.IsNullOrWhiteSpace(errp)) log?.Invoke("   [STDERR] " + errp.Trim());
                         return p.ExitCode;
                     }
-                    KillIfTimeout(p, PROCESS_TIMEOUT_MS);
+                    KillIfTimeout(p, timeoutMs);
                     return p.ExitCode;
                 }
             }
             catch (Exception ex) { log?.Invoke("  [!] 执行 VBS " + args[0] + " 失败: " + ex.Message); return -1; }
         }
 
-        /// <summary>用 64 位 cscript 执行 .vbs 脚本（返回 stdout）。</summary>
-        private static string RunVbsGet(string[] args, Action<string> log)
+        /// <summary>用 64 位 cscript 执行 .vbs 脚本（返回 stdout）。timeoutMs 可选，默认 15 分钟。</summary>
+        private static string RunVbsGet(string[] args, Action<string> log, int timeoutMs = PROCESS_TIMEOUT_MS)
         {
             try
             {
@@ -405,8 +426,8 @@ namespace CpqSystemTool
                     // 修复乱码（cscript 输出 GBK）：直接读原始字节 + DecodeCjk 自适应解码
                     var outTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardOutput.BaseStream));
                     var errTask = System.Threading.Tasks.Task.Run(() => ReadStreamBytes(p.StandardError.BaseStream));
-                    KillIfTimeout(p, PROCESS_TIMEOUT_MS);
-                    p.WaitForExit();
+                    KillIfTimeout(p, timeoutMs);
+                    p.WaitForExit(15000);   // 【P2 复审】加 15s 栅栏防 KillTree/taskkill 均无效的极端内核挂起场景导致永久阻塞
                     System.Threading.Tasks.Task.WaitAll(outTask, errTask);
                     // 修复：stderr 此前收集后从未使用，脚本报错（如 slmgr 无效密钥）完全没有诊断信息；仅在非空时输出
                     var errp = DecodeCjk(errTask.Result);

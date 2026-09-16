@@ -39,6 +39,11 @@
     <!-- 彩色 emoji 渲染（Emoji.Wpf TextBlock：普通文字走前景色画笔，emoji 字形自动以原色图形渲染，
          浅色/深色主题均适用）；与 office-ui-prototype 同一方案（0.3.4，本地 NuGet 缓存已验证） -->
     <PackageReference Include="Emoji.Wpf" Version="0.3.4" />
+    <!-- 多线程分块下载器（bezzad.Downloader，v5.x 兼容 .NET 10，OTP 同款）：
+         替换原 Downloader.cs 单线程串行实现，ChunkCount=8 并行分块，提速 3-8 倍；
+         零外部依赖（仅可选 Microsoft.Extensions.Logging.Abstractions），MIT 许可。
+         浮动范围 [5.9,6.0)：5.x 内自动吃到 patch/minor 更新，6.0 大版本自动拦下（防 breaking change）。 -->
+    <PackageReference Include="Downloader" Version="[5.9,6.0)" />
   </ItemGroup>
 
   <ItemGroup>
@@ -114,7 +119,7 @@
 
     <ItemGroup>
       <_SrcPkgFiles Include="$(_SrcPkgSrc)\**\*"
-                    Exclude="$(_SrcPkgSrc)\bin\**;$(_SrcPkgSrc)\obj\**;$(_SrcPkgSrc)\.vs\**;$(_SrcPkgSrc)\.git\**;$(_SrcPkgSrc)\packages\**;$(_SrcPkgSrc)\background.png;$(_SrcPkgSrc)\background-light.png;$(_SrcPkgSrc)\Microsoft.Web.WebView2.Core.dll;**\*.bak*;**\*.tmp;**\*.log;**\*.user;**\*.suo;$(_SrcPkgSrc)\Icons\**;$(_SrcPkgSrc)\src.zip;$(_SrcPkgSrc)\Resources\Skus\**" />
+                    Exclude="$(_SrcPkgSrc)\bin\**;$(_SrcPkgSrc)\obj\**;$(_SrcPkgSrc)\.vs\**;$(_SrcPkgSrc)\.git\**;$(_SrcPkgSrc)\packages\**;$(_SrcPkgSrc)\background.png;$(_SrcPkgSrc)\background-light.png;$(_SrcPkgSrc)\Microsoft.Web.WebView2.Core.dll;**\*.bak*;**\*.tmp;**\*.log;**\*.user;**\*.suo;$(_SrcPkgSrc)\Icons\**;$(_SrcPkgSrc)\src.zip;$(_SrcPkgSrc)\Resources\Skus\**;$(_SrcPkgSrc)\src\**;$(_SrcPkgSrc)\src\publish\**;**\*.exe;**\*.dll;**\*.pdb;*.png-opt;cmp_*.png;preview_*.png;background-light.jpg-*" />
     </ItemGroup>
 
     <RemoveDir Directories="$(_SrcPkgStage)" Condition="Exists('$(_SrcPkgStage)')" />

@@ -3,6 +3,41 @@
 本项目所有重要变更记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/)。
 
 
+## [v1.20] - 2026-09-10
+
+> 相对 v1.19：本版将 Office 部署重做为组件卡片网格（ODT 引导下载与 bezzad 多线程分块下载在 v1.18 已引入，本版修复全量卸载分支并将版本选项扩为 16 项）；补齐主题资源键；引入 `rollForward=Minor` 前滚配置；清理废弃 `src.zip`；数据目录合并为单一 cpq-tool 根目录，全驱清理加运行时保护。
+
+### 🚀 重大变更
+- **Office 部署器（OfficeDeployControl）**：激活/系统工具页 Office 区重写为组件卡片网格（Word/Excel/PowerPoint/Outlook/OneNote/OneDrive/Access/Publisher/Visio/Project ToggleButton + 选中缩放动画）、彩色 emoji 日志、矢量绿对勾、字节级进度条；控件内含「强力卸载」按钮，旧 Office 区并入，页面只保留统一日志区（设 `ExternalLogSink` 后控件自动隐藏自带日志框）。
+- **后端 OfficeDeploy.cs + ODT 引导下载**：负责 ODT 引导程序下载、依 `OfficeConfigBuilder` 生成配置 XML、执行安装/卸载；`OfficeInstall.cs` 版本数据改 public 作单一事实来源；补齐 `OfficeDeployControl` 依赖的主题 DynamicResource 键（深/浅色统一取色）。
+- **Office 版本扩为 16 项 + 按年份排序（OfficeInstall.cs 三数组 / MapProductToEdition）**：M365 → 2024/2021/2019/2016 专业增强（零售+批量）→ 各代家庭版/家庭商务，**同年代专业增强在前、家庭版在后，零售在前批量在后**，365/2024 最上、2016 最下。家庭版 SKU 均命令行实测微软官方 CDN 可下载（officecdn 直连 206、实收字节，媒体 2.16–5.28 GB）。
+  - 家庭版 8 项：2019 `HomeStudentRetail`/`HomeBusinessRetail`(Current)、2021 `HomeStudent2021Retail`/`HomeBusiness2021Retail`(PerpetualVL2021)、2024 `Home2024Retail`/`HomeBusiness2024Retail`(Current)、2016 `HomeStudentRetail`/`HomeBusinessRetail`(PerpetualVL2016，与 2019 同名裸 ID、靠通道分代)。
+  - 注：2016 专业增强**批量版**（`ProPlusVolume`）经 ODT `/download` 对照实测 0 字节——无 C2R 媒体、属 MSI/VLSC 形态，**未加入**（2016 段仅 3 条：专增零售 + 家庭 + 家庭商务）。
+- **多线程下载（bezzad.Downloader v5.9.x）**：`Helpers/Downloader.cs` 由单线程 HttpClient 串行改为 bezzad 库 8 分块并行下载（`ChunkCount=8`、`BufferBlockSize=64KB`、`UseProxy=false` 纯直连），大文件提速 3–8 倍；保留重试 + 进度回调 + 断点续传（`EnableAutoResumeDownload`）。csproj 引用 `Downloader [5.9,6.0)` 浮动范围（5.x 内自动取最高、6.0 大版本拦下）。
+- **运行时前滚（rollForward=Minor）**：csproj 加 `<RollForward>Minor</RollForward>`，允许在更高补丁运行时（.NET 10.0.x）运行；新增 `CleanLegacyRuntimeHostArtifacts` 发布目标清理 repo 根目录遗留 hostfxr/coreclr 旧运行时 DLL，避免其抢占 `runtimeconfig.json` 致前滚失效。
+
+### 🐛 缺陷修复
+- **Office 全量卸载逻辑修正**：补回合并进 `OfficeDeployControl` 时丢失的全卸分支，「强力卸载」可完整清除已装组件（含残留目录 + 注册表清理，且卸载命令非零退出码时中止清理的安全闸门）。
+- **编译错误（RunInBgWithStatus 重复定义）**：删除 `MainWindow.Helpers.cs` 中重复方法定义，消除 CS0101。
+- **BOM 修复**：还原被误去 UTF-8 BOM 的源文件，避免中文注释/字符串乱码。
+- **BuildArgs 逻辑修正**：修正 Office 配置生成时组件拼接逻辑，使选中组件与最终 XML 一致。
+
+### ♻️ 质量打磨
+- **废弃 src.zip 清理**：删仓库内约 2.4 MB `src.zip`（已由 v1.19 `GenerateSourcePackage` 构建期自动打包替代），移除 `tools/regen_src_zip.py` 及相关 `.gitignore` 规则。
+- **EmojiLabel 新增**：引入 `EmojiLabel.cs`（基于 Emoji.Wpf）统一彩色 emoji 渲染，供日志等场景复用。
+- **中文控制台输出解码**：`Exec.cs` 重构（`CodePagesEncodingProvider` + GBK/CP936），修复 slmgr/ospp 等中文命令输出乱码。
+- **下载启动日志**：`Downloader.TryDownloadOnce` 开头打印 bezzad 运行参数（分块数 / 缓冲 / 限速 / 超时），每次下载尝试（含重试）透明可观测。
+- **发布脚本**：新增 `tools/publish.ps1` 规范化单文件发布流程。
+
+### 📦 数据目录与日志治理（第二轮打磨）
+- **cpq-tool 数据目录合并**：全部数据合并到 exe 旁单一根目录 `cpq-tool`（按页面子文件夹），exe 换位置自动跟旧路径找回，缺失子文件夹自动补建，首次运行生成 `文件夹说明.txt`。
+- **运行时目录保护**：全驱清理不再误删 `.pi`、`Roaming\npm`、`pi-desktop` 内的 Node/Python 运行时（缓存≠运行时依赖，误删会导致开发工具起不来）。
+- **清理优化页**：uv 缓存归入第一档；Tier3 签名词规则不再误触发 90 天未用规则（单列「签名规则命中」）；合计≥1GB 自动折 GB；清理日志统一「名称+结果」单行。
+- **Office 部署器**：日志框自适应 8–25 行；ODT 轮询等待态可见；操作日志持久化到 `Office\logs`（上限 2000 行、每日单文件、超 7 天自动归档）；regbackup 移入 Config 子文件夹。
+- **AppX 页**：应用列表新增描述列；修正「全部应用」只取前 200 条导致误判系统应用；工具栏改五星等宽布局。
+- **对话框与视觉**：4 个页面对话框视觉居中；禁用态按钮显示灰字；换主题时后台图缓存失效重画；「导出源码」与「配置备份」文件夹选择统一系统树形选择器、默认目录跟随数据根。
+
+
 ## [v1.19] - 2026-09-03
 
 > 相对 v1.17 的源码变更（基线 commit 1ab18c3 + 本轮 CHANGELOG 补充）：**运行平台由 .NET Framework 4.8 迁移至 .NET 10（UI 框架仍为 WPF）**，「导出源码」改为构建期自动打包；补齐 5 处已知缺陷（N1/A3/A4/A8/N2），并治理全项目 61 处空 `catch {}` / `catch (Exception) {}` 静默吞异常（改为 `DebugLog.Ignore(ex)` 记录日志，便于排查）。

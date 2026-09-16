@@ -23,7 +23,7 @@ namespace CpqSystemTool
             new ExtraItem { Id = "thumb",    Name = "缩略图缓存",   Desc = "thumbcache_*.db", Path = @"%LOCALAPPDATA%\Microsoft\Windows\Explorer\thumbcache_*.db" },
             new ExtraItem { Id = "d3d",      Name = "D3D着色器缓存", Desc = "DirectX 着色器缓存", Path = @"%LOCALAPPDATA%\D3DSCache" },
             new ExtraItem { Id = "term",     Name = "终端缓存",     Desc = "Windows Terminal 缓存",   Path = @"%LOCALAPPDATA%\Microsoft\Windows Terminal\Cache" },
-            new ExtraItem { Id = "prefetch", Name = "预读取文件",   Desc = "Prefetch 预读取",     Path = @"C:\Windows\Prefetch" },
+            new ExtraItem { Id = "prefetch", Name = "预读取文件",   Desc = "Prefetch 预读取",     Path = @"%WINDIR%\Prefetch" },
             new ExtraItem { Id = "winsxs",   Name = "WinSxS 冗余(DISM)",  Desc = "DISM /ResetBase（耗时数分钟）", Path = null },
         };
 

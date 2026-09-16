@@ -147,10 +147,10 @@ namespace CpqSystemTool
                 var activationMethods = new[]
                 {
                     new { Id="HWID",     Name="HWID",      Sub="硬件永久激活",       Desc="数字许可证绑定硬件，永久有效（重装后可能失效）", Color=_accent },
-                    new { Id="KMS38",    Name="KMS38",      Sub="激活至2038年",         Desc="KMS 密钥激活，有效期至2038年1月，适合长期使用", Color=new SolidColorBrush(Color.FromRgb(0x34, 0x98, 0xDB)) },
+                    new { Id="KMS4k",    Name="KMS4k",      Sub="卷许长期激活",         Desc="仅限批量/卷许版（Windows+Office）\n有效期4000+年，零售版、家庭版无效", Color=new SolidColorBrush(Color.FromRgb(0x34, 0x98, 0xDB)) },
                     new { Id="Ohook",    Name="Ohook",      Sub="Office 激活",          Desc="仅激活 Microsoft Office 套件，不影响 Windows", Color=new SolidColorBrush(Color.FromRgb(0x9B,0x59,0xB6)) },
                     new { Id="KMS",      Name="Online KMS", Sub="在线KMS（每180天）",   Desc="在线KMS服务器激活，需每180天续期或配合计划任务", Color=new SolidColorBrush(Color.FromRgb(0xE6,0x7E,0x22)) },
-                    new { Id="TSforge",  Name="TSforge",    Sub="强制激活",             Desc="强制写入激活信息，绕过常规检测（可能被检测）", Color=_warnOrange },
+                    new { Id="TSforge",  Name="TSforge",    Sub="强制激活",             Desc="强制写入激活信息，绕过常规检测（可能被检测）", Color=new SolidColorBrush(Color.FromRgb(0xE7, 0x4C, 0x3C)) },
                     new { Id=Activation.DiagnosticMethodId, Name="诊断", Sub="查看激活状态", Desc="不执行激活，仅显示当前 Windows/Office 激活详情", Color=_textDim },
                 };
 
@@ -368,15 +368,33 @@ namespace CpqSystemTool
             return root;
         }
 
+        // =====================================================================
+        //  Module: Office 部署（激活页）页面缓存（驱动清理页同款「窗口累积」模式）
+        // =====================================================================
+        // 导航每次切页都调 Build() 重建，重建会丢掉 Office 部署日志与正在跑的 ODT 进度 UI。
+        // 缓存整页根节点（含 logRich 日志区 + OfficeDeployControl）：创建一次后跨导航复用，
+        // 日志在软件关闭前始终累积；主题切换时失效重建（应用新笔刷，与驱动清理页语义一致）。
+        private UIElement _cachedActivationRoot;
+
         private UIElement BuildActivation()
         {
-            // 修正：原注释称「让日志窗口撑满剩余空间（Star 高度）」，与下面的 RowDefinitions 不符——
-            // 三行全是 GridLength.Auto，日志行也是 Auto（不撑满）。用 Grid 而非 StackPanel 只是为了让
-            // 各行能独立按内容取高，日志保持 Auto 高度（内容多时由内部 ScrollViewer 滚动）。
+            if (_cachedActivationRoot != null) return _cachedActivationRoot;
+            _cachedActivationRoot = BuildActivationInner();
+            return _cachedActivationRoot;
+        }
+
+        /// <summary>清空 Office 部署页缓存，下次访问时重建（主题切换后应用新笔刷；日志随页重建清空——与驱动清理页一致）。</summary>
+        private void InvalidateActivationCache() => _cachedActivationRoot = null;
+
+        private UIElement BuildActivationInner()
+        {
+            // 日志行改 Star（撑满剩余视口）：让「日志框」高度由剩余空间驱动——默认窗口≈8 行、
+            // 最大化≈25 行，只有日志框自身（内部 ScrollViewer）滚动，页面级滚动已移除。
+            // （对齐 Software 页「Star 行 + BindRootHeightToViewport(root) + 内部 ScrollViewer 撑满」的成熟模式。）
             var root = new Grid();
-            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // Header
-            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // Office 部署
-            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 日志（Auto，不撑满）
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // 0: Header
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // 1: Office 部署
+            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });  // 2: 日志（Star 撑满剩余）
 
             var headerTb = Header("office部署", "使用 Office 部署工具 (ODT) 安装 / 卸载 Microsoft Office，可自定义组件与激活方式。");
             Grid.SetRow(headerTb, 0);
@@ -393,22 +411,31 @@ namespace CpqSystemTool
             // 拆分前 OfficeDeployControl 自带 LogBox 设了 MinHeight=80/MaxHeight=200，空时也常驻可见；
             // 拆分后改用本页级 logRich，若不给 MinHeight，空 ItemsControl 高度≈0 只剩一条细线，看起来像"默认隐藏"。
             // 这里套一层 ScrollViewer 并设 MinHeight/MaxHeight，复刻"常驻可见空框、内容多时内部滚动"的体验。
+            // 日志框高度策略（彻底版）：
+            // - MinHeight=145：空日志框时的最小可见高度（约 8 行，防止只剩一条细线）；内容更多时 WPF 按实际内容渲染，
+            //   在 Auto 行里 MinHeight 只是下限、不是固定值，故 145/148/150 之间肉眼无差（被内容主导，非被 MinHeight 主导）。
+            // - MinHeight=145（≈8 行）：空日志框时的最小可见高度（Star 行给的空间不足 8 行时也保底 8 行）。
+            // - MaxHeight=450（≈25 行）：最大化时撑高的上限——日志框最多显示 25 行，再多由内部滚动条滚，
+            //   避免窗口很大时日志框被拉得过高。行高≈18px：8 行=145、25 行=450。
+            // 历史教训：MinHeight 只是下限，真正决定"撑多高"的是 Star 行给的空间 + MaxHeight 上限。
             var logRichScroll = new ScrollViewer
             {
                 Content = logRich,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                MinHeight = 90,
-                MaxHeight = 220,
+                MinHeight = 145,
+                MaxHeight = 450,
+                VerticalAlignment = VerticalAlignment.Stretch
             };
             var logRichBorder = WrapLogBoxRich(logRichScroll, cornerRadius: 6);
 
             // 右键复制所有日志内容（ItemsControl 不支持原生文本选择，需提供此功能）。
-            // 注意：这里不用标准 WPF ContextMenu。标准 ContextMenu 有两大问题，正是用户反馈的"菜单框比需求长、外框样式不对"：
-            //   ① 默认模板左侧有固定图标槽/gutter，且框宽会被撑成"内容区宽度"（非文字内容宽度）→ 菜单明显过长；
-            //   ② 默认主题下深/浅色会出现与全站不一致的白色竖边。
-            // 改用与「管理依赖」下拉（Maint.cs MakeMenuItem）一致的自定义 Popup + Border/TextBlock：
-            //   框宽紧贴文字内容（"复制日志"），四周主题色统一、外观与全站一致。
+            // 样式对齐 v1.21.exe：自定义 Popup + Border/TextBlock（与 Maint.cs MakeMenuItem 一致），
+            //   框宽紧贴文字内容、四周主题色统一、外框与全站一致（规避标准 ContextMenu 的 gutter/白边/框过长问题）。
+            // 行为：手动管理关闭（见下方 closeCopyLogOnOutsideClick），效果等同标准右键菜单——
+            //   右键弹出、左键点别处自动消失、切页随页面卸载关闭（不再常驻）。
+            //   关键：本项目 net10/WPF 下 StaysOpen=false 的 Popup 打开后会因 Light-Dismiss 自关（点不开/闪退，
+            //   见 Maint.cs depsPopup 注释），故必须 StaysOpen=true 并复用「管理依赖」菜单的同法手动关闭。
             var copyLogPopup = new Popup
             {
                 PlacementTarget = logRichBorder,
@@ -427,12 +454,12 @@ namespace CpqSystemTool
                 Child = copyMenuPanel
             };
             copyLogPopup.Child = copyMenuBorder;
-            // 修复：AllowsTransparency=true 会以独立顶层 HWND 承载并带 WS_EX_TOPMOST，导致弹层浮到最顶层。
-            // 剥离该样式使其落到正常层级（与"管理依赖"/分类下拉一致）。
+            // 与「管理依赖」下拉一致：AllowsTransparency=true 会以独立顶层 HWND 卸载并带 WS_EX_TOPMOST，
+            // 导致弹窗浮到最顶层；此处禁用置顶使其落在正常层级。
             UiShapes.DisablePopupTopmost(copyLogPopup);
 
-            // 复制时带上图标对应的 emoji 文本。"check" 是 XAML 绿色矢量勾的哨兵值（非 emoji 字符），必须映射成 ✅，
-            // 否则粘贴出来是 "check" 字样。使用重试机制写入剪贴板，避免 OfficeClickToRun 占用时 OpenClipboard 失败。
+            // 复制时带上图标对应的 emoji 文本。"check" 是 XAML 绿色矢量勾的标识（非 emoji 字符），必须映射成 ✅，
+            // 否则粘贴出来是 "check" 字样。使用重试机制写入剪贴板，规避 OfficeClickToRun 占用时 OpenClipboard 失败。
             async void CopyAllLogAsync()
             {
                 try
@@ -440,7 +467,8 @@ namespace CpqSystemTool
                     var lines = logRich.Items.Cast<OfficeDeployControl.LogEntry>()
                         .Select(le => $"{le.Timestamp}  {(le.Icon == "check" ? "✅" : le.Icon)} {le.Text}")
                         .ToList();
-                    await TrySetClipboardTextAsync(string.Join("\n", lines));
+                    if (await TrySetClipboardTextAsync(string.Join("\n", lines)))
+                        SetStatus("日志已复制到剪贴板");
                 }
                 catch (Exception ex) { DebugLog.Ignore(ex); }
             }
@@ -451,6 +479,53 @@ namespace CpqSystemTool
                 e.Handled = true;
                 copyLogPopup.IsOpen = true;
             };
+
+            // ----- 手动管理"点击弹窗外部关闭"（行为对齐标准右键菜单，避免 StaysOpen=true 后常驻）-----
+            // 仅响应左键（右键用于打开弹窗，若窗口级 PreviewMouseDown 也处理右键会把刚开的弹窗误关）；
+            // 排除列表只含弹窗自身内容（copyMenuBorder/copyMenuPanel，菜单项内点击由 MakeMenuItem 自关）。
+            // 关键：不能把打开触发区 logRichBorder 列入排除——日志框很大，右键打开后左键点回日志框内仍会命中
+            //   logRichBorder 而不关闭，正是"常驻"的根因。左键点日志框内任意处 / 点别处 / 切页点击导航都落在排除列表外 → 关闭。
+            // 挂 / 解绑与页面生命周期对齐：root.Unloaded（导航切走 / 主题重建页面 / 窗口关闭）解绑并收起弹窗，
+            // 杜绝旧写法"只 += 从不 -="造成的窗口级事件泄漏；Loaded 重绑幂等，反复切主题也不会累积处理器。
+            MouseButtonEventHandler closeCopyLogOnOutsideClick = (s, e) =>
+            {
+                try
+                {
+                    // 只处理左键：右键用于打开弹窗，若窗口级 PreviewMouseDown 也响应右键会把刚打开的弹窗误关。
+                    if (e.ChangedButton != MouseButton.Left) return;
+                    if (!copyLogPopup.IsOpen) return;
+                    var cur = e.OriginalSource as DependencyObject;
+                    while (cur != null)
+                    {
+                        // 仅排除弹窗自身内容（菜单项内点击由 MakeMenuItem 自关）；
+                        // 注意：不能把打开触发区 logRichBorder 列入排除——日志框很大，右键打开后左键点回
+                        // 日志框内仍会命中 logRichBorder 而不关闭，导致"常驻"。
+                        if (ReferenceEquals(cur, copyMenuBorder) || ReferenceEquals(cur, copyMenuPanel))
+                            return;
+                        cur = VisualTreeHelper.GetParent(cur) as DependencyObject
+                              ?? LogicalTreeHelper.GetParent(cur) as DependencyObject;
+                    }
+                    copyLogPopup.IsOpen = false;
+                }
+                catch (Exception ex) { DebugLog.Ignore(ex); }
+            };
+            RoutedEventHandler attachCopyLogOutsideHook = null;
+            RoutedEventHandler detachCopyLogOutsideHook = null;
+            attachCopyLogOutsideHook = (s, e) =>
+            {
+                this.PreviewMouseDown -= closeCopyLogOnOutsideClick;
+                this.PreviewMouseDown += closeCopyLogOnOutsideClick;
+            };
+            detachCopyLogOutsideHook = (s, e) =>
+            {
+                this.PreviewMouseDown -= closeCopyLogOnOutsideClick;
+                try { copyLogPopup.IsOpen = false; }
+                catch (Exception ex) { DebugLog.Ignore(ex); }
+            };
+            // 先立即挂上：即使 Loaded 因故未触发，也退化为始终挂着（比永不生效更稳）。
+            attachCopyLogOutsideHook(null, null);
+            root.Loaded += attachCopyLogOutsideHook;
+            root.Unloaded += detachCopyLogOutsideHook;
 
             // ----- Office 安装/卸载（v1.20: 使用 OfficeDeployControl，内含卸载按钮）-----
             // 激活卡片已移至「系统工具」页（版本转换下方），本页仅保留 Office 部署功能。
@@ -464,16 +539,29 @@ namespace CpqSystemTool
                 logRich.Dispatcher.Invoke(() =>
                 {
                     logRich.Items.Add(entry);
+                    // 显示上限 2000 行（与 OfficeDeployControl.MaxLogLines 同一约定）：
+                    // 只裁显示列表（从最旧端移除）；ODT 进程、磁盘文件、运行状态均不受影响。
+                    while (logRich.Items.Count > 2000) logRich.Items.RemoveAt(0);
                 });
+                OfficeDeployLog.Append(entry); // 本地留一份：cpq-tool\Office 部署\log\（按天分文件，保留 14 天）
             };
             var officeCard = Card();
+            // 卡片底内边距 16→7：按钮行到卡片下边框 = 按钮底边距 2 + 控件根底边距 3 + 卡片底 7 = 12px，
+            // 与按钮行到上方进度条的 12px（进度条底 2 + 按钮行上 10）对齐，上下最整齐
+            officeCard.Padding = new Thickness(16, 16, 16, 7);
             var officeCardInner = (StackPanel)officeCard.Child;
             officeCardInner.Children.Add(officeDeploy);
             Grid.SetRow(officeCard, 1);
             root.Children.Add(officeCard);
 
-            var logWrap = new StackPanel();
-            logWrap.Children.Add(new Emoji.Wpf.TextBlock
+            // 日志区：嵌套 Grid —— row0=标题(Auto)、row1=日志框(Star 撑满剩余)。
+            // 日志框放进 Star 行后，其高度由「剩余视口空间」驱动：默认窗口≈8 行、最大化≈25 行（MaxHeight 封顶），
+            // 只有 logRichScroll 自身滚动；页面级 ScrollViewer 已移除（默认/最大化都装得下，不需要页面级滚动）。
+            var logGrid = new Grid();
+            logGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            logGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            var logHeader = new Emoji.Wpf.TextBlock
             {
                 // 彩色 emoji 页头：📋 由 Emoji.Wpf.TextBlock 渲染原色图形
                 Text = "📋 执行日志（Office）",
@@ -481,26 +569,24 @@ namespace CpqSystemTool
                 Foreground = _accent,
                 FontSize = 13,
                 Margin = new Thickness(0, 4, 0, 8)
-            });
-            logWrap.Children.Add(logRichBorder);
-            Grid.SetRow(logWrap, 2);
-            root.Children.Add(logWrap);
-
-            // v1.20 修复：本页三行全是 Auto，内容总高常常超出默认窗口高度。
-            // 原来只把 root.MaxHeight 绑到视口 → 超出部分被 ContentArea 直接裁掉且不出滚动条。
-            // 改为套一层页面级 ScrollViewer：限高落在 ScrollViewer 上，root 拿到无限高度按内容
-            // 自然排布，超出即滚动。滚轮路由沿用 MainWindow.xaml.cs 的「鼠标下方 ScrollViewer 优先」逻辑。
-            var pageScroll = new ScrollViewer
-            {
-                Content = root,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                CanContentScroll = false,
-                Background = System.Windows.Media.Brushes.Transparent
             };
-            BindRootHeightToViewport(pageScroll);
+            logGrid.Children.Add(logHeader);
+            Grid.SetRow(logHeader, 0);
 
-            return pageScroll;
+            logRichBorder.VerticalAlignment = VerticalAlignment.Stretch;
+            logGrid.Children.Add(logRichBorder);
+            Grid.SetRow(logRichBorder, 1);
+
+            Grid.SetRow(logGrid, 2);
+            root.Children.Add(logGrid);
+
+            // Star 行需要高度约束：把 root.MaxHeight 绑到视口（跟随初始 + 缩放）。
+            // 日志框填满「root 剩余空间」并被 Min/MaxHeight 夹住，超出才内部滚动。
+            // 外层 pageScroll 已移除：默认/最大化都装得下，不需要页面级滚动控件；
+            // 极小窗口下日志框底缘可能被裁，但日志仍可内部滚动查看（对齐用户诉求：整页不再需要滚动控件）。
+            BindRootHeightToViewport(root);
+
+            return root;
         }
     }
 }

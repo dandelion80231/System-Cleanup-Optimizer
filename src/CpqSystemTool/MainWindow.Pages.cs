@@ -975,7 +975,7 @@ namespace CpqSystemTool
                 Btn("💾 导出为 TXT...", false, () =>
                 {
                     if (string.IsNullOrEmpty(_lastSystemInfo)) return;
-                    var dlg = new SaveFileDialog { Filter = "文本文件|*.txt", FileName = "system-info-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".txt" };
+                    var dlg = new SaveFileDialog { Filter = "文本文件|*.txt", FileName = "system-info-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".txt", InitialDirectory = AppPaths.EnsureDir(AppPaths.SysInfoDir) };
                     if (dlg.ShowDialog() == true)
                     {
                         File.WriteAllText(dlg.FileName, _lastSystemInfo, Encoding.UTF8);

@@ -503,13 +503,20 @@ namespace CpqSystemTool
             var logBorder = WrapLogBox(log);
             logBorder.Visibility = Visibility.Collapsed;  // 默认隐藏
 
-            var countLbl = new TextBlock { Foreground = _textDim, FontSize = 13, Margin = new Thickness(0, 0, 0, 8) };
+            var countLbl = new TextBlock { Foreground = _textDim, FontSize = 13, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
 
-            // 工具栏：4 列均分（刷新 / 计数 / 全选 / 卸载选中），列定义在按钮创建后统一设置
+            // 工具栏：5 列均分，首项靠左边、末项靠右边、中间 3 项各自居中 → 间距均匀；全部垂直中齐同一水平线（列定义在按钮创建后统一设置，见下）
             var toolBar = new Grid { Margin = new Thickness(0, 8, 0, 10) };
 
             // 存储所有行的 CheckBox 和 Border 引用（用于"全选"和批量卸载）
             var rowItems = new List<Tuple<System.Windows.Controls.CheckBox, Border, AppxInfo>>();
+
+            // 「隐藏系统框架组件」开关（与「□ 全选」同款带边框二级按钮）：点按切换 隐藏/显示，重渲染已缓存的 lastItems（不重新查询）；默认隐藏，滤掉 ~90 个系统框架/资源包，减少噪音与误删
+            bool hideFramework = true;
+            Action onFwToggle = null; // 在下方工具栏块赋值（引用 btnToggleRaw/rawAllSelected）
+            var btnHideFw = Btn("隐藏系统框架组件", false, () => onFwToggle(), 140);
+            btnHideFw.Content = "☑ 隐藏系统框架组件";   // 默认隐藏态（☑/□ 前缀与「全选」按钮同一约定）
+            var lastItems = new List<AppxInfo>();
 
             void RefreshList(bool showProgress = true)
             {
@@ -519,10 +526,21 @@ namespace CpqSystemTool
                     var items = AppxManager.ListInstalled(l);
                     try { Dispatcher.Invoke(() =>
                     {
-                        listStack.Children.Clear();
-                        rowItems.Clear();
-                        foreach (var it in items)
-                        {
+                        lastItems = items;
+                        RenderRows();
+                    }); } catch { /* 窗口已关闭，忽略 */ }
+                }, "列表已刷新", () => pb.Visibility = Visibility.Collapsed);
+            }
+
+            // 渲染裸列表行（尊重「隐藏系统框架组件」开关：框架/资源包被隐藏时不建行，计数标注隐藏数）
+            void RenderRows()
+            {
+                listStack.Children.Clear();
+                rowItems.Clear();
+                int hiddenCount = 0;
+                foreach (var it in lastItems)
+                {
+                    if (hideFramework && it.IsFramework) { hiddenCount++; continue; }
                             var rowBorder = new Border
                             {
                                 Background = Brushes.Transparent,
@@ -532,9 +550,10 @@ namespace CpqSystemTool
                                 Tag = it.FullName
                             };
                             var rowGrid = new Grid();
-                            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });     // 勾选框
+                            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });        // 勾选框
                             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 名称
-                            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });     // 卸载按钮
+                            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) }); // 说明（灰色小字，防误删）
+                            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });        // 卸载按钮
 
                             // 勾选框
                             var chk = new System.Windows.Controls.CheckBox
@@ -564,6 +583,20 @@ namespace CpqSystemTool
                             Grid.SetColumn(nameTb, 1);
                             rowGrid.Children.Add(nameTb);
 
+                            // 说明（通用方案：包自带本地化描述 / 目录精选 / 关键词兑底，灰色小字，防止误删；鼠标悬停看全文）
+                            var descTb = new TextBlock
+                            {
+                                Text = it.Description ?? "",
+                                Foreground = _textDim,
+                                FontSize = 11,
+                                VerticalAlignment = VerticalAlignment.Center,
+                                TextTrimming = TextTrimming.CharacterEllipsis,
+                                ToolTip = it.Description,
+                                Margin = new Thickness(100, 0, 8, 0)   // 说明列整体右移约 8-10 字（左边距）
+                            };
+                            Grid.SetColumn(descTb, 2);
+                            rowGrid.Children.Add(descTb);
+
                             // 单行卸载按钮
                             var uninstBtn = Btn("卸载", false, () =>
                             {
@@ -573,7 +606,7 @@ namespace CpqSystemTool
                                     "已卸载: " + it.Name, () => { _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; RefreshList(); });
                             }, 60);
                             uninstBtn.FontSize = 11;
-                            Grid.SetColumn(uninstBtn, 2);
+                            Grid.SetColumn(uninstBtn, 3);
                             rowGrid.Children.Add(uninstBtn);
 
                             rowBorder.Child = rowGrid;
@@ -584,10 +617,12 @@ namespace CpqSystemTool
 
                             listStack.Children.Add(rowBorder);
                             rowItems.Add(Tuple.Create(chk, rowBorder, it));
-                        }
-                        countLbl.Text = $"[OK] 共 {items.Count} 个应用包";
-                    }); } catch { /* 窗口已关闭，忽略 */ }
-                }, "列表已刷新", () => pb.Visibility = Visibility.Collapsed);
+                }
+                // 简短计数（按要求）："共 N 个应用包，隐藏 M 个"（无隐藏时只显示总数）
+                countLbl.Text = hiddenCount > 0
+                    ? $"共 {lastItems.Count} 个应用包，隐藏 {hiddenCount} 个"
+                    : $"共 {lastItems.Count} 个应用包";
+                UpdateRawSelCount();
             }
 
             // 工具栏按钮（顺序：刷新 / 全选 / 卸载选中，绑定到对应列）
@@ -600,11 +635,16 @@ namespace CpqSystemTool
             // ——但 Grid 已 Add 了 countLbl 在 col 0，先把 countLbl 放第 1 列（占满）
             // 重做列定义
 
-            // 工具栏：4 列均分（刷新 / 计数 / 全选 / 卸载选中）
+            // 工具栏 5 列均分：col0 [刷新列表]靠左边 ｜ col1 [☑隐藏开关]居中 ｜ col2 计数居中 ｜ col3 [全选]居中 ｜ col4 [卸载选中]靠右边
             toolBar.Children.Clear();
             toolBar.ColumnDefinitions.Clear();
-            for (int ti = 0; ti < 4; ti++)
+            for (int ti = 0; ti < 5; ti++)
                 toolBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            // 统一垂直中齐（Btn() 默认不设 VerticalAlignment 会落在顶部，导致高低不一）；btnToggleRaw/btnUninstallSel 的对齐在声明处设置
+            btnRefresh.HorizontalAlignment = HorizontalAlignment.Left;
+            btnRefresh.VerticalAlignment = VerticalAlignment.Center;
+            btnHideFw.HorizontalAlignment = HorizontalAlignment.Center;
+            btnHideFw.VerticalAlignment = VerticalAlignment.Center;
 
             // 全选/取消全选（合并为一个切换按钮）
             var rawAllSelected = false;
@@ -616,6 +656,7 @@ namespace CpqSystemTool
             }
             var btnToggleRaw = Btn("□ 全选", false, null, 100);
             btnToggleRaw.HorizontalAlignment = HorizontalAlignment.Center;
+            btnToggleRaw.VerticalAlignment = VerticalAlignment.Center;
             btnToggleRaw.Click += (s, e) =>
             {
                 ToggleSelectAll(rowItems.Select(t => t.Item1), ref rawAllSelected, btnToggleRaw);
@@ -629,16 +670,29 @@ namespace CpqSystemTool
                 pb.Visibility = Visibility.Visible;
                 RunInBg(log, l => AppxManager.Uninstall(sel, l), "卸载完成", () => { _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; RefreshList(true); });
             }, 110);
-            btnUninstallSel.HorizontalAlignment = HorizontalAlignment.Center;
+            btnUninstallSel.HorizontalAlignment = HorizontalAlignment.Right;
+            btnUninstallSel.VerticalAlignment = VerticalAlignment.Center;
 
-            btnRefresh.HorizontalAlignment = HorizontalAlignment.Center;
+            // col0 [刷新列表] ｜ col1 [隐藏开关] ｜ col2 计数 ｜ col3 [全选] ｜ col4 [卸载选中]（各自独立列，不再打包）
             Grid.SetColumn(btnRefresh, 0);
             toolBar.Children.Add(btnRefresh);
-            Grid.SetColumn(countLbl, 1);
+            Grid.SetColumn(btnHideFw, 1);
+            toolBar.Children.Add(btnHideFw);
+            Grid.SetColumn(countLbl, 2);
             toolBar.Children.Add(countLbl);
-            Grid.SetColumn(btnToggleRaw, 2);
+            // 切换隐藏开关 → 翻转状态、按钮文字随状态变（☑/□ 前缀与「全选」同一约定）、重渲染行（勾选框全被重建为未选中，重置全选状态）
+            onFwToggle = () =>
+            {
+                hideFramework = !hideFramework;
+                btnHideFw.Content = hideFramework ? "☑ 隐藏系统框架组件" : "□ 隐藏系统框架组件";
+                if (lastItems.Count == 0) return;
+                RenderRows();
+                rawAllSelected = false;
+                btnToggleRaw.Content = "□ 全选";
+            };
+            Grid.SetColumn(btnToggleRaw, 3);
             toolBar.Children.Add(btnToggleRaw);
-            Grid.SetColumn(btnUninstallSel, 3);
+            Grid.SetColumn(btnUninstallSel, 4);
             toolBar.Children.Add(btnUninstallSel);
             Grid.SetRow(toolBar, rootRow++);
             root.Children.Add(toolBar);

@@ -481,7 +481,7 @@ namespace CpqSystemTool
 
             // ===== 注册表快照回滚区（07 逻辑） =====
             // 改 Policies / 服务 Start 前可先做快照；出问题选快照 reg import 回滚。
-            // 快照文件统一存 cpq_office/configs/regbackup/，文件名含 tag+时间戳+键名。
+            // 快照文件统一存 cpq-tool\安全防护\regbackup\（安全防护页自己的数据），文件名含 tag+时间戳+键名。
             var snapHost = new StackPanel { Margin = new Thickness(0, 10, 0, 4) };
             defInner.Children.Add(snapHost);
             snapHost.Children.Add(new Emoji.Wpf.TextBlock
@@ -769,22 +769,15 @@ namespace CpqSystemTool
             ruleAddBar.Children.Add(bRemoveSel);
             fwInner.Children.Add(ruleAddBar);
 
-            // 规则列表 DataTemplate：名称 + 方向分两行 TextBlock，防止单行超长触发横向溢出。
+            // 规则列表 DataTemplate：单 TextBlock 绑整个对象（自动 ToString「名称 [入站/允许]」）。
+            // TextWrapping=Wrap 使超长规则名自动折两行、短名单行；绑整对象绕过「字段绑定空白」坑，内容始终可见。
             var ruleItemTemplate = new DataTemplate();
-            var rootPanel = new FrameworkElementFactory(typeof(StackPanel));
-            rootPanel.SetValue(StackPanel.OrientationProperty, Orientation.Vertical);
-            rootPanel.SetValue(StackPanel.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
-            var nameTextBlock = new FrameworkElementFactory(typeof(TextBlock));
-            nameTextBlock.SetValue(TextBlock.TextProperty, new Binding("DisplayName"));
-            nameTextBlock.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
-            nameTextBlock.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.WordEllipsis);
-            var dirTextBlock = new FrameworkElementFactory(typeof(TextBlock));
-            dirTextBlock.SetValue(TextBlock.TextProperty, new Binding("Direction"));
-            dirTextBlock.SetValue(TextBlock.ForegroundProperty, _textDim);
-            dirTextBlock.SetValue(TextBlock.FontSizeProperty, 11d);
-            rootPanel.AppendChild(nameTextBlock);
-            rootPanel.AppendChild(dirTextBlock);
-            ruleItemTemplate.VisualTree = rootPanel;
+            var ruleTb = new FrameworkElementFactory(typeof(TextBlock));
+            ruleTb.SetValue(TextBlock.TextProperty, new Binding());
+            ruleTb.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
+            ruleTb.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
+            ruleTb.SetValue(TextBlock.MarginProperty, new Thickness(0, 1, 0, 1));
+            ruleItemTemplate.VisualTree = ruleTb;
 
             var ruleList = new System.Windows.Controls.ListBox
             {

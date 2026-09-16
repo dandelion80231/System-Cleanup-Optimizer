@@ -8,5 +8,10 @@ namespace CpqSystemTool
         {
             System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 异常(已忽略): " + (ex?.Message ?? "null"));
         }
+
+        public static void Warn(string msg)
+        {
+            System.Diagnostics.Debug.WriteLine("[CpqSystemTool] 警告: " + msg);
+        }
     }
 }

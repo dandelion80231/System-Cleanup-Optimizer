@@ -1,10 +1,15 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Xml.Linq;
+using Microsoft.Win32;
 
 namespace CpqSystemTool
 {
@@ -92,22 +97,27 @@ namespace CpqSystemTool
         {
             // Issue 11: 使用友好中文名（按 Catalog 的 PackageFamily / StoreId 匹配系统的 DisplayName）
             var list = new List<AppxInfo>();
-            // 同时获取 Name / PackageFullName / PackageFamilyName / DisplayName
+            // 同时获取 Name / PackageFullName / PackageFamilyName / DisplayName / Description
             // -AllUsers：管理员模式运行下必须指定，否则只返回管理员账户的框架包
-            string ps = "Get-AppxPackage -AllUsers | ForEach-Object { $_.Name + '|' + $_.PackageFullName + '|' + $_.PackageFamilyName + '|' + $_.DisplayName }";
+            // 字段：Name | PackageFullName | PackageFamilyName | InstallLocation | DisplayName | IsFramework | Description
+            // Description（末字段）可能含 '|'，用 Split('|',7) 取剩余作描述避免字段错位；IsFramework 是 1/0 标记不含 '|'
+            string ps = "Get-AppxPackage -AllUsers | ForEach-Object { $_.Name + '|' + $_.PackageFullName + '|' + $_.PackageFamilyName + '|' + $_.InstallLocation + '|' + $_.DisplayName + '|' + $(if ($_.IsFramework -or $_.IsResourcePackage) { '1' } else { '0' }) + '|' + $_.Description }";
             string outp = Exec.RunPowerShellGet(ps, log);
             if (string.IsNullOrWhiteSpace(outp)) return list;
             foreach (var line in outp.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
             {
-                var parts = line.Split('|');
+                var parts = line.Split('|', 7);
                 if (parts.Length < 4) continue;
                 string name = parts[0].Trim();
                 string fullName = parts[1].Trim();
                 string familyName = parts[2].Trim();
-                string displayName = parts[3].Trim();
+                string installLoc = parts.Length >= 4 ? parts[3].Trim() : "";
+                string displayName = parts.Length >= 5 ? parts[4].Trim() : "";
+                bool isFramework = parts.Length >= 6 && parts[5].Trim() == "1";
+                string ownDesc = parts.Length >= 7 ? parts[6].Trim() : "";
                 // 优先匹配 Catalog：按 PackageFamily 匹配 → 用 Label 作显示名
                 string label = displayName;
-                var def = Catalog.Find(c => string.Equals(c.PackageFamily, familyName, StringComparison.OrdinalIgnoreCase));
+                AppxDef def = Catalog.Find(c => string.Equals(c.PackageFamily, familyName, StringComparison.OrdinalIgnoreCase));
                 if (def != null) label = def.Label;
                 else if (!string.IsNullOrEmpty(displayName) && displayName != name && displayName.Length < 60) label = displayName;
                 else if (name.Contains("."))
@@ -122,9 +132,142 @@ namespace CpqSystemTool
                     else label = name;
                 }
                 else label = name.Length > 40 ? name.Substring(0, 36) + "..." : name;
-                list.Add(new AppxInfo { Name = label, FullName = fullName });
+                // 说明（通用方案）：优先包自带本地化描述，空则读清单对照系统自己的发布商/描述，再关键词兑底
+                string publisher = "";
+                string manifestDesc = "";
+                if (string.IsNullOrWhiteSpace(ownDesc))
+                {
+                    var mi = ReadManifestInfo(installLoc);
+                    publisher = mi.Publisher;
+                    manifestDesc = mi.LiteralDescription;
+                }
+                list.Add(new AppxInfo { Name = label, FullName = fullName, IsFramework = isFramework, Description = BuildAppxDescription(ownDesc, name, familyName, def, label, publisher, manifestDesc) });
             }
             return list;
+        }
+
+        /// <summary>
+        /// 通用方案生成「说明」文案（换电脑也成立，不依赖固定目录）：
+        /// ① 优先包自带本地化描述（Get-AppxPackage 的 .Description）；
+        /// ② 空且命中内置目录 → 目录精选描述（预留钩子，暂未填）；
+        /// ③ 还空 → 关键词兑底：系统运行时/框架→「勿删」；其它微软→「谨慎」；非微软→「第三方」。
+        /// </summary>
+        private static string BuildAppxDescription(string ownDesc, string name, string family, AppxDef catalogMatch, string label, string publisher, string manifestDesc)
+        {
+            // ① 包自带本地化描述（最通用）
+            if (!string.IsNullOrWhiteSpace(ownDesc))
+            {
+                var d = ownDesc.Trim();
+                if (d.Length > 100) d = d.Substring(0, 100) + "…";
+                return d;
+            }
+            // ② 内置目录精选描述（预留）
+            if (catalogMatch != null && !string.IsNullOrEmpty(catalogMatch.Description))
+                return catalogMatch.Description;
+            // ③ 系统运行时/框架 → 勿删
+            string probe = !string.IsNullOrEmpty(family) ? family : name;
+            foreach (var p in SystemFrameworkPatterns)
+                if (probe.IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return "Windows 系统运行时/框架组件，勿删（其他 App 依赖它）";
+            // ④ 清单自带的字面量描述（系统自己的，比猜的准）
+            if (!string.IsNullOrWhiteSpace(manifestDesc))
+            {
+                var d = manifestDesc.Trim();
+                if (d.Length > 100) d = d.Substring(0, 100) + "…";
+                return d;
+            }
+            // ⑤ 微软/第三方提示：优先对照系统自己的发布商（PublisherDisplayName），读不到清单时回退按名字前缀猜
+            bool isMs;
+            if (!string.IsNullOrWhiteSpace(publisher))
+                isMs = publisher.IndexOf("Microsoft", StringComparison.OrdinalIgnoreCase) >= 0;
+            else
+                isMs = probe.IndexOf("Microsoft", 0, StringComparison.OrdinalIgnoreCase) == 0;
+            if (isMs)
+            {
+                // 关键看“显示出来的名字”：已清晰（含中文/短英文、非GUID非技术名）就不标自相矛盾的“未列入目录”；
+                // 只有显示名也是难懂的 GUID/长点分技术名时，才保留“未列入目录”提示。
+                return IsClearName(label)
+                    ? "微软系统应用，删除前请确认"
+                    : "微软系统应用（未列入目录），删除前请确认";
+            }
+            // 第三方：有系统自己的发布商就标注，方便辨认
+            if (!string.IsNullOrWhiteSpace(publisher))
+                return "第三方商店应用（发布商：" + publisher + "）";
+            return "第三方商店应用";
+        }
+
+        /// <summary>“显示名”是否清晰：含中文、或短小的非 GUID 非点分技术英文名。清晰则不再标“未列入目录”。</summary>
+        private static bool IsClearName(string label)
+        {
+            if (string.IsNullOrWhiteSpace(label)) return false;
+            foreach (char c in label)
+                if (c >= '\u4e00' && c <= '\u9fff')
+                    return true;                      // 含中文 → 清晰
+            if (label.Length > 24) return false;        // 太长 → 视为不明确
+            if (label.IndexOf('.') >= 0) return false;  // 点分技术名 → 不明确
+            if (label.StartsWith("{")) return false;   // Appx GUID 包名（{...}）→ 不明确（裸 32 位 GUID 已被上面的长度判断排除）
+            return true;
+        }
+
+        /// <summary>通用 Windows 系统运行时/框架特征（每台 Windows 都相同，非“换电脑就变”的用户软件）。命中即视为“勿删”。</summary>
+        private static readonly string[] SystemFrameworkPatterns =
+        {
+            "Microsoft.VCL.", "Microsoft.UI.Xaml", "Microsoft.NET.Native", "Microsoft.OneCoreUAP",
+            "Microsoft.WindowsAppRuntime", "Microsoft.Web.WebView2", "Microsoft.DynamicX",
+            "Microsoft.UI.Content", "Microsoft.SystemAppx", "Microsoft.Internal",
+            "Microsoft.MixedReality", "Microsoft.PII", "Microsoft.Bluetooth",
+            "Microsoft.Windows.Input", "Microsoft.GameServices", "Microsoft.UI.Input",
+            "Microsoft.UIExtensions", "Microsoft.Vision",
+        };
+
+        // ── 清单对照（路 A：读 AppxManifest.xml 对照系统自己的发布商/描述，零新依赖、不碰 WinRT）──
+        struct ManifestInfo
+        {
+            public string Publisher;          // PublisherDisplayName（系统自己的发布商，如 "Microsoft Corporation"）
+            public string LiteralDescription; // 字面量 <Description>（缺失或 ms-resource 引用时为空）
+        }
+        private static readonly ConcurrentDictionary<string, ManifestInfo> _manifestCache = new();
+        // 【P3】缓存无上限保护：Win11 系统更新后 WindowsApps 版本目录变化，旧键只会累积不会失效；
+        // 超限整体 Clear（读回退成本低，一次 XML 解析；会话内重复读仍受益）
+        private const int ManifestCacheCap = 256;
+
+        /// <summary>读 InstallLocation 下的 <c>AppxManifest.xml</c>，对照系统自己的发布商（PublisherDisplayName）与 literal 描述。
+        /// 按 installLocation 会话级缓存，避免重复读文件。权限/异常时返回全空 ManifestInfo（调用方回退按名字前缀推断）。
+        /// WindowsApps 目录 ACL 严格，即使提权也可能读不了个别子目录 → UnauthorizedAccessException，视为「读不到」而不外抛。</summary>
+        private static ManifestInfo ReadManifestInfo(string installLocation)
+        {
+            if (string.IsNullOrWhiteSpace(installLocation))
+                return default;
+            if (_manifestCache.TryGetValue(installLocation, out var cached))
+                return cached;
+            var mi = new ManifestInfo();
+            try
+            {
+                string path = Path.Combine(installLocation, "AppxManifest.xml");
+                if (File.Exists(path))
+                {
+                    var doc = XDocument.Load(path);
+                    var root = doc.Root;
+                    if (root != null)
+                    {
+                        var ns = root.GetDefaultNamespace();   // AppxManifest 有默认命名空间，必须带上才能匹配子元素
+                        var props = root.Element(ns + "Properties");
+                        if (props != null)
+                        {
+                            mi.Publisher = (props.Element(ns + "PublisherDisplayName")?.Value ?? "").Trim();
+                            string d = (props.Element(ns + "Description")?.Value ?? "").Trim();
+                            // 只认字面量描述；ms-resource:xxx 是未解析的资源引用（和 .DisplayName 一样），不解析 .pri 就取不到，置空
+                            if (d.Length > 0 && !d.StartsWith("ms-resource", StringComparison.OrdinalIgnoreCase))
+                                mi.LiteralDescription = d;
+                        }
+                    }
+                }
+            }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); /* 读 WindowsApps 权限不足 / 文件不存在 → 留空，调用方回退 */ }
+            if (_manifestCache.Count > ManifestCacheCap)
+                _manifestCache.Clear();
+            _manifestCache[installLocation] = mi;
+            return mi;
         }
 
         // Issue 27: 返回 Catalog 中所有 App 的安装状态（Win11EasyConfig 风格：友好中文名 + 安装/未安装状态）
@@ -214,8 +357,12 @@ namespace CpqSystemTool
                     "$fail = 0; " +
                     "foreach ($p in $pkgs) { " +
                     "Write-Host ('卸载 full=' + $p.PackageFullName + ' name=' + $p.Name); " +
+                    // ① 主删：-AllUsers 跨用户删包（部分用户/权限场景可能漏删当前用户）
                     "Remove-AppxPackage -Package $p.PackageFullName -AllUsers; " +
                     "if (-not $?) { $fail++ }; " +
+                    // ② A 方案·兜底：当前用户视角再按 full name 删一次，确保包本体真删干净
+                    //    （Remove-AppxPackage 不带 -AllUsers = 仅当前用户；与 ① 合起来覆盖全部用户）
+                    "Remove-AppxPackage -Package $p.PackageFullName -ErrorAction SilentlyContinue; " +
                     "Remove-AppxProvisionedPackage -Online -PackageName $p.Name -ErrorAction SilentlyContinue; " +
                     "if (-not $?) { Write-Host ('（无预置副本，属正常）') } }; " +
                     "exit $fail";
@@ -407,6 +554,7 @@ namespace CpqSystemTool
                 log("  [OK] 找到: " + fname);
 
                 // 3. 下载（统一走 Downloader，保留断点续传 + 重试；调用点均在后台线程，GetAwaiter().GetResult() 安全）
+                // 【P2-12】⚠ 同步封异步（阻塞全程下载，分钟级）：仅限后台线程（现调用点在 Appx 页面 RunInBg 内）
                 string dest = Path.Combine(Path.GetTempPath(), "cpq_appx_" + Guid.NewGuid().ToString("N").Substring(0, 8) + Path.GetExtension(fname));
                 bool downloaded = Downloader.DownloadAsync(url, dest, log,
                     maxAttempts: 3, timeoutMs: 60000, readTimeoutMs: 60000,
@@ -431,24 +579,26 @@ namespace CpqSystemTool
             catch (Exception ex) { log("  [!!] rg-adguard 通道异常: " + ex.Message); return false; }
         }
 
-        /// <summary>POST store.rg-adguard.net/api/GetFiles，返回 HTML（内含 CDN 直链）。</summary>
+        /// <summary>POST store.rg-adguard.net/api/GetFiles，返回 HTML（内含 CDN 直链）。
+        /// 【P2-12】⚠ 同步封异步（GetAwaiter().GetResult() 阻塞最长 60 秒网络 IO）：仅限后台线程调用（现调用点在 AdGuard 下载流程内）；UI 线程调用会卡界面。</summary>
         private static string PostAdguard(string storeId, Action<string> log)
         {
             string body = "type=ProductId&url=" + Uri.EscapeDataString(storeId) + "&ring=Retail&lang=zh-CN";
-            var req = (HttpWebRequest)WebRequest.Create("https://store.rg-adguard.net/api/GetFiles");
-            req.Method = "POST";
-            req.ContentType = "application/x-www-form-urlencoded";
-            req.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
-            req.Referer = "https://store.rg-adguard.net/";
-            req.Timeout = 60000;
-            using (var ws = req.GetRequestStream())
+            // 复用进程内纯直连无代理单例（HttpClients.Default 已 UseProxy=false），等价原 WebRequest 空 WebProxy 行为，
+            // 同时规避 net10 下 WebRequest/HttpWebRequest 的 SYSLIB0014 过时告警。
+            var content = new StringContent(body, Encoding.UTF8, "application/x-www-form-urlencoded");
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-www-form-urlencoded");
+            var req = new HttpRequestMessage(HttpMethod.Post, "https://store.rg-adguard.net/api/GetFiles")
             {
-                var bytes = Encoding.UTF8.GetBytes(body);
-                ws.Write(bytes, 0, bytes.Length);
-            }
-            using (var resp = (HttpWebResponse)req.GetResponse())
-            using (var reader = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
-                return reader.ReadToEnd();
+                Content = content
+            };
+            req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36");
+            req.Headers.Referrer = new Uri("https://store.rg-adguard.net/");
+            // 60s 超时走每请求 CancellationToken，不改动共享单例的 Timeout
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            using var resp = HttpClients.Default.SendAsync(req, cts.Token).GetAwaiter().GetResult();
+            resp.EnsureSuccessStatusCode();
+            return resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
         }
 
         /// <summary>按 StoreId 检查包是否已安装（优先按 Catalog 的 PackageFamilyName 精确匹配，否则按 Name 模糊）。
@@ -470,6 +620,200 @@ namespace CpqSystemTool
             catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
 
+        /// <summary>新版 Outlook for Windows（OutlookForWindows）是否已安装（独立 Store/AppX 应用，
+        /// 包名 Microsoft.OutlookForWindows_8wekyb3d8bbwe）。与经典版 Outlook（C2R 套件应用）相互独立，
+        /// 其安装状态不在 C2R ExcludedApps 里反映，必须单独按 AppX 包存在性判定。
+        /// 探测失败（权限/无 PowerShell/超时）时返回 false，调用方据此保守视为未装。</summary>
+        public static bool IsNewOutlookInstalled()
+        {
+            // 快速同步路径先行：命中即无需 PowerShell，消除勾选复选框的 ~1s 延迟；
+            // 仅在快速路径判定为「未装」时才回退到较慢的 PowerShell 精确确认，兼顾准确性。
+            return IsNewOutlookInstalledFast() || IsInstalledByStoreId("9NRX63209R7B", null);
+        }
+
+        /// <summary>新版 Outlook（OutlookForWindows）的纯同步快速探测：不启动进程、不调用 PowerShell，
+        /// 立即返回。优先按 WindowsApps 前缀通配目录命中；目录枚举因权限抛 UnauthorizedAccessException 属正常现象，
+        /// 此时回退注册表探测；两者皆无果/异常则保守返回 false（视为未装）。绝不向外抛异常。</summary>
+        public static bool IsNewOutlookInstalledFast()
+        {
+            // C 方案（治 UI 误判）：
+            //   主路径 = WindowsApps 目录枚举。若能成功枚举且没命中 → 包确实不在了，直接 false
+            //   （不再让残留的 AppX 注册表状态键单独误判"已装"）；只有目录枚举被 ACL/权限卡住
+            //   （拿不到确定结果）时，才允许注册表兜底。
+            var bases = new[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "WindowsApps"),
+            };
+            const string familyPrefix = "Microsoft.OutlookForWindows";
+            bool anyDirReadable = false;   // 至少一个 WindowsApps 目录被成功枚举过
+            foreach (var baseDir in bases)
+            {
+                try
+                {
+                    if (!Directory.Exists(baseDir)) continue;
+                    // 主判：按家族名前缀过滤（精确、即时命中，已实测本机返回 2 条）
+                    if (Directory.GetDirectories(baseDir, familyPrefix + "_*").Length > 0)
+                        return true;
+                    // 兜判：部分系统带过滤参数行为异常/返回 0 时，全量枚举后按家族名前缀匹配
+                    var allDirs = Directory.GetDirectories(baseDir);
+                    foreach (var dirName in allDirs)
+                        if (dirName.StartsWith(familyPrefix + "_", StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    anyDirReadable = true;   // 该目录成功枚举且无命中
+                }
+                catch (UnauthorizedAccessException) { /* 权限不足，该目录不算 readable，继续下一个 */ }
+                catch (IOException) { /* 目录不可访问，同上 */ }
+            }
+            // 关键修复：目录能成功枚举且没命中 → 包已删，残留注册表键不代表"还装着"，直接判未装。
+            if (anyDirReadable)
+                return false;
+            // 仅当两个目录都因 ACL/权限读不到（拿不到确定结果）时，才用注册表兜底。
+            try
+            {
+                if (IsNewOutlookInRegistry())
+                    return true;
+            }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+            // 安全默认：未命中即视为未装。
+            return false;
+        }
+
+        /// <summary>
+        /// 清除新版 Outlook 在 <c>C:\Program Files\WindowsApps</c> 下的残留包目录（A 方案·治本）。
+        /// Remove-AppxPackage 删包后，WindowsApps 下 <c>Microsoft.OutlookForWindows_*</c> 目录壳有时不自动清
+        /// （跨用户 / 提权场景残留），会导致 IsNewOutlookInstalledFast 的 WindowsApps 主路径仍命中 → 网格误勾。
+        /// 本方法按家族名前缀枚举并删除残留目录：优先普通 Remove-Item；遇 8wekyb3d8bbwe（WindowsApps 全目录 ACL
+        /// 拒绝普通访问）时回退 PowerShell <c>Remove-Item -Recurse -Force</c> 提权删。best-effort，失败/无目录均忽略。
+        /// </summary>
+        public static void RemoveNewOutlookWindowsAppsResidual(Action<string> log)
+        {
+            const string familyPrefix = "Microsoft.OutlookForWindows";
+            var bases = new[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "WindowsApps"),
+            };
+            foreach (var baseDir in bases)
+            {
+                try
+                {
+                    if (!Directory.Exists(baseDir)) continue;
+                    var residuals = Directory.GetDirectories(baseDir, familyPrefix + "_*");
+                    foreach (var dir in residuals)
+                    {
+                        try
+                        {
+                            Directory.Delete(dir, true);
+                            log("  [清残留] 已删 WindowsApps 目录: " + Path.GetFileName(dir));
+                        }
+                        catch
+                        {
+                            // 8wekyb3d8bbwe 全目录常带强 ACL，普通 C# 删除会 UnauthorizedAccessException。
+                            // 回退 PowerShell 提权删（管理员下可过；非管理员跳过，不影响主流程）。
+                            string ps = "$ErrorActionPreference='SilentlyContinue'; " +
+                                        "Remove-Item -LiteralPath '" + dir.Replace("'", "''") + "' -Recurse -Force; " +
+                                        "if (Test-Path -LiteralPath '" + dir.Replace("'", "''") + "') { exit 1 } else { exit 0 }";
+                            int rc = Exec.RunPowerShell(ps, log);
+                            log(rc == 0
+                                ? "  [清残留] 已删(PS提权) WindowsApps 目录: " + Path.GetFileName(dir)
+                                : "  [!] WindowsApps 残留目录删除失败（需管理员）: " + dir);
+                        }
+                    }
+                }
+                catch { /* 枚举 WindowsApps 无权限，忽略（best-effort） */ }
+            }
+        }
+
+        /// <summary>
+        /// 清除新版 Outlook（OutlookForWindows）的 AppX 残留注册表状态键（B 层·治本）。
+        /// Windows 卸载 AppX 包后，下列"已装包"登记键里常残留 Microsoft.OutlookForWindows_&lt;hash&gt; 子键
+        /// （Remove-AppxPackage 删包不保证清键，跨用户 -AllUsers 时 HKCU 侧更易残留）。残留键会让
+        /// IsNewOutlookInstalledFast 的注册表兜底误判"新版 Outlook 还在" → 网格复选框误勾。
+        /// 本方法 best-effort 删除这些子键（键可能已被引擎清掉，删除失败/不存在均忽略，不影响主流程）：
+        ///   HKLM/HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore\Applications\<家族名&gt;
+        ///   HKLM\SOFTWARE\Microsoft\Windows\Appx\AppxWindows11PackageState\<家族名&gt;
+        ///   HKCU\Software\Microsoft\Windows\CurrentUserAppModel\<家族名&gt;
+        /// 仅在卸载调用，需管理员；HKCU 侧无权限时静默跳过。
+        /// </summary>
+        public static void RemoveNewOutlookResidualRegistryKeys(Action<string> log)
+        {
+            const string family = "Microsoft.OutlookForWindows";
+            var targets = new[]
+            {
+                // (root, 相对路径, 是否 HKCU)
+                (Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore\Applications", false),
+                (Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows\Appx\AppxWindows11PackageState", false),
+                (Registry.CurrentUser, @"Software\Microsoft\Windows\CurrentUserAppModel", true),
+            };
+            foreach (var t in targets)
+            {
+                try
+                {
+                    using (var parent = t.Item1.OpenSubKey(t.Item2, false))
+                    {
+                        if (parent == null) continue;
+                        foreach (var name in parent.GetSubKeyNames())
+                        {
+                            if (name.StartsWith(family, StringComparison.OrdinalIgnoreCase))
+                            {
+                                try { parent.DeleteSubKeyTree(name); log("  [清残留] 已删 " + (t.Item3 ? "HKCU" : "HKLM") + "\\...\\AppxAllUserStore\\..." + name); }
+                                catch { /* 该子键无权限/被占用，忽略（best-effort） */ }
+                            }
+                        }
+                    }
+                }
+                catch { /* 父键读不到（不存在/权限）忽略 */ }
+            }
+        }
+
+        /// <summary>按注册表探测新版 Outlook 包状态（best-effort，任何读取异常均忽略）。</summary>
+        private static bool IsNewOutlookInRegistry()
+        {
+            // 扫描 Appx 包真实注册键下的子键名/应用名，命中 Microsoft.OutlookForWindows 即判为已装。
+            // 不同系统/权限下键结构可能不同：Win10/11 新版 Outlook 实际注册在
+            //   HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore\Applications
+            // （子键名形如 "Microsoft.OutlookForWindows_8wekyb3d8bbwe"），旧键 AppxWindows11PackageState /
+            // CurrentUserAppModel 可能不存在，故一并兜底。
+            string[] stateKeys =
+            {
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore\Applications",
+                @"SOFTWARE\Microsoft\Windows\Appx\AppxWindows11PackageState",
+                @"Software\Microsoft\Windows\CurrentUserAppModel",
+            };
+            foreach (var keyPath in stateKeys)
+            {
+                try
+                {
+                    // 先查 HKLM，再查 HKCU（同路径分别对应不同 hive）。
+                    using (var hklm = Registry.LocalMachine.OpenSubKey(keyPath, false))
+                    {
+                        if (hklm != null)
+                        {
+                            foreach (var name in hklm.GetSubKeyNames())
+                            {
+                                if (name.IndexOf("Microsoft.OutlookForWindows", StringComparison.OrdinalIgnoreCase) >= 0)
+                                    return true;
+                            }
+                        }
+                    }
+                    using (var hkcu = Registry.CurrentUser.OpenSubKey(keyPath, false))
+                    {
+                        if (hkcu != null)
+                        {
+                            foreach (var name in hkcu.GetSubKeyNames())
+                            {
+                                if (name.IndexOf("Microsoft.OutlookForWindows", StringComparison.OrdinalIgnoreCase) >= 0)
+                                    return true;
+                            }
+                        }
+                    }
+                }
+                catch { /* 忽略单键读取异常 */ }
+            }
+            return false;
+        }
+
         private static void TryDelete(string path)
         {
             try { if (!string.IsNullOrEmpty(path) && File.Exists(path)) File.Delete(path); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
@@ -477,8 +821,14 @@ namespace CpqSystemTool
 
         private static string FindWinget()
         {
-            string cand = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\Microsoft\WindowsApps\winget.exe";
-            return File.Exists(cand) ? cand : null;
+            // winget.exe 在 %LOCALAPPDATA%\Microsoft\WindowsApps\ 下是 App Execution Alias（reparse point / 符号链接），
+            // 不是真正的 PE 可执行文件。.NET 的 File.Exists 不跟随 reparse point，对符号链接永远返回 false。
+            // 改为检查父目录存在性：WindowsApps 目录存在即说明系统装了应用执行别名框架，
+            // cmd /c winget 由 cmd 解析别名可真正执行（Install 里的 cmd 调用走命令名 "winget"，不传路径）。
+            string dir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\Microsoft\WindowsApps";
+            if (Directory.Exists(dir))
+                return dir + @"\winget.exe";
+            return null;
         }
 
         // Issue 4: 列出系统预装应用（Get-AppxProvisionedPackage -Online）
@@ -535,6 +885,8 @@ namespace CpqSystemTool
         public string Name;
         public string FullName;
         public string PackageName; // Issue 4: 预装应用的 PackageName（卸载用）
+        public string Description; // 中文简介（目录命中→目录描述；未命中→关键词兑底提示）
+        public bool IsFramework;   // 系统框架/资源包（Get-AppxPackage 的 IsFramework/IsResourcePackage）→「隐藏系统框架组件」开关可滤除
         public override string ToString() => Name;
     }
 

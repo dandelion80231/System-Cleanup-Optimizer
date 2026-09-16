@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -429,70 +432,54 @@ namespace CpqSystemTool
             }
         }
 
-        // .NET Framework 的 WebClient 无 Timeout 属性（.NET 5+ 才有）；通过重写 GetWebRequest 设置底层请求超时。
-        // Proxy 继承自基类 WebClient，外部可直接设置 wc.Proxy。
-        // 同时显式启用 TLS 1.2（.NET 4.8 WebClient 默认仅 TLS 1.0/1.1，Cloudflare/Pages 等现代 CDN 已禁用 → 握手失败误报"无法连接"）。
-        // 且 Proxy=null 在 .NET Framework 里仍会继承 IE/系统代理 → 用空 WebProxy 显式表达"不使用任何代理"。
-        private class WebClientWithTimeout : System.Net.WebClient
+        /// <summary>纯直连下载字符串（无代理兜底）。通过 SocketsHttpHandler.ConnectCallback 在建立 TCP 连接前
+        /// 解析域名的 IPv4 A 记录并改用该 IP 建连，从而绕开系统 DNS「IPv6 优先且失败不回退 IPv4」的缺陷
+        /// （Cloudflare Pages 返回 AAAA、本机常无 IPv6 连通 → 直接超时"无法连接"）。
+        /// 关键点：请求 URI 始终保留原域名，因此上层 TLS 的 SNI 与证书校验仍基于原域名，安全不受影响。
+        /// 软件分发给任意机器，目标环境可能完全没有代理，故刻意禁用代理（UseProxy=false）。</summary>
+        private static readonly HttpClient _aboutUpdateHttpClient = BuildIPv4DirectHttpClient();
+
+        private static HttpClient BuildIPv4DirectHttpClient()
         {
-            [System.ComponentModel.Browsable(false)]
-            [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-            public int TimeoutMs { get; set; } = 10000;
-            protected override System.Net.WebRequest GetWebRequest(Uri uri)
+            var handler = new SocketsHttpHandler
             {
-                var w = base.GetWebRequest(uri);
-                if (w != null) w.Timeout = TimeoutMs;
-                return w;
-            }
+                UseProxy = false,                                       // 显式无代理
+                PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+                ConnectCallback = async (context, token) =>
+                {
+                    // 解析请求 URI 中的域名为 IPv4 A 记录（绕开系统 DNS 的 IPv6 优先/不回退缺陷）
+                    var addresses = await System.Net.Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, token).ConfigureAwait(false);
+                    var ipv4 = addresses.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+                    if (ipv4 == null)
+                        throw new System.Net.WebException("无法解析 IPv4 地址: " + context.DnsEndPoint.Host);
+                    var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+                    try
+                    {
+                        // 用解析到的 IPv4 地址建立 TCP 连接（端口沿用原域名端口）；
+                        // SNI / 证书校验仍由上层基于原域名完成，故安全不变。
+                        await socket.ConnectAsync(ipv4, context.DnsEndPoint.Port, token).ConfigureAwait(false);
+                        return new NetworkStream(socket, ownsSocket: true);
+                    }
+                    catch
+                    {
+                        socket.Dispose();
+                        throw;
+                    }
+                }
+            };
+            return new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
         }
 
-        /// <summary>依次尝试多种方式下载字符串，任一成功即返回；全部失败抛出汇总异常。
-        /// 核心修复：.NET Framework 4.8 的 HttpWebRequest DNS 解析 IPv6 优先且失败不回退 IPv4，
-        /// 而 Cloudflare Pages 返回 AAAA 记录、本机常无 IPv6 连通 → 直接超时"无法连接"。
-        /// 故首选「手动解析 IPv4 + IP 直连 + Host 头保留域名」，绕开该缺陷。</summary>
-        private static string DownloadStringWithProxyFallback(string url)
+        /// <summary>纯直连下载字符串（无代理兜底，IPv4 直连）。请求 URI 保留原域名以保证 SNI/证书校验正确。
+        /// 【P2-12】⚠ 同步封异步（GetAwaiter().GetResult() 阻塞 10 秒级网络 IO）：仅限后台线程调用（现调用点已在 Task.Run 内）；UI 线程调用会卡界面，WPF SyncContext 下有死锁风险。</summary>
+        private static string DownloadStringDirect(string url)
         {
-            // 显式叠加 TLS 1.2（防御：.NET 4.8 部分环境默认仅 TLS 1.0/1.1；用 |= 只加不减，保留系统默认的 TLS 1.3 等）
-            System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
-            System.Exception last = null;
-            // 1) 首选：IPv4 直连（手动解析 A 记录，IP 直连 + Host 头，绕 IPv6 优先不回退 + 绕 IE 代理继承）
-            try { return DownloadStringIPv4Direct(url); }
-            catch (System.Exception ex) { last = ex; }
-            // 2) 系统代理
-            try { return DownloadStringViaProxy(url, System.Net.WebRequest.DefaultWebProxy); }
-            catch (System.Exception ex) { last = ex; }
-            // 3) Watt Toolkit 本地代理
-            try { return DownloadStringViaProxy(url, new System.Net.WebProxy("http://127.0.0.1:26561", false)); }
-            catch (System.Exception ex) { last = ex; }
-            throw new System.Exception("所有网络方式均失败：" + (last?.Message ?? "未知错误"), last);
-        }
-
-        /// <summary>IPv4 直连：解析域名的 A 记录，用 IP 构造 URI 直连（无代理），Host 头写回原域名保证 SNI/证书校验正确。</summary>
-        private static string DownloadStringIPv4Direct(string url)
-        {
-            var uri = new Uri(url);
-            var ipv4 = System.Net.Dns.GetHostAddresses(uri.Host)
-                .FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
-            if (ipv4 == null) throw new System.Net.WebException("无法解析 IPv4 地址: " + uri.Host);
-            var uri4 = new UriBuilder(uri) { Host = ipv4.ToString() }.Uri;
-            var req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(uri4);
-            req.Host = uri.Host;                       // 保留域名：SNI + 证书校验
-            req.Timeout = 10000;
-            req.UserAgent = "CpqSystemTool";
-            req.Proxy = new System.Net.WebProxy();      // 显式无代理
-            using (var resp = (System.Net.HttpWebResponse)req.GetResponse())
-            using (var sr = new System.IO.StreamReader(resp.GetResponseStream(), System.Text.Encoding.UTF8))
-                return sr.ReadToEnd();
-        }
-
-        /// <summary>走指定代理下载字符串（代理自己解析 DNS，无 IPv6 优先问题）。</summary>
-        private static string DownloadStringViaProxy(string url, System.Net.IWebProxy proxy)
-        {
-            using (var wc = new WebClientWithTimeout { TimeoutMs = 10000, Proxy = proxy })
-            {
-                wc.Headers.Add("User-Agent", "CpqSystemTool");
-                return wc.DownloadString(url);
-            }
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.UserAgent.ParseAdd("CpqSystemTool");
+            using var resp = _aboutUpdateHttpClient.SendAsync(req, cts.Token).GetAwaiter().GetResult();
+            resp.EnsureSuccessStatusCode();
+            return resp.Content.ReadAsStringAsync(cts.Token).GetAwaiter().GetResult();
         }
 
         /// <summary>检查官网 version.json 是否有新版本，结果经 Dispatcher 回到 UI 线程写入状态栏。</summary>
@@ -506,7 +493,7 @@ namespace CpqSystemTool
             {
                 try
                 {
-                    var json = DownloadStringWithProxyFallback(OfficialSiteRoot + "version.json");
+                    var json = DownloadStringDirect(OfficialSiteRoot + "version.json");
                     var verMatch = System.Text.RegularExpressions.Regex.Match(json, "\"version\"\\s*:\\s*\"([^\"]+)\"");
                     if (!verMatch.Success) { SetStatusUi("检查更新：未获取到版本信息"); return; }
                     var latest = verMatch.Groups[1].Value.Trim();
@@ -607,14 +594,14 @@ namespace CpqSystemTool
                 string downloadErr = null;
                 try
                 {
-                    // 统一走 Downloader：保留原代理回退顺序（系统→直连→Watt Toolkit）、进度回调与「保存后提示」行为
+                    // 统一走 Downloader：官网更新 exe 纯直连（目标机可能无代理，不套本机代理）；
+                    // 进度回调与「保存后提示」行为保留。
                     bool ok = await Downloader.DownloadAsync(url, dlg.FileName,
                         log: msg => { if (msg != null) downloadErr = msg; },
                         progress: pct => { try { disp.Invoke(() => SetStatus($"正在下载 {tag}：{pct}%")); } catch { /* 窗口已关闭，忽略 */ } },
-                        maxAttempts: 1,          // 与原实现一致：每个代理各试一次（共 3 个候选）
+                        maxAttempts: 1,
                         timeoutMs: 120000,
                         readTimeoutMs: 300000,   // 等价原 WebClient 默认 ReadWriteTimeout（5 分钟无数据才断）
-                        useProxyFallback: true,
                         userAgent: "CpqSystemTool");
                     if (!ok)
                     {

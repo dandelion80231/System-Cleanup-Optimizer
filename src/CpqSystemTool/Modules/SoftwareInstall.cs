@@ -811,7 +811,6 @@ namespace CpqSystemTool
                     maxAttempts: 3,
                     timeoutMs: timeout * 1000,
                     readTimeoutMs: ReadTimeoutMs > 0 ? ReadTimeoutMs : 60000,
-                    useProxyFallback: true,
                     retryDelayMs: 5000,
                     referer: string.IsNullOrEmpty(Referer) ? null : Referer).ConfigureAwait(false);
                 if (!ok) return false;
@@ -820,7 +819,7 @@ namespace CpqSystemTool
                 {
                     string actual;
                     using (var fs = File.OpenRead(dest))
-                    using (var sha = new SHA256Managed())
+                    using (var sha = SHA256.Create())
                         actual = BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
                     if (!string.Equals(actual, expect.Trim(), StringComparison.OrdinalIgnoreCase))
                     {
@@ -1235,19 +1234,19 @@ namespace CpqSystemTool
             new SoftwareDef.Builder("winrar", "WinRAR", "压缩工具", "https://www.rarlab.com/rar/winrar-x64-723.exe", "/S").ChocolateyId("winrar")
                 .Risk("low")
                 .AltKeywords("WinRAR")
-                .KnownExePaths(@"C:\Program Files\WinRAR\WinRAR.exe", @"C:\Program Files (x86)\WinRAR\WinRAR.exe")
+                .KnownExePaths(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "\\WinRAR\\WinRAR.exe", Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) + "\\WinRAR\\WinRAR.exe")
                 .RegKey(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WinRAR archiver")
                 .RegKey2(@"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\WinRAR archiver")
                 .Category("压缩").Build(),
             new SoftwareDef.Builder("notepad3", "NotePad3", "文本编辑器", "https://github.com/rizonesoft/Notepad3/releases/download/RELEASE_7.26.602.1/Notepad3_7.26.602.1_x64_Setup.exe", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-").ChocolateyId("notepad3")
                 .Risk("low")
                 .AltKeywords("NotePad3", "Notepad3")
-                .KnownExePaths(@"C:\Program Files\Notepad3\Notepad3.exe")
+                .KnownExePaths(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "\\Notepad3\\Notepad3.exe")
                 .Category("系统工具").Build(),
             new SoftwareDef.Builder("xnview", "XnViewMP", "图片查看/转换", "https://www.xnview.com/download.php?file=XnViewMP-win-x64.exe", "/VERYSILENT", "/NORESTART").ChocolateyId("xnviewmp")
                 .Risk("low")
                 .AltKeywords("XnView", "XnViewMP")
-                .KnownExePaths(@"C:\Program Files\XnViewMP\xnviewmp.exe")
+                .KnownExePaths(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "\\XnViewMP\\xnviewmp.exe")
                 .Category("图像").Build(),
             new SoftwareDef.Builder("potplayer", "PotPlayer", "影音播放器", "https://t1.daumcdn.net/potplayer/PotPlayer/Version/Latest/PotPlayerSetup64.exe", "/S").ChocolateyId("potplayer")
                 .Risk("low")

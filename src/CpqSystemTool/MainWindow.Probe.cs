@@ -330,6 +330,8 @@ namespace CpqSystemTool
             try
             {
                 logf("[*] 尝试 WebView2 进程内探针（直接调用本机 Edge，无需下载依赖）…");
+                // 【P2-12】⚠ 以下三处均为同步封异步（GetResult 阻塞：WebView2 初始化 20s + 探测全程）：
+                // 本方法只能在后台线程执行（现调用点均在 RunInBg 内）；若未来改在 UI 线程调用需全部改 await。
                 // 安全网：探针初始化前确保 exe 目录存在 WebView2 托管依赖（单文件分发场景，
                 // 用户从未点过"修复/安装"时也要能拉到）。失败仅记录，探针随后回退 Node 方案。
                 WebView2ProbeDeps.EnsureWebView2ProbeDeps(logf, p => logf(WebView2ProbeDeps.ProgressLine(p)));
