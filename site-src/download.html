@@ -245,7 +245,7 @@
 
               <div class="chlog-panel" data-panel="v1.19" data-page-node-id="xmh5kFOwvN4w1e9wGg0JNx">
   <div class="chg-body" data-page-node-id="MqyNKgEGMhVibLkxBrYLUc">
-                <blockquote data-page-node-id="uk4Pq0rK7Mx4T3ikbDeHdA">相对 v1.17 的源码变更（基线 commit 1ab18c3 + 本轮 CHANGELOG 补充）：<strong data-page-node-id="x5PVvuzX9ZzUTGC9eYv18k">运行平台由 .NET Framework 4.8 迁移至 .NET 10（UI 框架仍为 WPF）</strong>，「导出源码」改为构建期自动打包；补齐 5 处已知缺陷（N1/A3/A4/A8/N2），并治理全项目 61 处空 <code data-page-node-id="xoaAyaQjWCwgTJjDWY28C1">catch {}</code> / <code data-page-node-id="nhqXRMniOaoVCeAtQ8Ik21">catch (Exception) {}</code> 静默吞异常（改为 <code data-page-node-id="FXNpa4RBJkUWRrmE7iiEGO">DebugLog.Ignore(ex)</code> 记录日志，便于排查）。</blockquote>
+                <blockquote data-page-node-id="6NxDbdS4LNCnXxZe7utA2J">相对 v1.18 的源码变更（1 提交，1 文件，+43 / −18 行）：配置管理页新增源码导出与 ZIP 下载、下载改用 ZIP；修复 Geek Uninstaller 下载卡死、优化便携版安装路径、改用 ZIP 加速下载；并规范 Release 资产（禁止上传 src.zip）。</blockquote>
                 <h4 data-page-node-id="DCSPaB7e6OgTGvb3QZ106B">🚀 重大变更</h4>
                 <ul data-page-node-id="lDZN2H6zlKkO6NrGUhAWvA">
                 <li data-page-node-id="iU0CaZYtTSEprg0KiKkrBE"><strong data-page-node-id="lPXMdhG0Ocs1ElE3iFSjHn">运行平台迁移：.NET Framework 4.8 → .NET 10</strong>：目标框架由 <code data-page-node-id="w3Du7r4ptqdHqRUeskJW1N">net48</code> 升级为 <code data-page-node-id="etxfnFJ4Yyg3vvNEc6JRIt">net10.0-windows</code>，UI 框架保持 WPF 不变；显式 x64；<code data-page-node-id="WWQo7kngne1R29oJs7Vt9S">System.Management</code> / <code data-page-node-id="dOeWxcvycxXRBn1KdE15N6">System.ServiceProcess.ServiceController</code> 依赖升级至 10.0.0，WebView2 固定 1.0.2045.28。发布形态改为框架依赖单文件 exe（<code data-page-node-id="2rHQYcjJLrEnPU01Tzk1Eu">PublishSingleFile</code>，约 6.5 MB）。
@@ -276,7 +276,7 @@
 
               <div class="chlog-panel" data-panel="v1.18" data-page-node-id="7pM8VHAlG3OcPvFBrABeYG">
   <div class="chg-body" data-page-node-id="nC7cXzIIbBrVKaYyIjo2Cx">
-                <blockquote data-page-node-id="6NxDbdS4LNCnXxZe7utA2J">相对 v1.17 的源码变更（3 提交，1 文件，+43 / −18 行）：修复 Geek Uninstaller 下载卡死、优化便携版安装路径、改用 ZIP 加速下载；并规范 Release 资产（禁止上传 src.zip）。</blockquote>
+                <blockquote data-page-node-id="uk4Pq0rK7Mx4T3ikbDeHdA">相对 v1.17 的源码变更（基线 commit 1ab18c3 + 本轮 CHANGELOG 补充）：<strong data-page-node-id="x5PVvuzX9ZzUTGC9eYv18k">运行平台由 .NET Framework 4.8 迁移至 .NET 10（UI 框架仍为 WPF）</strong>，「导出源码」改为构建期自动打包；补齐 5 处已知缺陷（N1/A3/A4/A8/N2），并治理全项目 61 处空 <code data-page-node-id="xoaAyaQjWCwgTJjDWY28C1">catch {}</code> / <code data-page-node-id="nhqXRMniOaoVCeAtQ8Ik21">catch (Exception) {}</code> 静默吞异常（改为 <code data-page-node-id="FXNpa4RBJkUWRrmE7iiEGO">DebugLog.Ignore(ex)</code> 记录日志，便于排查）。</blockquote>
                 <h4 data-page-node-id="1CcOtT7AevAFRjMIMGGBqY">🐛 修复</h4>
                 <ul data-page-node-id="CclvBMd4yHIVrlixJtbhNR">
                 <li data-page-node-id="ZeI0WWs9C9NzFAnmCOyGFb"><strong data-page-node-id="6PW8NnMGulbJNgBPiaav5n">Geek Uninstaller 下载卡死修复（SoftwareInstall）</strong>：为 <code data-page-node-id="giyrPbJknaextH0fFhcaOv">SoftwareInstall.cs</code> 新增 <code data-page-node-id="D5quqHSQW10b1Ge3J9sUn3">ReadTimeoutMs</code> / <code data-page-node-id="B7URCnhobgr3u4JhmofMJb">DownloadTimeout</code> 可配置字段，Geek 配置总超时 900s + 读空闲 120s，应对极慢速服务器（~12 KB/s）反复超时失败。
@@ -529,7 +529,7 @@
               </div>
               <div class="chlog-panel" data-panel="v1.11" data-page-node-id="0FG5gVFEWPrKHSKk29jzAJ">
   <div class="chg-body" data-page-node-id="ER3ptxVAwSprdWFJwIf2GP">
-                <blockquote data-page-node-id="LmS8tfD17M50pj24OksBL3">相对 v1.19 的源码变更：三轮代码审查（结构 / 性能 / 缺陷）驱动的一次全面优化——修复 6 类真实缺陷、5 项性能提速、5 项结构与冗余重构。</blockquote>
+                <blockquote data-page-node-id="LmS8tfD17M50pj24OksBL3">相对 v1.10 的源码变更：三轮代码审查（结构 / 性能 / 缺陷）驱动的一次全面优化——修复 6 类真实缺陷、5 项性能提速、5 项结构与冗余重构。</blockquote>
                 <h4 data-page-node-id="WZbrl0I93HyO550cItaN0d">🐞 修复</h4>
                 <ul data-page-node-id="f45LzrRj6kDqLSLwS562zf">
                 <li data-page-node-id="BsknDIey7G9Ow5xTwAbtOH"><strong data-page-node-id="Jc2KvZ7CQAicHif1TxTRCq">子进程双流读取死锁（Exec）</strong>：<code data-page-node-id="oWheFuwXaG7PDOF66gJbGH">RunPS</code>/<code data-page-node-id="u4zTXhVbrkXxZTo94tsu9y">RunCmd</code>/<code data-page-node-id="Hm7C5dl7C4cqY8LtB18oMl">RunCmdGet</code>/<code data-page-node-id="6kUZBPtUa55z9OP8p7ZJCX">RunVbs</code>/<code data-page-node-id="ET0AlRDGMNJDQmn5YIRCq6">RunVbsGet</code> 由顺序 <code data-page-node-id="Z1Jg7ExHLoZldeWBHGM3d7">ReadToEnd</code> 改为异步并行排水（<code data-page-node-id="7UDezGkiPGC9It9DVdRDDF">BeginOutputReadLine</code>/<code data-page-node-id="lGGfvVkk7yKrMLVVmM23Zt">BeginErrorReadLine</code>），消除子进程 stderr 写满 64KB 管道缓冲导致的互相阻塞（此前最坏挂到 15 分钟超时被杀）；capture 模式 stderr 不再静默丢弃（输出 <code data-page-node-id="JiyF7CWrZ2sQK59FIZ9UPw">[STDERR]</code>）。
