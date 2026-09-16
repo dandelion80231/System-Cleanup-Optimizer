@@ -89,3 +89,9 @@ src/CpqSystemTool/publish_err*.txt
 src/CpqSystemTool/_publish.out
 src/CpqSystemTool/_winrt_probe.cs.txt
 _site_*.html
+
+# 根目录 publish 输出（-o publish 单文件/文件夹布局，不入库；src/publish 旧路径已忽略）
+publish/
+publish2/
+# 临时哈希标记文件
+tools/_new_sha.txt

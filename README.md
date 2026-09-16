@@ -8,7 +8,7 @@
 >
 > **项目主页**: [https://github.com/dandelion80231/System-Cleanup-Optimizer](https://github.com/dandelion80231/System-Cleanup-Optimizer)
 >
-> **官网**: [https://cpq-system-tool.pages.dev/](https://cpq-system-tool.pages.dev/)
+> **官网**: [https://cab.dpdns.org/](https://cab.dpdns.org/)
 
 ---
 
@@ -89,12 +89,12 @@
 
 ### 下载与运行
 
-1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cpq-system-tool.pages.dev/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.20.exe`）。
+1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cab.dpdns.org/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.20.exe`）。
 2. 双击运行即可，**无需安装**。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入单文件 exe。
 3. 首次使用建议：先创建系统还原点，再进行优化配置。
 
 > 当前版本 `系统清理与优化工具_v1.20.exe`：10,090,108 字节（约 9.62 MB），SHA256：
-`f96856368d12d6dde7014883933d178f64e7053cf2e39095175a8f73c66452af`
+`382e11e5f207d480a73bca9407225d0638a1c6b0824e05f9c2320db13f1e3358`
 
 ### 通用操作约定
 

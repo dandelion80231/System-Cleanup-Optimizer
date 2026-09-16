@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="IMWMkF1wkLLg6LDfIADWG9">
 <title>更新日志 — 系统清理与优化工具 v1.01 – v1.20</title>
 <meta name="description" content="系统清理与优化工具更新日志：v1.01 到 v1.20 的完整迭代记录，包括官网地址、检查更新改为官网 version.json、安装包统一中文名等。" data-page-node-id="RlDQcqTGO2cz3jAhKIeBiT">
-<link rel="canonical" href="https://cpq-system-tool.pages.dev/changelog" data-page-node-id="dPwLooDLD92TzuZJolPUcj">
+<link rel="canonical" href="https://cab.dpdns.org/changelog" data-page-node-id="dPwLooDLD92TzuZJolPUcj">
 <meta property="og:type" content="website" data-page-node-id="2zj94ZWQPnLlqYJNiV56Ku">
 <meta property="og:site_name" content="系统清理与优化工具" data-page-node-id="GwE9ZfZCoW6OEe9sUkhXwg">
 <meta property="og:title" content="更新日志 — 系统清理与优化工具 v1.01 – v1.20" data-page-node-id="cjhqz3XBcbZ8cL5kqsqTM9">
 <meta property="og:description" content="系统清理与优化工具更新日志：v1.01 到 v1.20 的完整迭代记录，包括官网地址、检查更新改为官网 version.json、安装包统一中文名等。" data-page-node-id="PGpB3lFad94wzOEeNvJP9I">
-<meta property="og:url" content="https://cpq-system-tool.pages.dev/changelog" data-page-node-id="V4y9tNDqKG29uebF2giQcL">
+<meta property="og:url" content="https://cab.dpdns.org/changelog" data-page-node-id="V4y9tNDqKG29uebF2giQcL">
 <meta name="twitter:card" content="summary_large_image" data-page-node-id="hiPCCTbj8dytEJshqAcT15">
 <meta name="twitter:title" content="更新日志 — 系统清理与优化工具 v1.01 – v1.20" data-page-node-id="7BmsDXeaEscM4hbcdaYeFy">
 <meta name="twitter:description" content="系统清理与优化工具更新日志：v1.01 到 v1.20 的完整迭代记录，包括官网地址、检查更新改为官网 version.json、安装包统一中文名等。" data-page-node-id="AXn4UHdQOb1PNm8c9BUQFl">
@@ -80,6 +80,22 @@
 
       <div class="tl-item" data-page-node-id="HA5kwBJijHbJLmsvNlgCwP">
           <span class="ver" data-page-node-id="32crtqEzI3PweDri2uYm7b">v1.19</span><span class="date" data-page-node-id="SGgwi7GGdcNHvCqUfCjOn5">2026-09-03</span>
+          <ul data-page-node-id="gHKZIO523v6AmRPGkNpgTu">
+          <li data-page-node-id="LMJQxRvDtXC9Y7DCyi3Lco"><em data-page-node-id="IgjdIuCmpdoRdNaLCh0T7O">相对 v1.18 的源码变更（1 提交，1 文件，+43 / −18 行）：配置管理页新增源码导出与 ZIP 下载、下载改用 ZIP；修复 Geek Uninstaller 下载卡死、优化便携版安装路径；并规范 Release 资产（禁止上传 src.zip）。</em></li>
+          <li data-page-node-id="GpoGe3XLnqokCJ3ox277J3"><strong data-page-node-id="LigQ5ulmkKfZXwdfsbM8HN">🐛 修复</strong></li>
+          <li data-page-node-id="srJBeCVlbiHXFyfsFS1yxF"><strong data-page-node-id="Jdo6eYLJFskvq4aLqCncPc">Geek Uninstaller 下载卡死修复（SoftwareInstall）</strong>：为 <code data-page-node-id="UbFic37yeneSHiefzTinqa">SoftwareInstall.cs</code> 新增 <code data-page-node-id="InGQtAjiEXWu9DK2OC8pWT">ReadTimeoutMs</code> / <code data-page-node-id="Wo0pqr4ZE5KcBeqBZDW8Ne">DownloadTimeout</code> 可配置字段，Geek 配置总超时 900s + 读空闲 120s，应对极慢速服务器（~12 KB/s）反复超时失败。
+          </li>
+          <li data-page-node-id="w9GjkQlGGuEHAEhxW74y4b"><strong data-page-node-id="ubZp979Al8SK0gJBKqlFKE">便携版路径优化</strong>：默认安装路径由 <code data-page-node-id="pkxKsY5wxeG4yLgvIGkEKz">%LOCALAPPDATA%\CpqSystemTool\Portable\{id}\</code> 改为桌面根目录，打开即可见；同步更新 <code data-page-node-id="Vi2OEq4ej9odHscMZZxr8k">KnownExePaths</code> 检测路径。
+          </li>
+          <li data-page-node-id="7CffBi4vl3ZtmwHrsGRYQi"><strong data-page-node-id="QewOME2GkQUJs9qnBEjSS0">Geek 下载加速</strong>：改用官方 ZIP 包（3.2 MB）替代裸 EXE（7.5 MB），下载时间减少约 60%，并加 SHA256 校验（来源 Chocolatey 官方 checksum），超时由 900s 调为 120s。
+          </li>
+          <li data-page-node-id="GHADhK3dDs0pqkFC7kbacH"><strong data-page-node-id="DznkUAk6NHscA40YV68QND">♻️ 项目卫生</strong></li>
+          <li data-page-node-id="UkkO3GBf6iWTEpsV1Sxtwb"><strong data-page-node-id="XRvo0D67QBaJZwMucQbD7P">禁止上传 src.zip 到 Release</strong>：<code data-page-node-id="70Lx52Elxx8Ev34nFiWmmD">src.zip</code> 为内嵌资源（供「导出源码」使用），不是 Release 资产；Release 仅上传 exe + README.md。
+          </li>
+          </ul>
+        </div>
+        <div class="tl-item" data-page-node-id="9HmrH6FQxDEfUKV7Yciup6">
+          <span class="ver" data-page-node-id="amjBVeISmcwMcGHkvwwPIi">v1.18</span><span class="date" data-page-node-id="BEPzVCUJ82lkTg7tPUrkqT">2026-08-31</span>
           <ul data-page-node-id="4gguKfcWTYuJ3B1fi8JCtC">
           <li data-page-node-id="GFBtIA4lqYfaJUd0tAH2Q8"><em data-page-node-id="hFN4Lbf05bx9vhKGhAhkVB">相对 v1.17 的源码变更（基线 commit 1ab18c3 + 本轮 CHANGELOG 补充）：<strong data-page-node-id="n6cfcNSYywkTywG1Dio2wU">运行平台由 .NET Framework 4.8 迁移至 .NET 10（UI 框架仍为 WPF）</strong>，「导出源码」改为构建期自动打包；补齐 5 处已知缺陷（N1/A3/A4/A8/N2），并治理全项目 61 处空 <code data-page-node-id="LyKRDM44o0BTLZ4yBoQP7P">catch {}</code> / <code data-page-node-id="kbEBUaClE1C2no0sYDTYyM">catch (Exception) {}</code> 静默吞异常（改为 <code data-page-node-id="xZ5Abi8WXBCyioWRWAYC37">DebugLog.Ignore(ex)</code> 记录日志，便于排查）。</em></li>
           <li data-page-node-id="BkyvxeqNUvHMIfVz6Ss7PX"><strong data-page-node-id="8IeHD2c40N2XwF1U6WHCQn">🚀 重大变更</strong></li>
@@ -100,22 +116,6 @@
           </li>
           <li data-page-node-id="7Z6IuR06BDIBr2FhPwbfrA"><strong data-page-node-id="DCL2oKx7GH2AoMVF34YFdC">♻️ 质量打磨</strong></li>
           <li data-page-node-id="fu3c5COJUlGMzil4ZH3auc"><strong data-page-node-id="k79BhPXMJR4cBuiDJoDYTn">空 catch 治理（61 处）</strong>：全项目 18 个文件共 61 处 <code data-page-node-id="BPLGEa1u0dOhLsWPZDu4Dl">catch {}</code> / <code data-page-node-id="4Xif3AqXtrMYCOsJPi3nPI">catch (Exception) {}</code> 静默吞掉异常，改为 <code data-page-node-id="B10SmdN9lnDNFiUrBkHICX">catch (Exception ex) { DebugLog.Ignore(ex); }</code>，把异常记录到 <code data-page-node-id="y7ctPDy5SqYOCrftfhfriP">DebugLog</code> 便于事后排查（脏数据 / 路径异常不再无从追查）；WebView2 注入的 JavaScript 字符串内 <code data-page-node-id="JaTIB0MLBeRTmbCqr0m2aG">catch (e) {}</code> 保持原样（非 C# 代码，不应改动）。同步修复一处变量名冲突（CS0136）与 BOM 双重编码回归。
-          </li>
-          </ul>
-        </div>
-        <div class="tl-item" data-page-node-id="9HmrH6FQxDEfUKV7Yciup6">
-          <span class="ver" data-page-node-id="amjBVeISmcwMcGHkvwwPIi">v1.18</span><span class="date" data-page-node-id="BEPzVCUJ82lkTg7tPUrkqT">2026-08-31</span>
-          <ul data-page-node-id="gHKZIO523v6AmRPGkNpgTu">
-          <li data-page-node-id="LMJQxRvDtXC9Y7DCyi3Lco"><em data-page-node-id="IgjdIuCmpdoRdNaLCh0T7O">相对 v1.17 的源码变更（3 提交，1 文件，+43 / −18 行）：修复 Geek Uninstaller 下载卡死、优化便携版安装路径、改用 ZIP 加速下载；并规范 Release 资产（禁止上传 src.zip）。</em></li>
-          <li data-page-node-id="GpoGe3XLnqokCJ3ox277J3"><strong data-page-node-id="LigQ5ulmkKfZXwdfsbM8HN">🐛 修复</strong></li>
-          <li data-page-node-id="srJBeCVlbiHXFyfsFS1yxF"><strong data-page-node-id="Jdo6eYLJFskvq4aLqCncPc">Geek Uninstaller 下载卡死修复（SoftwareInstall）</strong>：为 <code data-page-node-id="UbFic37yeneSHiefzTinqa">SoftwareInstall.cs</code> 新增 <code data-page-node-id="InGQtAjiEXWu9DK2OC8pWT">ReadTimeoutMs</code> / <code data-page-node-id="Wo0pqr4ZE5KcBeqBZDW8Ne">DownloadTimeout</code> 可配置字段，Geek 配置总超时 900s + 读空闲 120s，应对极慢速服务器（~12 KB/s）反复超时失败。
-          </li>
-          <li data-page-node-id="w9GjkQlGGuEHAEhxW74y4b"><strong data-page-node-id="ubZp979Al8SK0gJBKqlFKE">便携版路径优化</strong>：默认安装路径由 <code data-page-node-id="pkxKsY5wxeG4yLgvIGkEKz">%LOCALAPPDATA%\CpqSystemTool\Portable\{id}\</code> 改为桌面根目录，打开即可见；同步更新 <code data-page-node-id="Vi2OEq4ej9odHscMZZxr8k">KnownExePaths</code> 检测路径。
-          </li>
-          <li data-page-node-id="7CffBi4vl3ZtmwHrsGRYQi"><strong data-page-node-id="QewOME2GkQUJs9qnBEjSS0">Geek 下载加速</strong>：改用官方 ZIP 包（3.2 MB）替代裸 EXE（7.5 MB），下载时间减少约 60%，并加 SHA256 校验（来源 Chocolatey 官方 checksum），超时由 900s 调为 120s。
-          </li>
-          <li data-page-node-id="GHADhK3dDs0pqkFC7kbacH"><strong data-page-node-id="DznkUAk6NHscA40YV68QND">♻️ 项目卫生</strong></li>
-          <li data-page-node-id="UkkO3GBf6iWTEpsV1Sxtwb"><strong data-page-node-id="XRvo0D67QBaJZwMucQbD7P">禁止上传 src.zip 到 Release</strong>：<code data-page-node-id="70Lx52Elxx8Ev34nFiWmmD">src.zip</code> 为内嵌资源（供「导出源码」使用），不是 Release 资产；Release 仅上传 exe + README.md。
           </li>
           </ul>
         </div>
@@ -343,7 +343,7 @@
         <div class="tl-item" data-page-node-id="0NmUpALaGAMB6r7VPg0Cg5">
           <span class="ver" data-page-node-id="xPI9XZE9TAy3b1X6ab3out">v1.11</span><span class="date" data-page-node-id="xw8g8wR5jKtGcEPVGHzTsm">2026-08-20</span>
           <ul data-page-node-id="qzhw6DJ09alsewKmTUrahb">
-          <li data-page-node-id="ekH4s3DYPxxEJdgfc9IqNV"><em data-page-node-id="qU7tRXRctdxAi8mXNlLs3j">相对 v1.19 的源码变更：三轮代码审查（结构 / 性能 / 缺陷）驱动的一次全面优化——修复 6 类真实缺陷、5 项性能提速、5 项结构与冗余重构。</em></li>
+          <li data-page-node-id="ekH4s3DYPxxEJdgfc9IqNV"><em data-page-node-id="qU7tRXRctdxAi8mXNlLs3j">相对 v1.10 的源码变更：三轮代码审查（结构 / 性能 / 缺陷）驱动的一次全面优化——修复 6 类真实缺陷、5 项性能提速、5 项结构与冗余重构。</em></li>
           <li data-page-node-id="DXOBb7HAGpfj3OF0wcEs6K"><strong data-page-node-id="PW5szvt4ZtBtcEvfHnhJZP">🐞 修复</strong></li>
           <li data-page-node-id="YGaiOmMsB9OMTt9mCKlJBW"><strong data-page-node-id="wRBeUN8QVhT1b3ofHmpkXt">子进程双流读取死锁（Exec）</strong>：<code data-page-node-id="jSF2kfNObfwNKXozHUCr8T">RunPS</code>/<code data-page-node-id="ZIgcyqHIU5CyAqMa2JKH55">RunCmd</code>/<code data-page-node-id="iLJjkajZpAoAf7eebUhYJl">RunCmdGet</code>/<code data-page-node-id="4PrNBw4YTS0rwuBpfI4mhm">RunVbs</code>/<code data-page-node-id="VjkGnkXF4DHfzozWi09BJ5">RunVbsGet</code> 由顺序 <code data-page-node-id="BD0qjCWBm6xgefT7UPtPIZ">ReadToEnd</code> 改为异步并行排水（<code data-page-node-id="mz4a6xPhO01n3QbpxLcMYH">BeginOutputReadLine</code>/<code data-page-node-id="aCJSHNxhhVX5t14SDi0Ofn">BeginErrorReadLine</code>），消除子进程 stderr 写满 64KB 管道缓冲导致的互相阻塞（此前最坏挂到 15 分钟超时被杀）；capture 模式 stderr 不再静默丢弃（输出 <code data-page-node-id="jEJZCfvOFGcG8AnLobZBeL">[STDERR]</code>）。
           </li>
@@ -380,7 +380,7 @@
           </ul>
         </div>
         <div class="tl-item" data-page-node-id="ArOt0HjPAfNv8SpuVWaX7d">
-          <span class="ver" data-page-node-id="qQShiSdYdQKcBGPXEDgUU9">v1.19</span><span class="date" data-page-node-id="HB22kaFavmEfCIqYOXMtCJ">2026-08-18</span>
+          <span class="ver" data-page-node-id="qQShiSdYdQKcBGPXEDgUU9">v1.10</span><span class="date" data-page-node-id="HB22kaFavmEfCIqYOXMtCJ">2026-08-18</span>
           <ul data-page-node-id="aufkndRFI2EVWUVAAqJefm">
           <li data-page-node-id="njcDieCsvysXqMXxwCe6EQ"><em data-page-node-id="CbkgzKwNgcDvjLQfw5EioB">相对 v1.09 的源码变更：新增「内存工具」导航页（镜像 RAMMap 只读视图 + 可选内存优化），置于「系统工具」之下。</em></li>
           <li data-page-node-id="I7a4q3KoaAnBM9nquPiRg4"><strong data-page-node-id="CkveqaAdD5lXriVenWHsAe">✨ 新增</strong></li>

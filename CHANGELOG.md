@@ -40,7 +40,20 @@
 
 ## [v1.19] - 2026-09-03
 
-> 相对 v1.17 的源码变更（基线 commit 1ab18c3 + 本轮 CHANGELOG 补充）：**运行平台由 .NET Framework 4.8 迁移至 .NET 10（UI 框架仍为 WPF）**，「导出源码」改为构建期自动打包；补齐 5 处已知缺陷（N1/A3/A4/A8/N2），并治理全项目 61 处空 `catch {}` / `catch (Exception) {}` 静默吞异常（改为 `DebugLog.Ignore(ex)` 记录日志，便于排查）。
+> 相对 v1.18 的源码变更（1 提交，1 文件，+43 / −18 行）：配置管理页新增源码导出与 ZIP 下载、下载改用 ZIP；修复 Geek Uninstaller 下载卡死、优化便携版安装路径；并规范 Release 资产（禁止上传 src.zip）。
+
+### 🐛 修复
+- **Geek Uninstaller 下载卡死修复（SoftwareInstall）**：为 `SoftwareInstall.cs` 新增 `ReadTimeoutMs` / `DownloadTimeout` 可配置字段，Geek 配置总超时 900s + 读空闲 120s，应对极慢速服务器（~12 KB/s）反复超时失败。
+- **便携版路径优化**：默认安装路径由 `%LOCALAPPDATA%\CpqSystemTool\Portable\{id}\` 改为桌面根目录，打开即可见；同步更新 `KnownExePaths` 检测路径。
+- **Geek 下载加速**：改用官方 ZIP 包（3.2 MB）替代裸 EXE（7.5 MB），下载时间减少约 60%，并加 SHA256 校验（来源 Chocolatey 官方 checksum），超时由 900s 调为 120s。
+
+### ♻️ 项目卫生
+- **禁止上传 src.zip 到 Release**：`src.zip` 为内嵌资源（供「导出源码」使用），不是 Release 资产；Release 仅上传 exe + README.md。
+
+
+## [v1.18] - 2026-08-31
+
+> 相对 v1.17 的源码变更：**运行平台由 .NET Framework 4.8 迁移至 .NET 10（UI 框架仍为 WPF）**，「导出源码」改为构建期自动打包；补齐 5 处已知缺陷（N1/A3/A4/A8/N2），并治理全项目 61 处空 `catch {}` / `catch (Exception) {}` 静默吞异常（改为 `DebugLog.Ignore(ex)` 记录日志，便于排查）。
 
 ### 🚀 重大变更
 - **运行平台迁移：.NET Framework 4.8 → .NET 10**：目标框架由 `net48` 升级为 `net10.0-windows`，UI 框架保持 WPF 不变；显式 x64；`System.Management` / `System.ServiceProcess.ServiceController` 依赖升级至 10.0.0，WebView2 固定 1.0.2045.28。发布形态改为框架依赖单文件 exe（`PublishSingleFile`，约 6.5 MB）。
@@ -55,19 +68,6 @@
 
 ### ♻️ 质量打磨
 - **空 catch 治理（61 处）**：全项目 18 个文件共 61 处 `catch {}` / `catch (Exception) {}` 静默吞掉异常，改为 `catch (Exception ex) { DebugLog.Ignore(ex); }`，把异常记录到 `DebugLog` 便于事后排查（脏数据 / 路径异常不再无从追查）；WebView2 注入的 JavaScript 字符串内 `catch (e) {}` 保持原样（非 C# 代码，不应改动）。同步修复一处变量名冲突（CS0136）与 BOM 双重编码回归。
-
-
-## [v1.18] - 2026-08-31
-
-> 相对 v1.17 的源码变更（3 提交，1 文件，+43 / −18 行）：修复 Geek Uninstaller 下载卡死、优化便携版安装路径、改用 ZIP 加速下载；并规范 Release 资产（禁止上传 src.zip）。
-
-### 🐛 修复
-- **Geek Uninstaller 下载卡死修复（SoftwareInstall）**：为 `SoftwareInstall.cs` 新增 `ReadTimeoutMs` / `DownloadTimeout` 可配置字段，Geek 配置总超时 900s + 读空闲 120s，应对极慢速服务器（~12 KB/s）反复超时失败。
-- **便携版路径优化**：默认安装路径由 `%LOCALAPPDATA%\CpqSystemTool\Portable\{id}\` 改为桌面根目录，打开即可见；同步更新 `KnownExePaths` 检测路径。
-- **Geek 下载加速**：改用官方 ZIP 包（3.2 MB）替代裸 EXE（7.5 MB），下载时间减少约 60%，并加 SHA256 校验（来源 Chocolatey 官方 checksum），超时由 900s 调为 120s。
-
-### ♻️ 项目卫生
-- **禁止上传 src.zip 到 Release**：`src.zip` 为内嵌资源（供「导出源码」使用），不是 Release 资产；Release 仅上传 exe + README.md。
 
 
 ## [v1.17] - 2026-08-30

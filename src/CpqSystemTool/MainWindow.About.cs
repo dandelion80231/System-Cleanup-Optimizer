@@ -29,7 +29,7 @@ namespace CpqSystemTool
         private bool _downloadingUpdate;
 
         /// <summary>官网根域名（含末尾斜杠），更新检查与下载直链均基于此拼接。</summary>
-        private const string OfficialSiteRoot = "https://cpq-system-tool.pages.dev/";
+        private const string OfficialSiteRoot = "https://cab.dpdns.org/";
 
         // =====================================================================
         //  Module: 关于（独立实现声明 + 开源引用清单）
@@ -243,7 +243,7 @@ namespace CpqSystemTool
             Grid.SetRow(siteLabel, 2); Grid.SetColumn(siteLabel, 2);
             devGrid.Children.Add(siteLabel);
 
-            var siteValue = LinkText("cpq-system-tool.pages.dev", "https://cpq-system-tool.pages.dev/", 12.5);
+            var siteValue = LinkText("cab.dpdns.org", "https://cab.dpdns.org/", 12.5);
             Grid.SetRow(siteValue, 2); Grid.SetColumn(siteValue, 3);
             devGrid.Children.Add(siteValue);
 
