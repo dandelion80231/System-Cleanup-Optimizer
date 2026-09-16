@@ -38,6 +38,8 @@ _done.txt
 backup/
 # 临时 diff 对比文件，不应提交
 cr_tmp/
+# 临时核对目录（GitHub 勘误等工作产物）
+.tmp_check/
 # 已废弃旧脚本目录（已从 GitHub 树移除，本地残留防误提交）
 tools/_deprecated/
 
