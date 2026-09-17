@@ -23,7 +23,7 @@ namespace CpqSystemTool
         private UIElement BuildSystemTools()
         {
             var root = new StackPanel();
-            root.Children.Add(Header("系统工具", "Windows 版本转换（对齐一键转换 7.0）+ 上帝模式 + 系统还原点。均为低频高危操作，建议先创建还原点再执行转换。"));
+            root.Children.Add(Header("系统工具", "Windows 版本转换 + 上帝模式 + 系统还原点。均为低频高危操作，建议先创建还原点再执行转换。"));
 
             // 共享进度条 + 日志（两模块共用，避免之前各页独立导致底部两份日志）
             var pb = MakeProgress();
@@ -35,15 +35,18 @@ namespace CpqSystemTool
             // ===== 卡片 1：Windows 版本转换 =====
             var vsCard = Card();
             var vsInner = (StackPanel)vsCard.Child;
-            vsInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🔄 Windows 版本转换", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) });
-            vsInner.Children.Add(new TextBlock
+            // 紧凑布局：标题与小字提示同行（提示不单独占行；窗口窄时自动换行）
+            var vsHeadRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+            vsHeadRow.Children.Add(new Emoji.Wpf.TextBlock { Text = "🔄 Windows 版本转换", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
+            vsHeadRow.Children.Add(new TextBlock
             {
                 Text = "建议先关闭杀毒软件/Defender 实时保护；会自动重启一次并切换为未激活状态，需重新激活。转换前请先创建系统还原点。",
                 FontSize = 10.5,
                 Foreground = _textDim,
-                Margin = new Thickness(0, 0, 0, 6),
+                VerticalAlignment = VerticalAlignment.Center,
                 TextWrapping = TextWrapping.Wrap
             });
+            vsInner.Children.Add(vsHeadRow);
 
             var vsCurrentTb = new Emoji.Wpf.TextBlock
             {
@@ -263,7 +266,7 @@ namespace CpqSystemTool
                 GodMode.Create(msg => sharedLog.AppendText(msg + "\r\n"));
             }, 380);
             // 紧凑布局：标题与按钮同行（省一行纵向空间）
-            var godRow = new StackPanel { Orientation = Orientation.Horizontal };
+            var godRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };  // 居中：与 Config.cs 深色/浅色控件行同款片段（HorizontalAlignment.Center）
             godRow.Children.Add(new Emoji.Wpf.TextBlock { Text = "🌌 上帝模式", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
             godModeBtn.Margin = new Thickness(0);
             godRow.Children.Add(godModeBtn);
@@ -277,13 +280,12 @@ namespace CpqSystemTool
             listBox.ItemContainerStyle = new Style(typeof(ListBoxItem));
             listBox.ItemContainerStyle.Setters.Add(new Setter(Control.ForegroundProperty, _textMain));
 
-            var wp = MakeBtnRow(
-                Btn("📌 创建还原点", false, () =>
+            var bCreateRp = Btn("📌 创建还原点", false, () =>
                 {
                     pb.Visibility = Visibility.Visible;
                     RunInBg(sharedLog, l => RestorePoint.Create("ZyperTool-" + DateTime.Now.ToString("MMdd-HHmm"), l), "还原点已创建", () => pb.Visibility = Visibility.Collapsed);
-                }, 130),
-                Btn("🔄 刷新列表", true, () =>
+                }, 130);
+            var bRefreshRp = Btn("🔄 刷新列表", true, () =>
                 {
                     pb.Visibility = Visibility.Visible;
                     RunInBg(sharedLog, l =>
@@ -295,17 +297,21 @@ namespace CpqSystemTool
                             foreach (var r in list) listBox.Items.Add(r);
                         }); } catch { /* 窗口已关闭，忽略 */ }
                     }, "列表已刷新", () => pb.Visibility = Visibility.Collapsed);
-                }, 110),
-                Btn("⏪ 还原选中", false, () =>
+                }, 110);
+            var bRestoreSel = Btn("⏪ 还原选中", false, () =>
                 {
                     var sel = listBox.SelectedItem as RestorePoint.RestoreInfo;
                     if (sel == null) { sharedLog.AppendText("[!] 请先选择还原点\r\n"); return; }
                     pb.Visibility = Visibility.Visible;
                     RunInBg(sharedLog, l => RestorePoint.Restore(sel.Seq, l), "已发起还原", () => pb.Visibility = Visibility.Collapsed);
-                }, 110)
-            );
-            // 紧凑布局：标题与按钮行同行（省一行纵向空间）
-            var restoreRow = new StackPanel { Orientation = Orientation.Horizontal };
+                }, 110);
+            // 三个按钮固定 10px 间隔横排（原 MakeBtnRow 三列星等分会拉满整行、间距过宽，改后与居中的标题行匹配）
+            var wp = new StackPanel { Orientation = Orientation.Horizontal };
+            bCreateRp.Margin = new Thickness(0, 0, 10, 0);
+            bRefreshRp.Margin = new Thickness(0, 0, 10, 0);
+            wp.Children.Add(bCreateRp); wp.Children.Add(bRefreshRp); wp.Children.Add(bRestoreSel);
+            // 紧凑布局：标题与按钮行同行（省一行纵向空间），整行居中
+            var restoreRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
             restoreRow.Children.Add(new Emoji.Wpf.TextBlock { Text = "⏪ 系统还原", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
             wp.Margin = new Thickness(0, 0, 0, 8);
             restoreRow.Children.Add(wp);
