@@ -183,7 +183,7 @@ namespace CpqSystemTool
 
         /// <summary>数据根下「文件夹说明.txt」：介绍各子文件夹用途 + 主文件夹须与 exe 同路径的核心规则。
         /// 版本机制：首行写 version=N；文件缺失或版本落后于当前 IntroVersion 时重新生成，同版本保留用户改动。</summary>
-        private const int IntroVersion = 8;
+        private const int IntroVersion = 9;
 
         private static void WriteFolderIntroIfNeeded()
         {
@@ -228,6 +228,10 @@ namespace CpqSystemTool
                     "壁纸\\        「自定义背景 - 导出 SVG」的默认保存位置",
                     "驱动备份\\     「驱动备份/导出」的默认保存位置",
                     "源码\\        「配置页 - 导出源码」的默认保存位置",
+                    "根目录文件（可随时删，按需自动再生）：",
+                    "  crash.log           未处理异常/崩溃堆栈记录（崩溃时自动生成）",
+                    "  webview2_deps.log   WebView2 依赖补齐留痕（loader 自动下载/解压记录，排查用）",
+                    "  MicrosoftEdgeWebview2Setup.exe  「Edge 管理 - 安装 WebView2 Runtime」的下载中转件（按需重新下载，v1.20 前机内已装好 Runtime 时无需它）",
                     "",
                     "【说明】",
                     "・各导出/保存对话框默认打开对应子文件夹，也可在对话框中随时改选其他位置。",
