@@ -258,18 +258,21 @@ namespace CpqSystemTool
             // ===== 卡片 2：上帝模式 =====
             var godCard = Card();
             var godInner = (StackPanel)godCard.Child;
-            godInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "🌌 上帝模式", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 0, 0, 8) });
             var godModeBtn = Btn("打开上帝模式（创建 GodMode.{ED7BA470-8E54-465E-825C-99712043E01C} 链接到桌面）", true, () =>
             {
                 GodMode.Create(msg => sharedLog.AppendText(msg + "\r\n"));
             }, 380);
-            godInner.Children.Add(godModeBtn);
+            // 紧凑布局：标题与按钮同行（省一行纵向空间）
+            var godRow = new StackPanel { Orientation = Orientation.Horizontal };
+            godRow.Children.Add(new Emoji.Wpf.TextBlock { Text = "🌌 上帝模式", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
+            godModeBtn.Margin = new Thickness(0);
+            godRow.Children.Add(godModeBtn);
+            godInner.Children.Add(godRow);
             root.Children.Add(godCard);
 
             // ===== 卡片 3：系统还原 =====
             var restoreCard = Card();
             var restoreInner = (StackPanel)restoreCard.Child;
-            restoreInner.Children.Add(new Emoji.Wpf.TextBlock { Text = "⏪ 系统还原", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, Margin = new Thickness(0, 4, 0, 8) });
             var listBox = new ListBox { MaxHeight = 180, Margin = new Thickness(0, 0, 0, 8), Background = _isDarkMode ? Brushes.Transparent : _bgCard, BorderBrush = _panelBorder, BorderThickness = new Thickness(1) };
             listBox.ItemContainerStyle = new Style(typeof(ListBoxItem));
             listBox.ItemContainerStyle.Setters.Add(new Setter(Control.ForegroundProperty, _textMain));
@@ -301,8 +304,12 @@ namespace CpqSystemTool
                     RunInBg(sharedLog, l => RestorePoint.Restore(sel.Seq, l), "已发起还原", () => pb.Visibility = Visibility.Collapsed);
                 }, 110)
             );
+            // 紧凑布局：标题与按钮行同行（省一行纵向空间）
+            var restoreRow = new StackPanel { Orientation = Orientation.Horizontal };
+            restoreRow.Children.Add(new Emoji.Wpf.TextBlock { Text = "⏪ 系统还原", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
             wp.Margin = new Thickness(0, 0, 0, 8);
-            restoreInner.Children.Add(wp);
+            restoreRow.Children.Add(wp);
+            restoreInner.Children.Add(restoreRow);
             restoreInner.Children.Add(listBox);
             root.Children.Add(restoreCard);
 
