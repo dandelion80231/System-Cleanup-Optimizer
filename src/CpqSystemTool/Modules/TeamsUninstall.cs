@@ -125,7 +125,7 @@ namespace CpqSystemTool
             var lockedLeftovers = new List<string>();
             foreach (var d in dirs)
             {
-                try { if (Directory.Exists(d)) lockedLeftovers.Add(d); } catch { }
+                try { if (Directory.Exists(d)) lockedLeftovers.Add(d); } catch (Exception ex) { DebugLog.Ignore(ex); }
             }
             if (lockedLeftovers.Count > 0)
             {
@@ -210,7 +210,7 @@ namespace CpqSystemTool
                 var r2 = Exec.RunPowerShellGet("((Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like '*Teams*' }) -ne $null)", null).Trim();
                 return r2.Equals("True", StringComparison.OrdinalIgnoreCase);
             }
-            catch { return false; }
+            catch (Exception ex) { DebugLog.Ignore(ex); return false; }
         }
 
         // ==================== 重启自动补删 ====================
@@ -279,7 +279,7 @@ namespace CpqSystemTool
                 if (File.Exists(inConfig)) file = inConfig;
                 else if (File.Exists(inLocal)) file = inLocal;
             }
-            catch { }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
 
             if (file == null || !File.Exists(file)) return false;
 
@@ -292,7 +292,7 @@ namespace CpqSystemTool
                     .Distinct()
                     .ToList();
             }
-            catch { remaining = null; }
+            catch (Exception ex) { DebugLog.Ignore(ex); remaining = null; }
             if (remaining == null) return false;
 
             var stillThere = new List<string>();
@@ -301,7 +301,7 @@ namespace CpqSystemTool
                 if (!Directory.Exists(d)) continue;
                 if (log != null) log("  [Teams] 补删残留目录: " + d);
                 Exec.RunPowerShell("Remove-Item -Path " + Exec.QuotePS(d) + " -Recurse -Force -EA 0", log);
-                try { if (Directory.Exists(d)) stillThere.Add(d); } catch { }
+                try { if (Directory.Exists(d)) stillThere.Add(d); } catch (Exception ex) { DebugLog.Ignore(ex); }
             }
 
             try

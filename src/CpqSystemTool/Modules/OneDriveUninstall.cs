@@ -114,7 +114,7 @@ namespace CpqSystemTool
             var lockedLeftovers = new List<string>();
             foreach (var d in dirs)
             {
-                try { if (Directory.Exists(d)) lockedLeftovers.Add(d); } catch { }
+                try { if (Directory.Exists(d)) lockedLeftovers.Add(d); } catch (Exception ex) { DebugLog.Ignore(ex); }
             }
             if (lockedLeftovers.Count > 0)
             {
@@ -198,7 +198,7 @@ namespace CpqSystemTool
                 if (File.Exists(inConfig)) file = inConfig;
                 else if (File.Exists(inLocal)) file = inLocal;
             }
-            catch { }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
 
             if (file == null || !File.Exists(file)) return false; // 无标记 → 无事可做
 
@@ -211,7 +211,7 @@ namespace CpqSystemTool
                     .Distinct()
                     .ToList();
             }
-            catch { remaining = null; }
+            catch (Exception ex) { DebugLog.Ignore(ex); remaining = null; }
             if (remaining == null) return false;
 
             var stillThere = new List<string>();
@@ -221,7 +221,7 @@ namespace CpqSystemTool
                 if (log != null) log("  [OneDrive] 补删残留目录: " + d);
                 // 与卸载阶段一致的强删方式（PowerShell 忽略单文件占用错误）
                 Exec.RunPowerShell("Remove-Item -Path " + Exec.QuotePS(d) + " -Recurse -Force -EA 0", log);
-                try { if (Directory.Exists(d)) stillThere.Add(d); } catch { }
+                try { if (Directory.Exists(d)) stillThere.Add(d); } catch (Exception ex) { DebugLog.Ignore(ex); }
             }
 
             // 更新标记：全删净则删除文件；否则把仍残留的路径写回
