@@ -46,6 +46,7 @@ tools/_deprecated/
 # 3rd-party deps
 node_modules/
 tools/probes/node_modules/
+tools/probes/.tools/
 # NuGet 还原产物（WebView2 等），不应提交
 runtimes/
 # Edge 离线安装包（201M），通过 Release 分发，不进仓库
