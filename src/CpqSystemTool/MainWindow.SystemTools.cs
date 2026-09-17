@@ -266,7 +266,7 @@ namespace CpqSystemTool
                 GodMode.Create(msg => sharedLog.AppendText(msg + "\r\n"));
             }, 380);
             // 紧凑布局：标题与按钮同行（省一行纵向空间）
-            var godRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };  // 居中：与 Config.cs 深色/浅色控件行同款片段（HorizontalAlignment.Center）
+            var godRow = new StackPanel { Orientation = Orientation.Horizontal };  // 左对齐
             godRow.Children.Add(new Emoji.Wpf.TextBlock { Text = "🌌 上帝模式", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
             godModeBtn.Margin = new Thickness(0);
             godRow.Children.Add(godModeBtn);
@@ -305,15 +305,16 @@ namespace CpqSystemTool
                     pb.Visibility = Visibility.Visible;
                     RunInBg(sharedLog, l => RestorePoint.Restore(sel.Seq, l), "已发起还原", () => pb.Visibility = Visibility.Collapsed);
                 }, 110);
-            // 三个按钮固定 10px 间隔横排（原 MakeBtnRow 三列星等分会拉满整行、间距过宽，改后与居中的标题行匹配）
-            var wp = new StackPanel { Orientation = Orientation.Horizontal };
-            bCreateRp.Margin = new Thickness(0, 0, 10, 0);
-            bRefreshRp.Margin = new Thickness(0, 0, 10, 0);
-            wp.Children.Add(bCreateRp); wp.Children.Add(bRefreshRp); wp.Children.Add(bRestoreSel);
-            // 紧凑布局：标题与按钮行同行（省一行纵向空间），整行居中
-            var restoreRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-            restoreRow.Children.Add(new Emoji.Wpf.TextBlock { Text = "⏪ 系统还原", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
+            // 标题左对齐 + 三按钮星等分平分间距、占满剩余位置（MakeBtnRow 三列 star）
+            var wp = MakeBtnRow(bCreateRp, bRefreshRp, bRestoreSel);
+            var restoreRow = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
+            restoreRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            restoreRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var rt = new Emoji.Wpf.TextBlock { Text = "⏪ 系统还原", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+            Grid.SetColumn(rt, 0);
+            restoreRow.Children.Add(rt);
             wp.Margin = new Thickness(0, 0, 0, 8);
+            Grid.SetColumn(wp, 1);
             restoreRow.Children.Add(wp);
             restoreInner.Children.Add(restoreRow);
             restoreInner.Children.Add(listBox);
