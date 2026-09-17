@@ -1,21 +1,24 @@
 # System-Cleanup-Optimizer 发版流程 Checklist
 
 > 通用版本发布流程（由 v1.0.4 发布复盘总结）。**推 tag ≠ 发布完成**，必须按本清单逐条走查并验证。
-> 本机环境：git/gh 出网走 Watt Toolkit 代理 `127.0.0.1:26561`；构建需显式 nuget 源。
+> 本机环境：git/gh 出网走 **TUN/VPN 直连**（旧 Watt Toolkit 代理 127.0.0.1:26561 已废弃）；构建需显式 nuget 源。
 
 ---
 
 ## 0. 前置准备（网络）
 
-- 发布命令统一加一次性代理环境变量（**不写进 git/系统持久配置、不固化进项目**）：
+本机出网现为 **TUN/VPN 模式直连**（旧 Watt Toolkit 代理已废弃）：
+- `git` / `gh` **直接跑，不加代理环境变量**。
+- 连通性探测（代替旧的端口探测）：
   ```
-  HTTPS_PROXY=http://127.0.0.1:26561 HTTP_PROXY=http://127.0.0.1:26561 <命令>
+  git ls-remote origin HEAD   # 能返回 SHA 即通
+  gh auth status
   ```
-- push / release 前先探测代理端口是否可用，避免盲推失败：
+- 若 git 报 `502 ECONNREFUSED 127.0.0.1:26561` 或超时：是 **git 全局配置里残留的旧 proxy**，用一次性参数旁路（**不改持久配置**）：
   ```
-  (exec 3<>/dev/tcp/127.0.0.1/26561) 2>/dev/null && echo OPEN || echo CLOSED
+  git -c http.proxy= -c https.proxy= <命令>
   ```
-  若 CLOSED，先确认 Watt Toolkit 已启动，否则会报 `502 ECONNREFUSED 127.0.0.1:26561`。
+- 裸 `curl` 直连可能异常（http=000）；下载/验包用 **PowerShell `Invoke-WebRequest`** 或 git/gh 自带下载。
 
 ---
 
@@ -122,7 +125,7 @@
 
 - 推送动作**需用户确认**，不擅自 push。推送（含 tag）：
   ```
-  HTTPS_PROXY=http://127.0.0.1:26561 HTTP_PROXY=http://127.0.0.1:26561 git push origin master --tags
+  git push origin master --tags    # TUN/VPN 直连，不加代理变量；失败时用 git -c http.proxy= -c https.proxy= 旁路残留旧配置
   ```
 - **每步做完必须验证**：
   - `git ls-remote` 确认 tag 已上远程；
