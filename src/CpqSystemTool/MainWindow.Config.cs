@@ -3070,7 +3070,9 @@ namespace CpqSystemTool
         // ===== 导出源码：定位并复制源码披露包（v1.19 起不再内嵌 src.zip）=====
         private static string CpqFindSourceDisclosureDir()
         {
-            string baseDir = System.AppContext.BaseDirectory.TrimEnd(System.IO.Path.DirectorySeparatorChar);
+            // 单文件下 AppContext.BaseDirectory 可能指向临时解压目录（从那里向上永远找不到仓库源码），
+            // 改用 AppPaths.ExeDir（Environment.ProcessPath，真实 exe 所在目录）作为向上查找起点。
+            string baseDir = AppPaths.ExeDir.TrimEnd(System.IO.Path.DirectorySeparatorChar);
             var roots = new System.Collections.Generic.List<string>();
             roots.Add(baseDir);
             for (int i = 1; i <= 6; i++)

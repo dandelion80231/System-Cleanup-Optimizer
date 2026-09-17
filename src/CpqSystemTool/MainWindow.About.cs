@@ -572,7 +572,8 @@ namespace CpqSystemTool
                 var tag = _pendingUpdateFileName; // e.g. "系统清理与优化工具_v1.08.exe"
                 var fileName = tag;
                 // 默认保存到当前已安装 exe 同级目录（v1.14/15/16 都在 D:\电脑桌面\cpq\），保证覆盖更新下载到 v1.14 旁边
-                var appDir = AppContext.BaseDirectory;
+                // 单文件下 AppContext.BaseDirectory 可能指向临时解压目录，改用 AppPaths.ExeDir（Environment.ProcessPath）。
+                var appDir = AppPaths.ExeDir;
                 var initialDir = !string.IsNullOrEmpty(appDir) && System.IO.Directory.Exists(appDir)
                     ? appDir
                     : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

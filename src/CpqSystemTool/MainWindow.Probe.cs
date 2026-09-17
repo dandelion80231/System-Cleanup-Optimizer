@@ -41,7 +41,9 @@ namespace CpqSystemTool
         /// </summary>
         private static string ResolveProbesDir()
         {
-            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            // 单文件场景不用 AppDomain.BaseDirectory（可能指向临时解压目录，IL3000 同类隐患），
+            // 用 AppPaths.ExeDir（Environment.ProcessPath，永远=真实 exe 所在目录）作为逐级向上查找的起点。
+            var baseDir = AppPaths.ExeDir;
             for (var d = new DirectoryInfo(baseDir); d != null; d = d.Parent)
             {
                 var cand = Path.Combine(d.FullName, "tools", "probes");
@@ -259,7 +261,7 @@ namespace CpqSystemTool
                         if (!string.IsNullOrWhiteSpace(txt)) logf(txt);
                         return;
                     }
-                    if (t.StartsWith("#<CLIXML>", StringComparison.Ordinal) || t.Contains("<Objs"))
+                    if (IsClixmlHeader(t) || t.Contains("<Objs"))
                     {
                         if (!t.Contains("</Objs>")) inClixml = true;
                         var txt = ExtractClixmlHumanText(t);
@@ -277,12 +279,25 @@ namespace CpqSystemTool
                     t.StartsWith("<DT N=", StringComparison.Ordinal) ||
                     t.StartsWith("<U32", StringComparison.Ordinal) ||
                     t.StartsWith("<I64", StringComparison.Ordinal) ||
+                    t.StartsWith("<S>", StringComparison.Ordinal) ||
                     t.StartsWith("<LST>", StringComparison.Ordinal) ||
                     t.StartsWith("</", StringComparison.Ordinal))
                     return;
                 logf(s);
             };
             return RunProbeProcess(workingDir, "powershell", "-NoProfile -ExecutionPolicy Bypass -EncodedCommand " + encoded, null, cleanLog, out _);
+        }
+
+        /// <summary>
+        /// 判断一行是否包含 PowerShell CLIXML 流头。
+        /// PS 5.1 序列化错误/信息流时，头部一般为 #\u003cCLIXML，但偶发带空格变体（#\u003c CLIXML）或粘在内容行尾，
+        /// 因此只要同时出现 #\u003c 与 CLIXML 两个特征即视为流头，避免这类噪声行漏进 UI 日志。
+        /// </summary>
+        private static bool IsClixmlHeader(string line)
+        {
+            int i = line.IndexOf("#<", StringComparison.Ordinal);
+            if (i < 0) return false;
+            return line.IndexOf("CLIXML", i + 2, StringComparison.Ordinal) > 0;
         }
 
         /// <summary>
