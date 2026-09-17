@@ -42,6 +42,13 @@
   cd src\CpqSystemTool
   dotnet build CpqSystemTool.csproj -c Release --source https://api.nuget.org/v3/index.json
   ```
+- 🔴 **警告是门槛不是背景噪声（v1.20c 教训）**：构建输出里的 **IL3000**（单文件 AOT/裁剪语义告警，典型：`Assembly.GetExecutingAssembly().Location` 在单文件下恒空）必须**逐条处置**：要么修掉（换 `AppPaths.ExeDir`/`Environment.ProcessPath`/`AppContext.BaseDirectory`），要么在代码里注释影响评估——不允许“看见了但没处理”（本次 7 处 IL3000 在构建日志里躺了多轮才被发现，直接导致 WebView2 探针失效）。每次发布前 grep 一次构建日志的 warning 清单存档。
+- **打包形态冒烟（发布前必做，v1.20c 教训）**：单文件打包、位数（x86/x64）、路径定位、原生 DLL 解析这类 bug **只在最终 exe 里暴露**，开发形态（`dotnet run`/IDE/文件夹构建）永远正常（本次 WebView2 探针失效的 7 处 `Assembly.Location` 在开发形态下全部“正常”）。发布前必须把 **publish 产物**（不是开发输出）放到**干净目录**（带配套件如 `WebView2Loader.dll`）跑一遍：
+  1. 关键功能各点一次（探针、依赖拉取、日志/配置读写）；
+  2. **逐行对日志**：任何“跳过 / 回退 / 不可用 / 未安装”字样都要追到根因（环境缺件还是代码 bug？日志措辞可能把代码 bug 包装成环境问题——v1.20c 的“未安装 Runtime”实际是定位 bug）；
+  3. 位数/架构确认：关键二进制的 PE machine 与进程位数一致；
+  4. 记录 exe 的 SHA 与配套件清单，发布资产必须与此冒烟过的包一致。
+  - **降级类日志必须带根因证据**：凡“跳过/回退/不可用”的日志行，必须把证据打出来（哪个条件失败、具体 null/缺什么、环境还是代码 bug），且区分“环境未装”与“定位逻辑故障”；新增降级分支时同步检查日志是否带证据。
 - **发布（默认单文件 exe，与历史分发形态一致）**：用脚本 `tools/publish.ps1` 产出**单文件 exe** `publish_single_vX.XX\系统清理与优化工具.exe`（框架依赖单文件，与历史 `系统清理与优化工具_vX.XX.exe` 同形态）：
   ```
   powershell -ExecutionPolicy Bypass -File tools/publish.ps1 -Version vX.XX            # 框架依赖单文件，体积小（默认分发物）
