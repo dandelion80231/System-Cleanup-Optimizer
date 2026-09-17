@@ -21,7 +21,7 @@ namespace CpqSystemTool
         private const int DownloadTimeoutMs = 60000;
 
         /// <summary>
-        /// 持久化诊断日志：写入 exe 目录下的 webview2_deps.log，便于离线排查下载/解压失败根因。
+        /// 持久化诊断日志：写入数据根（cpq-tool）下的 webview2_deps.log，便于离线排查下载/解压失败根因。
         /// </summary>
         private static void WriteDepsLog(string message)
         {

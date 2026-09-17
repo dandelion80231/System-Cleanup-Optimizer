@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -348,7 +348,8 @@ namespace CpqSystemTool
             // 位数终验：未提权静默安装只装 32 位（用户级），64 位进程用不了 → 明确告知。
             ReportRuntimeCompleteness(log);
 
-            // 同步就地补上单文件分发所需的 WebView2 探针托管依赖（NuGet 运行时拉取）。
+            // 同步就地拉取单文件分发所需的 WebView2 探针原生 loader（WebView2Loader.dll）。
+            // 注：托管程序集（WebView2.Core 等）已随单文件 exe 内嵌，不再运行时拉取（旧 net48 遗留逻辑已移除）。
             // 兜底：这一步要联网 + 解压 + 写 exe 同目录，失败绝不能让异常逸出到 UI 线程（net48 下会直接崩进程）。
             try
             {
@@ -527,7 +528,8 @@ namespace CpqSystemTool
         }
 
         /// <summary>读 PE 头判定可执行文件是否为 64 位（machine 0x8664=AMD64 / 0xAA64=ARM64 视为 64 位）。
-        /// 失败时返回 false（宁可提示位数存疑，不误导“已完整”）。</summary>
+        /// 失败时返回 false（宁可提示位数存疑，不误导“已完整”）。
+/// 边界：若文件正被 Edge 更新器以排他锁持有，读取失败同样返回 false，终验将报告“未找到可用的版本目录”而非“位数不匹配”，属可接受降级。</summary>
         private static bool IsPe64Bit(string exePath)
         {
             try
