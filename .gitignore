@@ -98,3 +98,6 @@ publish/
 publish2/
 # 临时哈希标记文件
 tools/_new_sha.txt
+
+# 探针临时测试目录（exe 副本 + 运行产物）
+probe_测试/
