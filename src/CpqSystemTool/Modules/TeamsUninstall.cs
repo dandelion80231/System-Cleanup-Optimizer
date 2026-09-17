@@ -1,7 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using Microsoft.Win32;
 
 namespace CpqSystemTool
@@ -10,9 +9,13 @@ namespace CpqSystemTool
     /// Microsoft Teams 的干净卸载（覆盖三种形态：机器级 Machine-Wide Installer、经典每用户版、
     /// 新/商店 AppX 版）。参考微软官方「彻底卸载 Teams」仪式，并对被锁目录做重启补删（与 OneDriveUninstall 同款）。
     /// 说明：本类只卸 Teams 本体，不动 Office 套件（ODT 的 ExcludeApp Teams 才管 Office 里的 Teams 组件）。
+    /// 目录强删 / 待补删标记 / 注册表清扫的公共逻辑在 RegistryUninstallHelper（D1 去重）。
     /// </summary>
     internal static class TeamsUninstall
     {
+        private const string MarkerFile = "teams_pending_cleanup.txt";
+        private const string LogTag = "  [Teams] ";
+
         /// <summary>
         /// 检测本机是否安装了任意形态的 Teams。任一命中即返回 true：
         ///  (a) 机器级 Installer（Uninstall 注册表里 DisplayName 含 "Teams Machine-Wide Installer"，
@@ -45,7 +48,7 @@ namespace CpqSystemTool
         public static void Uninstall(Action<string> log)
         {
             // ① 杀 Teams 进程（含经典 teams.exe 与新版 ms-teams.exe；进程不存在时报错被忽略，不影响主流程）
-            log("  [Teams] 结束 Teams 进程...");
+            log(LogTag + "结束 Teams 进程...");
             Exec.RunCmd(new[]
             {
                 Path.Combine(Environment.SystemDirectory, "taskkill.exe"),
@@ -64,7 +67,7 @@ namespace CpqSystemTool
             {
                 if (bootstrapper != null)
                 {
-                    log("  [Teams] 执行机器级卸载器: " + bootstrapper + " -x -m");
+                    log(LogTag + "执行机器级卸载器: " + bootstrapper + " -x -m");
                     Exec.RunCmd(new[] { bootstrapper, "-x", "-m" }, log);
                 }
                 else
@@ -73,22 +76,22 @@ namespace CpqSystemTool
                     if (code != null)
                     {
                         string msiexec = Path.Combine(Environment.SystemDirectory, "msiexec.exe");
-                        log("  [Teams] 未找到 teamsbootstrapper.exe，回退 MsiExec /x " + code + " /quiet");
+                        log(LogTag + "未找到 teamsbootstrapper.exe，回退 MsiExec /x " + code + " /quiet");
                         Exec.RunCmd(new[] { msiexec, "/x", code, "/quiet", "/norestart" }, log);
                     }
                     else
                     {
-                        log("  [Teams] 未解析到机器级 Installer 产品码，跳过该步");
+                        log(LogTag + "未解析到机器级 Installer 产品码，跳过该步");
                     }
                 }
             }
             else
             {
-                log("  [Teams] 未检测到机器级 Installer，跳过该步");
+                log(LogTag + "未检测到机器级 Installer，跳过该步");
             }
 
             // ③ 新/商店 Teams（AppX）：移除已安装包 + 预置包（镜像微软官方「彻底卸载 Teams」）
-            log("  [Teams] 移除新/商店版 Microsoft Teams (AppX)...");
+            log(LogTag + "移除新/商店版 Microsoft Teams (AppX)...");
             Exec.RunPowerShell("Get-AppxPackage -Name MSTeams | Remove-AppxPackage -ErrorAction SilentlyContinue", log);
             Exec.RunPowerShell("Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like '*Teams*' } | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue", log);
 
@@ -97,15 +100,15 @@ namespace CpqSystemTool
             string classicUpdate = Path.Combine(localAppData, "Microsoft", "Teams", "Update.exe");
             if (File.Exists(classicUpdate))
             {
-                log("  [Teams] 卸载经典每用户 Teams: " + classicUpdate + " --uninstall /s");
+                log(LogTag + "卸载经典每用户 Teams: " + classicUpdate + " --uninstall /s");
                 Exec.RunCmd(new[] { classicUpdate, "--uninstall", "/s" }, log);
             }
             else
             {
-                log("  [Teams] 未找到经典每用户 Teams 的 Update.exe，跳过该步");
+                log(LogTag + "未找到经典每用户 Teams 的 Update.exe，跳过该步");
             }
 
-            // ⑤ 删除 4 个残留目录（PowerShell 递归强删，-EA 0 忽略单个文件占用错误）
+            // ⑤ 删除 4 个残留目录（PowerShell 递归强删，-EA 0 忽略单个文件占用错误；不存在的目录自动跳过）
             string[] dirs =
             {
                 Path.Combine(localAppData, "Microsoft", "Teams"),
@@ -113,30 +116,21 @@ namespace CpqSystemTool
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft Teams"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft Teams"),
             };
-            foreach (var d in dirs)
-            {
-                if (!Directory.Exists(d)) continue;
-                log("  [Teams] 删除目录: " + d);
-                Exec.RunPowerShell("Remove-Item -Path " + Exec.QuotePS(d) + " -Recurse -Force -EA 0", log);
-            }
+            RegistryUninstallHelper.RemoveDirs(dirs, LogTag, log);
 
-            // 3.5) 复查：被 explorer/Teams 后台进程锁定的目录删不掉时，记录为「待补删」标记，
-            //      下次程序启动（锁已释放）时由 TryPendingCleanup 重试。
-            var lockedLeftovers = new List<string>();
-            foreach (var d in dirs)
-            {
-                try { if (Directory.Exists(d)) lockedLeftovers.Add(d); } catch (Exception ex) { DebugLog.Ignore(ex); }
-            }
+            // ⑦ 复查：被 explorer/Teams 后台进程锁定的目录删不掉时，记录为「待补删」标记，
+            //    下次程序启动（锁已释放）时由 TryPendingCleanup 重试。
+            var lockedLeftovers = RegistryUninstallHelper.LockedLeftovers(dirs);
             if (lockedLeftovers.Count > 0)
             {
-                WritePendingCleanup(lockedLeftovers, log);
-                log("  [Teams] 以下目录被占用暂未删净，重启/下次启动时自动补删: " + string.Join("; ", lockedLeftovers));
+                RegistryUninstallHelper.WriteMarker(MarkerFile, lockedLeftovers, LogTag, log);
+                log(LogTag + "以下目录被占用暂未删净，重启/下次启动时自动补删: " + string.Join("; ", lockedLeftovers));
             }
 
             // ⑥ 删除注册表残留（HKLM/HKCU 的 SOFTWARE\Microsoft\Teams 及其 WOW6432 镜像）
             CleanRegistry(log);
 
-            log("  [Teams] Teams 卸载流程完成");
+            log(LogTag + "Teams 卸载流程完成");
         }
 
         // ==================== 检测辅助 ====================
@@ -215,111 +209,13 @@ namespace CpqSystemTool
 
         // ==================== 重启自动补删 ====================
 
-        /// <summary>待补删标记文件名（与 exe 同目录的 Config 子目录，便携；不可写时回退 %LOCALAPPDATA%\CpqSystemTool）。</summary>
-        private static string PendingFile()
-        {
-            try
-            {
-                if (AppPaths.EnsureConfigDir())
-                    return Path.Combine(AppPaths.ConfigDir, "teams_pending_cleanup.txt");
-            }
-            catch { /* 不可写，回退 */ }
-            string fallback = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CpqSystemTool");
-            try
-            {
-                Directory.CreateDirectory(fallback);
-                return Path.Combine(fallback, "teams_pending_cleanup.txt");
-            }
-            catch { return null; /* 完全无处可写，标记放弃 */ }
-        }
-
-        /// <summary>把删不净的目录写进待补删标记（文本每行一个绝对路径，去重）。</summary>
-        private static void WritePendingCleanup(List<string> dirs, Action<string> log)
-        {
-            string file = PendingFile();
-            if (file == null)
-            {
-                log("  [Teams] 无法写入待补删标记（Config 目录与 %LOCALAPPDATA% 均不可写），需手动删除上述目录");
-                return;
-            }
-            try
-            {
-                var merged = new List<string>(dirs);
-                if (File.Exists(file))
-                {
-                    foreach (var line in File.ReadAllLines(file))
-                    {
-                        string p = line.Trim();
-                        if (p.Length > 0 && !merged.Contains(p)) merged.Add(p);
-                    }
-                }
-                File.WriteAllLines(file, merged);
-                log("  [Teams] 已写入待补删标记: " + file);
-            }
-            catch (Exception ex)
-            {
-                log("  [Teams] 写入待补删标记失败: " + ex.Message);
-            }
-        }
-
         /// <summary>
         /// 程序启动时调用：若存在「待补删」标记，则对其中每个目录再删一遍（此时锁已释放）；
         /// 删成功的从标记移除，全删净则删除标记文件。返回是否仍有删不净的目录。
         /// </summary>
         public static bool TryPendingCleanup(Action<string> log)
         {
-            string file = null;
-            try
-            {
-                string inConfig = Path.Combine(AppPaths.ConfigDir, "teams_pending_cleanup.txt");
-                string inLocal = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "CpqSystemTool", "teams_pending_cleanup.txt");
-                if (File.Exists(inConfig)) file = inConfig;
-                else if (File.Exists(inLocal)) file = inLocal;
-            }
-            catch (Exception ex) { DebugLog.Ignore(ex); }
-
-            if (file == null || !File.Exists(file)) return false;
-
-            List<string> remaining;
-            try
-            {
-                remaining = File.ReadAllLines(file)
-                    .Select(l => l.Trim())
-                    .Where(l => l.Length > 0)
-                    .Distinct()
-                    .ToList();
-            }
-            catch (Exception ex) { DebugLog.Ignore(ex); remaining = null; }
-            if (remaining == null) return false;
-
-            var stillThere = new List<string>();
-            foreach (var d in remaining)
-            {
-                if (!Directory.Exists(d)) continue;
-                if (log != null) log("  [Teams] 补删残留目录: " + d);
-                Exec.RunPowerShell("Remove-Item -Path " + Exec.QuotePS(d) + " -Recurse -Force -EA 0", log);
-                try { if (Directory.Exists(d)) stillThere.Add(d); } catch (Exception ex) { DebugLog.Ignore(ex); }
-            }
-
-            try
-            {
-                if (stillThere.Count == 0)
-                {
-                    File.Delete(file);
-                    if (log != null) log("  [Teams] 重启后残留目录已全部补删干净");
-                }
-                else
-                {
-                    File.WriteAllLines(file, stillThere);
-                    if (log != null) log("  [Teams] 仍有 " + stillThere.Count + " 个目录被占用，留待下次启动");
-                }
-            }
-            catch { /* 标记读写失败不影响主流程 */ }
-
-            return stillThere.Count > 0;
+            return RegistryUninstallHelper.TryCleanupMarker(MarkerFile, LogTag, log);
         }
 
         private static void CleanRegistry(Action<string> log)
@@ -330,27 +226,7 @@ namespace CpqSystemTool
                 @"SOFTWARE\WOW6432Node\Microsoft\Teams",
             };
             foreach (var rel in regKeys)
-            {
-                DeleteKeyTree(Registry.LocalMachine, rel, log);
-                DeleteKeyTree(Registry.CurrentUser, rel, log);
-            }
-        }
-
-        private static void DeleteKeyTree(RegistryKey root, string relativePath, Action<string> log)
-        {
-            try
-            {
-                using (var k = root.OpenSubKey(relativePath))
-                {
-                    if (k == null) return;
-                }
-                root.DeleteSubKeyTree(relativePath, false);
-                log("  [注册表] 已删 " + (root == Registry.LocalMachine ? "HKLM\\" : "HKCU\\") + relativePath);
-            }
-            catch (Exception ex)
-            {
-                log("  [!] 注册表键删除失败（可能已不存在/被占用）: " + relativePath + " — " + ex.Message);
-            }
+                RegistryUninstallHelper.DeleteKeyTreeBothRoots(rel, log);
         }
     }
 }
