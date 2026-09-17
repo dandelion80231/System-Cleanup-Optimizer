@@ -488,47 +488,65 @@ namespace CpqSystemTool
         }
 
 
-        /// <summary>位数感知的 Runtime 完整性终验（结果写 log）：只有位数匹配且文件完整的 Runtime 才算可用；
-        /// 仅发现位数不匹配或未安装时，明确提示需以管理员身份安装（未提权静默安装只装 32 位用户级）。</summary>
+        /// <summary>位数感知的 Runtime 完整性终验（结果写 log）：按 PE 机器码判位数（系统级 64 位 Runtime
+        /// 就装在 Program Files (x86) 树下，路径判位数必误报），只认与进程位数匹配且文件完整的版本目录；
+        /// 仅发现位数不匹配/未安装时，明确提示需以管理员安装对应位数。</summary>
         private static void ReportRuntimeCompleteness(Action<string> log)
         {
             // 注意：现代 Edge 主二进制名为 msedge.dll（旧版才叫 chrome.dll），目录里本来就没有 chrome.dll。
             // 真正决定 WebView2 能否初始化的核心文件是 msedgewebview2.exe + msedge.dll。
-            // 关键：版本目录必须“先过滤再按版本号自然排序”（GetLatestVersionDir 已做过滤，
+            // 关键 1：版本目录必须“先过滤再按版本号自然排序”（GetLatestVersionDir 已做过滤，
             // 排除 SetupMetrics 等非版本目录），避免把指标目录误判成运行时。
+            // 关键 2：位数看 PE 机器码，不看路径！系统级 64 位 Runtime 就装在
+            // “C:\Program Files (x86)\Microsoft\EdgeWebView” 树下（更新器固定目录），
+            // 版本目录里是 x64 二进制；按路径判位数会把完好的 64 位 Runtime 误报成位数不匹配。
             var coreFiles = new[] { "msedgewebview2.exe", "msedge.dll" };
-            // 根目录候选同时覆盖 Program Files 与 Program Files (x86)。
-            var runtimeRoots = GetRuntimeRootCandidates(@"Microsoft\\EdgeWebView\\Application");
+            var runtimeRoots = GetRuntimeRootCandidates(@"Microsoft\EdgeWebView\Application");
             bool process64 = Environment.Is64BitProcess;
-            bool rootIsWow(string root) => root.IndexOf(@"Program Files (x86)", StringComparison.OrdinalIgnoreCase) >= 0;
-            // 位数匹配的根目录优先：64 位进程的非 WOW 根即 64 位 Runtime，32 位进程的 (x86) 根即 32 位 Runtime。
-            var ordered = runtimeRoots
-                .Where(r => rootIsWow(r) != process64)
-                .Concat(runtimeRoots.Where(r => rootIsWow(r) == process64))
-                .ToList();
-            string archDir = null;   // 位数匹配且文件完整的版本目录
-            string anyDir = null;    // 任意位数下找到的第一个版本目录
-            foreach (var root in ordered)
+            string matchDir = null;    // 位数匹配且文件完整的版本目录
+            string wrongArchDir = null; // 位数不匹配的
+            string anyDir = null;
+            foreach (var root in runtimeRoots)
             {
                 var vd = GetLatestVersionDir(root);
-                if (vd == null) continue;
+                if (vd == null || !coreFiles.All(f => File.Exists(Path.Combine(vd, f)))) continue;
                 if (anyDir == null) anyDir = vd;
-                if (archDir == null && rootIsWow(root) != process64
-                    && coreFiles.All(f => File.Exists(Path.Combine(vd, f))))
-                    archDir = vd;
+                bool vd64 = IsPe64Bit(Path.Combine(vd, "msedgewebview2.exe"));
+                if (vd64 == process64) { matchDir = vd; break; }
+                if (wrongArchDir == null) wrongArchDir = vd;
             }
-            if (archDir != null)
-                log("[✓] WebView2 Runtime 文件已完整（版本目录: " + archDir
-                    + "），建议重启本程序后重试 WebView2 探针。");
-            else if (anyDir != null)
-                log("[!] 只找到位数不匹配的 Runtime（版本目录: " + anyDir + "），本 "
-                    + (process64 ? "64 位" : "32 位") + " 进程无法使用它。");
+            if (matchDir != null)
+                log("[✓] WebView2 Runtime 文件已完整（版本目录: " + matchDir + "，"
+                    + (process64 ? "64 位" : "32 位") + "），与本进程位数匹配，建议重启本程序后重试 WebView2 探针。");
+            else if (wrongArchDir != null)
+                log("[!] 只找到位数不匹配的 Runtime（版本目录: " + wrongArchDir + "），本 "
+                    + (process64 ? "64 位" : "32 位") + " 进程无法使用它。请以管理员身份安装与进程位数一致的 WebView2 Runtime。");
             else
-                log("[!] 未在任何候选目录中找到 WebView2 版本目录（已查: " + string.Join("; ", runtimeRoots)
+                log("[!] 未在任何候选目录中找到可用的 WebView2 版本目录（已查: " + string.Join("; ", runtimeRoots)
                     + "）。本机似乎尚未安装 WebView2 Runtime，请先安装 WebView2 Runtime（或 Microsoft Edge）后重试。");
-            if (process64 && archDir == null)
-                log("      未提权静默安装只会装 32 位（用户级）：请以管理员身份运行本程序后重试本修复，"
-                    + "或手动安装 64 位 WebView2 Runtime（系统级安装）。");
+        }
+
+        /// <summary>读 PE 头判定可执行文件是否为 64 位（machine 0x8664=AMD64 / 0xAA64=ARM64 视为 64 位）。
+        /// 失败时返回 false（宁可提示位数存疑，不误导“已完整”）。</summary>
+        private static bool IsPe64Bit(string exePath)
+        {
+            try
+            {
+                byte[] data;
+                using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var br = new BinaryReader(fs))
+                {
+                    data = br.ReadBytes(0x200);
+                }
+                if (data.Length < 0x40) return false;
+                int peOff = BitConverter.ToInt32(data, 0x3C);
+                if (peOff < 0 || peOff + 24 > data.Length) return false;
+                uint sig = BitConverter.ToUInt32(data, peOff);
+                if (sig != 0x00004550) return false;      // PE magic number
+                ushort machine = BitConverter.ToUInt16(data, peOff + 4);
+                return machine == 0x8664 || machine == 0xAA64;
+            }
+            catch (Exception ex) { DebugLog.Ignore(ex); return false; }
         }
 
         /// <summary>检测 WebView2 运行时注册表根键是否健康（EdgeWebView\Applications 存在且有子键）。</summary>
