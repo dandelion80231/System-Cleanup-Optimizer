@@ -78,11 +78,33 @@ namespace CpqSystemTool
             // AppDomain.UnhandledException 导致进程崩溃。改为优雅返回 false，由上层回退 Node 方案。
             try
             {
-                string exeDirNow = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-                if (string.IsNullOrEmpty(exeDirNow)
-                    || !File.Exists(Path.Combine(exeDirNow, "Microsoft.Web.WebView2.WinForms.dll")))
+                bool managedOk;
+                try
+                {
+                    // .NET 10 单文件：托管程序集内嵌在 exe 里（deps 闭包），按“文件在 exe 目录”判据会永远误报，
+                    // 改为 Assembly.Load 验证可解析（单文件/开发构建都成立）。
+                    Assembly.Load(new AssemblyName("Microsoft.Web.WebView2.Core"));
+                    Assembly.Load(new AssemblyName("Microsoft.Web.WebView2.WinForms"));
+                    managedOk = true;
+                }
+                catch (Exception loadEx)
+                {
+                    managedOk = false;
+                    diag?.Invoke("[WebView2] 托管程序集加载失败（应已内嵌）：" + loadEx.Message);
+                }
+                if (!managedOk)
                 {
                     diag?.Invoke("[WebView2] 托管依赖缺失且无法获取，跳过 WebView2 探针（将回退 Node）");
+                    _initTcs.TrySetResult(false);
+                    return false;
+                }
+                // 单文件下 Assembly.Location 恒空（IL3000）：用 AppPaths.ExeDir；
+                // 原生 loader 必须与 exe 并列（P/Invoke 只从 exe 目录解析，不能放 cpq-tool）。
+                string exeDirNow = AppPaths.ExeDir;
+                if (string.IsNullOrEmpty(exeDirNow)
+                    || !File.Exists(Path.Combine(exeDirNow, "WebView2Loader.dll")))
+                {
+                    diag?.Invoke("[WebView2] 原生 loader 缺失且无法获取，跳过 WebView2 探针（将回退 Node）");
                     _initTcs.TrySetResult(false);
                     return false;
                 }

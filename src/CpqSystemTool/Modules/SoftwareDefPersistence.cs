@@ -106,9 +106,8 @@ namespace CpqSystemTool
     /// </summary>
     internal static class SoftwareDefPersistence
     {
-        private static readonly string FilePath = Path.Combine(
-            Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? AppDomain.CurrentDomain.BaseDirectory,
-            "custom_software.json");
+        // 单文件下 Assembly.Location 恒空（IL3000）：用 AppPaths.ExeDir（Environment.ProcessPath 优先）。
+        private static readonly string FilePath = Path.Combine(AppPaths.ExeDir, "custom_software.json");
 
         private static List<CustomSoftwareEntry> _cache;
         private static readonly object _lock = new object();
@@ -268,7 +267,7 @@ namespace CpqSystemTool
         {
             try
             {
-                string exePath = Assembly.GetExecutingAssembly().Location;
+                string exePath = Environment.ProcessPath;
                 if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return null;
                 byte[] exe = File.ReadAllBytes(exePath);
                 if (TryLocateOverlay(exe, out int start, out int len))
@@ -287,7 +286,7 @@ namespace CpqSystemTool
         {
             try
             {
-                string dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? AppDomain.CurrentDomain.BaseDirectory;
+                string dir = AppPaths.ExeDir;
                 string pending = Path.Combine(dir, "bake_pending.bin");
                 AtomicFile.WriteFileAtomic(pending, SerializeList(entries));
             }
@@ -298,9 +297,9 @@ namespace CpqSystemTool
         /// 替换前确认新 exe 就位；失败一律回滚恢复原 exe（绝不留下「主程序停在 .old」的中间态），json 保持真相源。</summary>
         public static void ApplyPendingBakeIfAny()
         {
-            string exePath = Assembly.GetExecutingAssembly().Location;
+            string exePath = Environment.ProcessPath;
             if (string.IsNullOrEmpty(exePath)) return;
-            string dir = Path.GetDirectoryName(exePath) ?? AppDomain.CurrentDomain.BaseDirectory;
+            string dir = Path.GetDirectoryName(exePath) ?? AppPaths.ExeDir;
             string pending = Path.Combine(dir, "bake_pending.bin");
             if (!File.Exists(pending)) return;
 

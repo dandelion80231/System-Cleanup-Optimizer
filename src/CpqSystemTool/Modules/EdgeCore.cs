@@ -334,13 +334,19 @@ namespace CpqSystemTool
         // === WebView2 安装/卸载 ===
         public static void InstallWebView2(Action<string> log)
         {
+            // 下载的引导程序归位数据根（cpq-tool 跟随文件目录）；TEMP 不是数据目录。
+            string dataRoot = AppPaths.DataRoot;
+            Directory.CreateDirectory(dataRoot);
+            string setupPath = Path.Combine(dataRoot, "MicrosoftEdgeWebview2Setup.exe");
             log("正在下载 WebView2 Runtime...");
-            Exec.RunPowerShell("Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile \"$env:TEMP\\MicrosoftEdgeWebview2Setup.exe\"", log);
+            Exec.RunPowerShell("Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile " + Exec.QuotePS(setupPath), log);
             log("正在安装 WebView2 Runtime...");
             // 不经 cmd：原写法 cmd /c "\"路径\"" 会被 Exec.QuoteCmd 把内层 " 翻倍成 ""，
             // TEMP 含空格时 cmd 解析失败、安装静默 no-op。exe 直接作 args[0]（FileName，无需引号）。
-            Exec.RunCmd(new[] { Environment.GetEnvironmentVariable("TEMP") + "\\MicrosoftEdgeWebview2Setup.exe", "/silent", "/install" }, log);
+            Exec.RunCmd(new[] { setupPath, "/silent", "/install" }, log);
             log("WebView2 Runtime 安装/升级完成");
+            // 位数终验：未提权静默安装只装 32 位（用户级），64 位进程用不了 → 明确告知。
+            ReportRuntimeCompleteness(log);
 
             // 同步就地补上单文件分发所需的 WebView2 探针托管依赖（NuGet 运行时拉取）。
             // 兜底：这一步要联网 + 解压 + 写 exe 同目录，失败绝不能让异常逸出到 UI 线程（net48 下会直接崩进程）。
@@ -416,9 +422,10 @@ namespace CpqSystemTool
         /// <summary>RepairWebView2 的实际实现（外层包装只负责异常兜底与结束日志）。</summary>
         private static void RepairWebView2Internal(Action<string> log)
         {
-            string bootstrapper = Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory,
-                "MicrosoftEdgeWebViewModelInstaller.exe");
+            // 下载的引导程序归位数据根（cpq-tool 跟随文件目录）；单文件下 BaseDirectory 指向临时解压目录，不可用。
+            string dataRoot = AppPaths.DataRoot;
+            Directory.CreateDirectory(dataRoot);
+            string bootstrapper = Path.Combine(dataRoot, "MicrosoftEdgeWebViewModelInstaller.exe");
 
             try
             {
@@ -475,58 +482,53 @@ namespace CpqSystemTool
                 log("[!] 注册表检测/修复步骤异常: " + caughtEx.Message);
             }
 
-            // 终验：不仅看注册表，更要看运行时实际文件是否完整。
+            // 终验：位数感知（64 位进程只有 64 位 Runtime 可用；仅发现 (x86) 版本目录是未提权
+            // 静默安装的典型结果，不能误报“已完整”）。文件完整性仍按 msedgewebview2.exe + msedge.dll 核验。
+            ReportRuntimeCompleteness(log);
+        }
+
+
+        /// <summary>位数感知的 Runtime 完整性终验（结果写 log）：只有位数匹配且文件完整的 Runtime 才算可用；
+        /// 仅发现位数不匹配或未安装时，明确提示需以管理员身份安装（未提权静默安装只装 32 位用户级）。</summary>
+        private static void ReportRuntimeCompleteness(Action<string> log)
+        {
             // 注意：现代 Edge 主二进制名为 msedge.dll（旧版才叫 chrome.dll），目录里本来就没有 chrome.dll。
             // 真正决定 WebView2 能否初始化的核心文件是 msedgewebview2.exe + msedge.dll。
-            // 关键：版本目录必须"先过滤再按版本号自然排序"。旧的
-            // Directory.GetDirectories(root).OrderByDescending(d => d).FirstOrDefault()
-            // 会选中 SetupMetrics（字符串比较里字母 > 数字）——那正是引导程序自己生成的指标目录，
-            // 里面只有 .pma 文件，于是把"本来完好的运行时"误报成"文件仍不完整"。
+            // 关键：版本目录必须“先过滤再按版本号自然排序”（GetLatestVersionDir 已做过滤，
+            // 排除 SetupMetrics 等非版本目录），避免把指标目录误判成运行时。
             var coreFiles = new[] { "msedgewebview2.exe", "msedge.dll" };
-            // 根目录候选同时覆盖 Program Files 与 Program Files (x86)：本机是 x86 装在 (x86) 下，
-            // 但部分机器是 x64 装在 Program Files 下，只查前者会漏判。
-            var runtimeRoots = GetRuntimeRootCandidates(@"Microsoft\EdgeWebView\Application");
-            string checkedDir = null;
-            var missingFiles = new List<string>();
-            foreach (var root in runtimeRoots)
+            // 根目录候选同时覆盖 Program Files 与 Program Files (x86)。
+            var runtimeRoots = GetRuntimeRootCandidates(@"Microsoft\\EdgeWebView\\Application");
+            bool process64 = Environment.Is64BitProcess;
+            bool rootIsWow(string root) => root.IndexOf(@"Program Files (x86)", StringComparison.OrdinalIgnoreCase) >= 0;
+            // 位数匹配的根目录优先：64 位进程的非 WOW 根即 64 位 Runtime，32 位进程的 (x86) 根即 32 位 Runtime。
+            var ordered = runtimeRoots
+                .Where(r => rootIsWow(r) != process64)
+                .Concat(runtimeRoots.Where(r => rootIsWow(r) == process64))
+                .ToList();
+            string archDir = null;   // 位数匹配且文件完整的版本目录
+            string anyDir = null;    // 任意位数下找到的第一个版本目录
+            foreach (var root in ordered)
             {
                 var vd = GetLatestVersionDir(root);
-                if (vd == null) continue;   // 该候选目录下没有版本目录 → 换下一个候选
-                checkedDir = vd;
-                foreach (var f in coreFiles)
-                    if (!File.Exists(Path.Combine(vd, f))) missingFiles.Add(f);
-                break;
+                if (vd == null) continue;
+                if (anyDir == null) anyDir = vd;
+                if (archDir == null && rootIsWow(root) != process64
+                    && coreFiles.All(f => File.Exists(Path.Combine(vd, f))))
+                    archDir = vd;
             }
-
-            // 分情况输出：三种结论的处置方式完全不同，混成一句"文件不完整"会误导用户去无谓重装 Edge。
-            if (checkedDir == null)
-            {
+            if (archDir != null)
+                log("[✓] WebView2 Runtime 文件已完整（版本目录: " + archDir
+                    + "），建议重启本程序后重试 WebView2 探针。");
+            else if (anyDir != null)
+                log("[!] 只找到位数不匹配的 Runtime（版本目录: " + anyDir + "），本 "
+                    + (process64 ? "64 位" : "32 位") + " 进程无法使用它。");
+            else
                 log("[!] 未在任何候选目录中找到 WebView2 版本目录（已查: " + string.Join("; ", runtimeRoots)
                     + "）。本机似乎尚未安装 WebView2 Runtime，请先安装 WebView2 Runtime（或 Microsoft Edge）后重试。");
-            }
-            else if (missingFiles.Count == 0)
-            {
-                log("[✓] WebView2 Runtime 文件已完整（版本目录: " + checkedDir
-                    + "），建议重启本程序后重试 WebView2 探针。");
-            }
-            else
-            {
-                log("[!] WebView2 运行时文件不完整：版本目录 " + checkedDir + " 下缺失 "
-                    + string.Join("、", missingFiles) + "。本机 WebView2 由 Microsoft Edge 提供，"
-                    + "若微软载荷 CDN 不可达 / 同版本不修复，自动修复可能无效，"
-                    + "请手动从微软官网下载并重新安装 Microsoft Edge（或运行 Windows 修复），再重试。");
-            }
-
-            // 同步就地补上单文件分发所需的 WebView2 探针托管依赖（NuGet 运行时拉取）。
-            try
-            {
-                WebView2ProbeDeps.EnsureWebView2ProbeDeps(log, p => log(WebView2ProbeDeps.ProgressLine(p)));
-            }
-            catch (Exception caughtEx)
-            {
-                DebugLog.Ignore(caughtEx);
-                log("[!] 补齐 WebView2 探针依赖失败: " + caughtEx.Message);
-            }
+            if (process64 && archDir == null)
+                log("      未提权静默安装只会装 32 位（用户级）：请以管理员身份运行本程序后重试本修复，"
+                    + "或手动安装 64 位 WebView2 Runtime（系统级安装）。");
         }
 
         /// <summary>检测 WebView2 运行时注册表根键是否健康（EdgeWebView\Applications 存在且有子键）。</summary>

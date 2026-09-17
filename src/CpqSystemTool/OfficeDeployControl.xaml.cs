@@ -2189,8 +2189,8 @@ namespace CpqSystemTool
             try
             {
                 string ver = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "?";
+                // 单文件下 Assembly.Location 恒空（IL3000）：只取 Environment.ProcessPath（.NET 6+ 官方定位方式）。
                 string loc = Environment.ProcessPath;
-                if (string.IsNullOrEmpty(loc)) loc = Assembly.GetExecutingAssembly().Location;
                 if (string.IsNullOrEmpty(loc) || !File.Exists(loc))
                 {
                     return "自检: v" + ver + " | 构建未知 | SHA ?";

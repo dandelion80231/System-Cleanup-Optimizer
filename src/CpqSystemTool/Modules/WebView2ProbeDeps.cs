@@ -1,15 +1,16 @@
 ﻿using System;
 using System.IO;
 using System.IO.Compression;
-using System.Reflection;
 using System.Threading.Tasks;
 
 namespace CpqSystemTool
 {
     /// <summary>
-    /// 运行时按需从 NuGet 拉取 WebView2 探针所需的托管 + 原生依赖，并将其就地写入 exe 目录，
-    /// 使单文件分发的程序在缺少这 3 个托管 DLL 时仍可初始化 WebView2 探针。
-    /// 该特性在用户点击“修复/安装 WebView2”以及探针初始化前都会触发（用户已否决“嵌入 DLL”方案）。
+    /// 运行时按需补齐 WebView2 探针依赖。历史：net48 时代托管 DLL 未随发布、需从 NuGet 拉 3 个托管程序集；
+    /// .NET 10 单文件下托管程序集（Core/WinForms/Wpf）已内嵌进 exe（deps 闭包），只剩原生
+    /// WebView2Loader.dll 必须与 exe 并列（P/Invoke 解析规则：只能从 exe 所在目录找，不能放 cpq-tool）。
+    /// 诊断日志写入数据根（cpq-tool\webview2_deps.log），不再散到 exe 目录。
+    /// 该特性在用户点击“修复/安装 WebView2”以及探针初始化前都会触发。
     /// 全程不抛异常：失败仅通过 log 报告，探针随后会按既有逻辑回退到 Node 方案。
     /// </summary>
     internal static class WebView2ProbeDeps
@@ -26,9 +27,11 @@ namespace CpqSystemTool
         {
             try
             {
-                string exeDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-                if (string.IsNullOrEmpty(exeDir)) return;
-                string logPath = Path.Combine(exeDir, "webview2_deps.log");
+                // 日志归位数据根（cpq-tool），与 exe 目录解耦（跟随文件原则）；单文件下
+                // Assembly.Location 恒空（IL3000），路径一律走 AppPaths。
+                string dir = AppPaths.DataRoot;
+                Directory.CreateDirectory(dir);
+                string logPath = Path.Combine(dir, "webview2_deps.log");
                 File.AppendAllText(logPath,
                     $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
             }
@@ -42,7 +45,8 @@ namespace CpqSystemTool
         public static string ProgressLine(int percent) => "\r[下载 WebView2 依赖 " + percent + "%]";
 
         /// <summary>
-        /// 确保 exe 目录中存在 WebView2 探针依赖。已存在则立即返回（幂等）；
+        /// 确保 WebView2 探针依赖齐备：原生 loader 与 exe 并列（缺则从 NuGet 拉），
+        /// 托管程序集已内嵌单文件无需拉取。已齐备则立即返回（幂等）；
         /// 下载/解压失败时通过 log 报告并优雅返回（不抛异常）。
         /// 本方法为真正异步实现：下载在后台线程池执行，调用方（含 UI/STA 线程）await 它即可，
         /// 无需自行用 Task.Run 包裹，避免依赖“调用方约定”来保障不冻结界面。
@@ -52,35 +56,30 @@ namespace CpqSystemTool
             if (log == null) log = s => { };
             WriteDepsLog("=== EnsureWebView2ProbeDeps 开始 ===");
 
-            string exeDir;
-            try { exeDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location); }
-            catch (Exception ex)
+            // 单文件下 Assembly.GetExecutingAssembly().Location 恒为空（IL3000 警告），
+            // 必须用 AppPaths.ExeDir（Environment.ProcessPath 优先）拿真实 exe 目录。
+            string exeDir = AppPaths.ExeDir;
+            if (string.IsNullOrEmpty(exeDir) || !Directory.Exists(exeDir))
             {
-                log("[!] 无法确定 exe 目录，跳过 WebView2 探针依赖拉取：" + ex.Message);
-                WriteDepsLog("[!] 无法确定 exe 目录：" + ex);
+                log("[!] exe 目录不可用，跳过 WebView2 探针依赖补齐：" + (exeDir ?? "null"));
+                WriteDepsLog("[!] exe 目录不可用：" + (exeDir ?? "null"));
                 return;
             }
             WriteDepsLog("exeDir=" + exeDir);
 
-            if (string.IsNullOrEmpty(exeDir) || !Directory.Exists(exeDir))
+            // .NET 10 单文件：托管程序集（Core/WinForms/Wpf）已内嵌进 exe（deps 闭包），
+            // 不再需要从 NuGet 拉 3 个托管 DLL（net48 时代遗留逻辑，已移除）。
+            // 唯一需要磁盘落位的是原生 WebView2Loader.dll——P/Invoke 只从 exe 所在目录解析，
+            // 故它必须与 exe 并列（不能挪到 cpq-tool），缺了才下载。
+            string loader = Path.Combine(exeDir, "WebView2Loader.dll");
+            if (File.Exists(loader))
             {
-                log("[!] exe 目录不可用，跳过 WebView2 探针依赖拉取：" + (exeDir ?? "null"));
-                WriteDepsLog("[!] exe 目录不可用：" + (exeDir ?? "null"));
+                log("[*] WebView2 探针依赖齐备（原生 loader 就位；托管程序集已内嵌）。");
+                WriteDepsLog("[*] loader 已存在，跳过下载");
                 return;
             }
 
-            // 幂等：托管主 DLL 已存在则视为依赖齐备，直接返回。
-            string sentinel = Path.Combine(exeDir, "Microsoft.Web.WebView2.Core.dll");
-            bool sentinelExists = File.Exists(sentinel);
-            WriteDepsLog("sentinel=" + sentinel + " exists=" + sentinelExists);
-            if (sentinelExists)
-            {
-                log("[*] WebView2 探针依赖已存在，跳过下载。");
-                WriteDepsLog("[*] 依赖已存在，跳过下载");
-                return;
-            }
-
-            log("[*] 检测到缺少 WebView2 探针依赖，尝试从 NuGet 下载（版本 " + WebView2PkgVersion + "）…");
+            log("[*] 缺少 WebView2 原生 loader，尝试从 NuGet 下载（版本 " + WebView2PkgVersion + "）…");
             WriteDepsLog("[*] 开始下载 nupkg，版本=" + WebView2PkgVersion);
 
             string nupkgUrl = $"{NuGetFlatContainerBase}/microsoft.web.webview2/{WebView2PkgVersion}/microsoft.web.webview2.{WebView2PkgVersion}.nupkg";
@@ -93,19 +92,18 @@ namespace CpqSystemTool
                 await DownloadFileWithClientAsync(nupkgUrl, tempNupkg, log, progress).ConfigureAwait(false);
                 WriteDepsLog("[*] nupkg 下载完成，大小=" + new FileInfo(tempNupkg).Length);
 
-                log("[*] 下载完成，开始解压依赖到 exe 目录…");
-                ExtractEntries(tempNupkg, exeDir, log);
-                // 真实验证：解压后 sentinel 必须真实存在于磁盘才算成功，避免“假成功”掩盖失败。
-                bool extracted = File.Exists(sentinel);
+                log("[*] 下载完成，开始解压原生 loader 到 exe 目录…");
+                ExtractNativeLoader(tempNupkg, exeDir, log);
+                // 真实验证：解压后 loader 必须真实存在于磁盘才算成功，避免“假成功”掩盖失败。
+                bool extracted = File.Exists(loader);
                 if (extracted)
                 {
-                    log("[✓] WebView2 探针依赖已就地写入：" + exeDir);
-                    WriteDepsLog("[✓] 解压完成，sentinel 存在=" + sentinel);
+                    log("[✓] WebView2 原生 loader 已就地写入：" + loader);
+                    WriteDepsLog("[✓] 解压完成，loader 存在=" + extracted);
                 }
                 else
                 {
-                    string w = "[!] 解压后仍未在 exe 目录找到 " + Path.GetFileName(sentinel)
-                        + "，WebView2 探针可能不可用（将回退 Node）";
+                    string w = "[!] 解压后仍未在 exe 目录找到 WebView2Loader.dll，WebView2 探针可能不可用（将回退 Node）";
                     log(w);
                     WriteDepsLog(w);
                 }
@@ -146,27 +144,12 @@ namespace CpqSystemTool
                 throw new IOException("下载 WebView2 依赖失败（详见日志）");
         }
 
-        private static void ExtractEntries(string nupkgPath, string exeDir, Action<string> log)
+        /// <summary>只解压原生 loader（按进程位数选 win-x64/win-x86 条目）。托管 DLL 不再需要（.NET 10 单文件已内嵌）。</summary>
+        private static void ExtractNativeLoader(string nupkgPath, string exeDir, Action<string> log)
         {
             using (var archive = ZipFile.OpenRead(nupkgPath))
             {
-                // 托管 DLL：取 lib/net4x 下的 3 个程序集（net48 可直接加载 net45 程序集）。
-                // 注意：nupkg 内部条目名用正斜杠（lib/net45/...），不能按反斜杠精确匹配，
-                // 故用“路径含 lib/ 且文件名匹配”的方式查找，规避分隔符差异。
-                ExtractByMatch(archive, exeDir, log,
-                    f => f.IndexOf("lib/", StringComparison.OrdinalIgnoreCase) >= 0
-                         && f.EndsWith("Microsoft.Web.WebView2.Core.dll", StringComparison.OrdinalIgnoreCase),
-                    "Microsoft.Web.WebView2.Core.dll");
-                ExtractByMatch(archive, exeDir, log,
-                    f => f.IndexOf("lib/", StringComparison.OrdinalIgnoreCase) >= 0
-                         && f.EndsWith("Microsoft.Web.WebView2.WinForms.dll", StringComparison.OrdinalIgnoreCase),
-                    "Microsoft.Web.WebView2.WinForms.dll");
-                ExtractByMatch(archive, exeDir, log,
-                    f => f.IndexOf("lib/", StringComparison.OrdinalIgnoreCase) >= 0
-                         && f.EndsWith("Microsoft.Web.WebView2.Wpf.dll", StringComparison.OrdinalIgnoreCase),
-                    "Microsoft.Web.WebView2.Wpf.dll");
-
-                // 原生 loader 按进程位数选择（net48 进程可能是 x86 或 x64）。
+                // 原生 loader 按进程位数选择（64 位进程取 win-x64 条目）。
                 string nativeHint = Environment.Is64BitProcess ? "win-x64" : "win-x86";
                 ExtractByMatch(archive, exeDir, log,
                     f => f.IndexOf(nativeHint, StringComparison.OrdinalIgnoreCase) >= 0
