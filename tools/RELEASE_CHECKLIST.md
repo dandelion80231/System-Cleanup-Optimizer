@@ -223,3 +223,21 @@
 
 📌 **关键认知**：官网不是 GitHub 的镜像，发版最后一步必须手动同步并重部署；漏这步官网停在旧版（与「只推 tag 不算发布」同理）。
 
+
+## v1.20d 新增（2026-09-18，exe 托管迁移 Cloudflare R2）
+
+**架构变更**：exe 不再托管于 Cloudflare Pages（重新部署会整树替换、旧版 exe 消失的根因）。
+- **历史版本 v1.01–v1.19 + 当前版本 exe 全部存 R2 桶 `mvp`**（对象键 = 中文文件名 `系统清理与优化工具_v1.XX.exe`），
+  公开直链 `https://pub-728749f7c2ea45ed909c38f4c489ba5d.r2.dev/<对象键>`（托管域，已开启 public bucket）
+- **Pages 只托管 HTML/JS/CSS/JSON**（site-dist 不再含 exe；upload batch 会丢中文键大文件——已验证）
+- 发版清单新增：
+  1. **R2 上传新 exe**：`PUT https://api.cloudflare.com/client/v4/accounts/{ACCT}/r2/buckets/mvp/objects/{urlencode(中文键)}`
+     （方法必须是 PUT，Content-Type: application/octet-stream，R2_API_TOKEN 鉴权；对象列表/大小用
+     `GET .../objects?limit=50&delim=/` 核对）
+  2. **site-src/version.json**：`url` 字段 → R2 新 exe 直链（程序「检查更新/下载更新」读此字段）
+  3. **site-src/download.html**：旧版按钮全部指 R2 直链（历史版本 19→20 个时新增 1 行 R2 链接）；
+     「历史版本 v1.01 – v1.19 存于 Cloudflare R2」措辞随版本递增更新
+  4. **上传前先做哈希核验**（GitHub 官方资产为基准，本地 SHA-256 全量对照，见 D:/cpq-builds/verify/ 清单）
+- **已知待办**：`cab.dpdns.org` 裸域自定义域目前 CF Pages 侧 deactivated（根 404），需在
+  Dashboard → Pages → cpq-system-tool → Custom domains 重新添加（DNS 记 CNAME cab → cpq-system-tool.pages.dev）；
+  R2 托管域 r2.dev 有官方速率限制、建议后续挂自定义域（dl.cab.dpdns.org 类）替代
