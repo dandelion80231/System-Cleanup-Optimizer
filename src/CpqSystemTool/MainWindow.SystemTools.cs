@@ -266,9 +266,16 @@ namespace CpqSystemTool
                 GodMode.Create(msg => sharedLog.AppendText(msg + "\r\n"));
             }, 380);
             // 紧凑布局：标题与按钮同行（省一行纵向空间）
-            var godRow = new StackPanel { Orientation = Orientation.Horizontal };  // 左对齐
-            godRow.Children.Add(new Emoji.Wpf.TextBlock { Text = "🌌 上帝模式", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
+            // 标题左对齐，打开上帝模式按钮在剩余位置内居中
+            var godRow = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
+            godRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            godRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var gt = new Emoji.Wpf.TextBlock { Text = "🌌 上帝模式", FontWeight = FontWeights.Bold, Foreground = _accent, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+            Grid.SetColumn(gt, 0);
+            godRow.Children.Add(gt);
             godModeBtn.Margin = new Thickness(0);
+            godModeBtn.HorizontalAlignment = HorizontalAlignment.Center;
+            Grid.SetColumn(godModeBtn, 1);
             godRow.Children.Add(godModeBtn);
             godInner.Children.Add(godRow);
             root.Children.Add(godCard);
