@@ -499,7 +499,7 @@ namespace CpqSystemTool
                 result.SearchLocated = source == "search";
                 var rec = PickRecommended(finalized);
                 result.Recommended = rec != null ? rec.Url : "";
-                logf("   候选 " + finalized.Count + " 个，推荐: " + (rec != null ? rec.Url : "无"));
+                logf("   候选 " + finalized.Count + " 个（渲染扫描）→ 推荐: " + (rec != null ? rec.Url : "无"));
             }
 
             // 域名反向匹配 VendorMap 直链兜底：

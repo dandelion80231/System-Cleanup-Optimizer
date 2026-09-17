@@ -346,7 +346,7 @@ namespace CpqSystemTool
                             rows = res.Rows;
                             recommended = res.Recommended;
                             searchLocated = res.SearchLocated;
-                            logf("[✓] WebView2 探针完成（候选 " + rows.Count + " 个）");
+                            logf("[✓] WebView2 探针完成（推荐 " + rows.Count + " 条结果）");
                             webView2GotResult = true;
                             return;
                         }

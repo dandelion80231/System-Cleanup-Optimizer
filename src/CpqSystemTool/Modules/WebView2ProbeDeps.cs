@@ -74,8 +74,9 @@ namespace CpqSystemTool
             string loader = Path.Combine(exeDir, "WebView2Loader.dll");
             if (File.Exists(loader))
             {
-                log("[*] WebView2 探针依赖齐备（原生 loader 就位；托管程序集已内嵌）。");
-                WriteDepsLog("[*] loader 已存在，跳过下载");
+                // 快路径静默：两个调用点（UI 预检 + STA 入口）都会走到这里，以前各打一遍“齐备”
+                // 造成日志重复；常态无需提示，只留 deps log 留痕（webview2_deps.log）。
+                WriteDepsLog("[*] loader 已存在，跳过下载（快路径静默）");
                 return;
             }
 
