@@ -938,6 +938,23 @@ namespace CpqSystemTool
             // 更新操作：写操作完成后重新异步读取真实状态并刷新按钮高亮；读操作保留日志内容。
             void RunUpdate(string actionKey, Action<Action<string>> work, string label, bool navWhenDone = true)
             {
+                // fix-CC：此前「禁用更新」「长期暂停(10000天)」「计量连接 · 切换」点击直接执行、无确认弹窗。
+                // 增加确认，说明影响与恢复方式；「恢复更新」「查看/状态」类只读/还原操作保持直接执行。
+                if (actionKey == "block")
+                {
+                    if (MessageBox.Show("确定要禁用 Windows 更新吗？\n\n• 将阻止系统下载和安装更新（含安全更新）\n• 可通过「恢复更新」按钮还原\n\n是否继续？", "确认操作", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                        return;
+                }
+                else if (actionKey == "pause")
+                {
+                    if (MessageBox.Show("确定要长期暂停 Windows 更新（10000 天）吗？\n\n• 暂停期间不接收功能与安全更新，存在安全风险\n• 暂停天数极长，恢复需再次手动操作\n• 可通过「恢复更新」按钮还原\n\n是否继续？", "确认操作", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                        return;
+                }
+                else if (actionKey == "metered-toggle")
+                {
+                    if (MessageBox.Show("确定要切换当前网络的计量连接状态吗？\n\n• 计量连接下系统会限制自动下载更新\n• 再次点击可切回原状态\n\n是否继续？", "确认操作", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                        return;
+                }
                 if (!OperationLock.TryEnter("更新管理", out string busyBy))
                 {
                     MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
