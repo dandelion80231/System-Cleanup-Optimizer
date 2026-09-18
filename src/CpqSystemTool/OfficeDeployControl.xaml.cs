@@ -1025,8 +1025,11 @@ namespace CpqSystemTool
                     }
                     // 仅当用户勾选了套件内应用（auto-align 才会触发，与 BuildArgs 一致）且所选 ≠ 已装时才拦截，
                     // 避免误拦「仅装独立产品（Visio/Project）到不同版本」这类合法场景。
+                    // 注意：必须用「已勾选」的套件内组件判定（与 BuildArgs 的 selectedSuite 同口径）。
+                    // 若用全部组件（含未勾选），只勾 Visio/Project 独立产品 + 本机已装不同版本套件时会误报
+                    // "安装将无变化"（实际该场景不触发 auto-align，独立产品会正常安装）。
                     var suiteSel = _components
-                        .Where(c => !string.IsNullOrEmpty(c.Component.ExcludeAppId))
+                        .Where(c => c.IsSelected && !string.IsNullOrEmpty(c.Component.ExcludeAppId))
                         .ToList();
                     if (suiteSel.Count > 0 && !string.IsNullOrEmpty(installedVersionName) && !string.IsNullOrEmpty(userVersionName)
                         && !string.Equals(userVersionName, installedVersionName, StringComparison.OrdinalIgnoreCase))
