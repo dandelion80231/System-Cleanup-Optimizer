@@ -128,7 +128,7 @@ namespace CpqSystemTool
 
             // 侧边栏头部标题（放 DockPanel 顶部，按钮区滚动时标题固定不动）
             var titleTb = new TextBlock { Text = "系统清理与优化", FontSize = 18, FontWeight = FontWeights.Bold, Foreground = _textMain, Margin = new Thickness(14, 14, 0, 2), Name = "SidebarTitle" };
-            var subtitleTb = new TextBlock { Text = "WPF 版 · 既全又可回退", FontSize = 11, Foreground = _accent, Opacity = 0.9, Margin = new Thickness(14, 0, 0, 8), Name = "SidebarSubtitle" };
+            var subtitleTb = new TextBlock { Text = "WPF 版 · 清理优化（WinSxS 等个别项不可逆，请看清说明）", FontSize = 11, Foreground = _accent, Opacity = 0.9, Margin = new Thickness(14, 0, 0, 8), Name = "SidebarSubtitle" };
             dock.Children.Add(titleTb);
             DockPanel.SetDock(titleTb, Dock.Top);
             dock.Children.Add(subtitleTb);
