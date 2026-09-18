@@ -127,6 +127,10 @@ namespace CpqSystemTool
             tempBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             defInner.Children.Add(tempBar);
 
+            // 提前声明（早于下方按钮 RunInBg lambda）：那些闭包传递性捕获 RefreshTpStatus，
+            // 而它用到 _tpAlignOffset——捕获变量必须在 lambda 创建前已赋值（否则 CS0165）。
+            double _tpAlignOffset = 0;
+
             // ===== 篡改防护(TP) 状态区（06 逻辑）=====
             // TP 开时，Windows 会拦截所有外部对 Defender 的运行时修改（含 Set-MpPreference），
             // 只有安全中心 GUI 能手动切换。本区只读 + 跳转，不让用户直接改 TP（改了也无效）。
@@ -219,6 +223,28 @@ namespace CpqSystemTool
             bTempEnable.HorizontalAlignment = HorizontalAlignment.Center;
             Grid.SetColumn(bTempEnable, 1);
             tempBar.Children.Add(bTempEnable);
+
+            // 「篡改防护」方框+状态 与上方「临时禁用 WD」按钮左边缘对齐：
+            // 按钮是列内居中，其左边缘随窗口宽度变化 → 运行时一次性校准（Loaded）+ 仅 resize 时重算，不挂每帧事件。
+            double GetLeftInDefInner(System.Windows.Media.Visual v)
+            {
+                try { return v.TransformToVisual(defInner).Transform(new System.Windows.Point()).X; }
+                catch { return 0; }
+            }
+            defInner.Loaded += (s, e) =>
+            {
+                _tpAlignOffset = Math.Max(0, GetLeftInDefInner(bTempDisable));
+                RefreshTpStatus(true);
+            };
+            defInner.SizeChanged += (s, e) =>
+            {
+                double want = Math.Max(0, GetLeftInDefInner(bTempDisable));
+                if (Math.Abs(want - _tpAlignOffset) > 1)   // 阈值防抖：未变化不重建，避免闪烁
+                {
+                    _tpAlignOffset = want;
+                    RefreshTpStatus(true);
+                }
+            };
 
             // 可复用的后台刷新函数见下方（RefreshTpStatus）
 
@@ -363,7 +389,8 @@ namespace CpqSystemTool
                             Cursor = Cursors.Arrow,
                             Foreground = tpOn ? _warnOrange : _successGreen,
                             FontSize = 12.5,
-                            HorizontalAlignment = HorizontalAlignment.Center,   // 与「临时禁用 WD」按钮同列居中对齐
+                            HorizontalAlignment = HorizontalAlignment.Left,
+                            Margin = new Thickness(_tpAlignOffset, 0, 0, 0),   // 与「临时禁用 WD」按钮左边缘对齐（运行时校准）
                             VerticalAlignment = VerticalAlignment.Center
                         };
                         Grid.SetColumn(tpState, 0);
