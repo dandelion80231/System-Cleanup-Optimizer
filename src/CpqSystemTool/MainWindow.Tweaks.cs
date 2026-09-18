@@ -727,7 +727,16 @@ namespace CpqSystemTool
                             if (t.IsThreeState) t.Apply3(st.Value, bgLog);
                             else if (st == TweakState.On) t.Enable(bgLog);
                             else t.Disable(bgLog);
-                            ok++;
+                            // fix-6：依据真实执行结果统计——原实现仅 catch 异常计失败，静默失败会被统计为成功。
+                            // 现在应用后读取系统实际状态校验；未达预期计为失败并在日志中如实展示。
+                            bool verified;
+                            try
+                            {
+                                verified = t.IsThreeState ? t.GetState3() == st.Value : t.State() == (st == TweakState.On);
+                            }
+                            catch { verified = false; }
+                            if (verified) ok++;
+                            else { fail++; bgLog("   [✗] " + t.Name + " 应用后校验未达预期（静默失败），请检查系统设置"); }
                         }
                         catch { fail++; }
                     }
