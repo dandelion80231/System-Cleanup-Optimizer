@@ -313,7 +313,7 @@ namespace CpqSystemTool
             L.Add(new TweakEntry
             {
                 Group = "安全设置", Id = "smartscreen", Name = "关闭 SmartScreen",
-                Desc = "超强关闭 SmartScreen 筛选（含 CLSID 删除，降低下载/运行防护，可一键还原）。fix-12：同时会把 .exe/.bat/.vbs/.reg/.msi/.js/.cmd 等扩展名写入低风险文件类型（LowRiskFileTypes），并降低下载文件的 Zone 标记，下载此类文件被拦截的概率会明显下降，请知悉", Risk = "high",
+                Desc = "超强关闭 SmartScreen 筛选（含 CLSID 删除，降低下载/运行防护，可一键还原）。注意：同时会把 .exe/.bat/.vbs/.reg/.msi/.js/.cmd 等扩展名写入低风险文件类型（LowRiskFileTypes），并降低下载文件的 Zone 标记，下载此类文件被拦截的概率会明显下降，请知悉", Risk = "high",
                 Enable = log =>
                 {
                     RegistryHelper.SetSz(HKLM, @"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer", "SmartScreenEnabled", "Off", log);
