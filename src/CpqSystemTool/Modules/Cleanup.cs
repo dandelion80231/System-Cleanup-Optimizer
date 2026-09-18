@@ -522,28 +522,43 @@ namespace CpqSystemTool
                 log("  [SKIP] 未检测到已安装的浏览器（Chrome/Edge/Brave/360/Firefox），无 Cookies 可清");
         }
 
-        // ---- 第一档：绝对安全（纯缓存/可重建，删了无任何副作用） ----
-        internal static void UserCacheTier1(Action<string> log)
+        // ---- 开发/包管理器缓存：2026-09-18 起并入第三档确认流（扫描 → 可点开逐项查看 → 逐项勾选删除） ----
+        // 原为清理页独立一级动作项（09-15 事故后默认不勾）；用户反馈：放独立项时「全选清理」仍可能误扫，
+        // 第三档有二次确认且能点开看，更安全。node_modules 依赖目录不在名称表（Tier1DirNames）内，
+        // 且删除侧有统一保护，任何情况下都不会被列出/删除。
+        private static readonly (string name, string path)[] DevCacheFixed =
         {
-            log("用户缓存·开发/包管理器（第一档·绝对安全，删了可重建）");
-            // 包管理器缓存：删了只是下次 install 时重新下载，对任何程序无副作用 → 并行清理（受 InnerPar 限流）
-            var pkgCaches = new (string name, string path)[]
+            ("npm 缓存", @"%LOCALAPPDATA%\npm-cache"),
+            ("npm 缓存(Roaming)", @"%APPDATA%\npm-cache"),
+            ("pnpm 缓存", @"%LOCALAPPDATA%\pnpm-cache"),
+            ("NuGet v3 缓存", @"%LOCALAPPDATA%\NuGet\v3-cache"),
+            ("NuGet http 缓存", @"%LOCALAPPDATA%\NuGet\http-cache"),
+            ("NuGet 包全局缓存", @"%USERPROFILE%\.nuget\packages"),
+            ("pip 缓存", @"%LOCALAPPDATA%\pip\Cache"),
+            ("uv 缓存", @"%LOCALAPPDATA%\uv\cache"),
+            ("Yarn 缓存", @"%LOCALAPPDATA%\Yarn\Cache"),
+            ("cargo registry 缓存", @"%USERPROFILE%\.cargo\registry\cache"),
+            ("cargo registry 源码", @"%USERPROFILE%\.cargo\registry\src"),
+        };
+        private const double Tier3DevMinMB = 50.0;   // 开发缓存 ≥50MB 才进第三档名单，避免小缓存刷屏
+
+        /// <summary>第三档候选：开发/包管理器缓存（固定位 11 处 + 全盘额外命中；仅入册供逐项确认，不直接删除）。</summary>
+        private static void CollectDevCacheCandidates(Action<string> log, List<Tier3Candidate> found)
+        {
+            log("  [开发/包管理器缓存] 固定缓存位 + 全盘额外扫描（node_modules 依赖目录不入册）...");
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            void Add(string p)
             {
-                ("npm 缓存", @"%LOCALAPPDATA%\npm-cache"),
-                ("npm 缓存(Roaming)", @"%APPDATA%\npm-cache"),
-                ("pnpm 缓存", @"%LOCALAPPDATA%\pnpm-cache"),
-                ("NuGet v3 缓存", @"%LOCALAPPDATA%\NuGet\v3-cache"),
-                ("NuGet http 缓存", @"%LOCALAPPDATA%\NuGet\http-cache"),
-                ("NuGet 包全局缓存", @"%USERPROFILE%\.nuget\packages"),
-                ("pip 缓存", @"%LOCALAPPDATA%\pip\Cache"),
-                ("uv 缓存", @"%LOCALAPPDATA%\uv\cache"),
-                ("Yarn 缓存", @"%LOCALAPPDATA%\Yarn\Cache"),
-                ("cargo registry 缓存", @"%USERPROFILE%\.cargo\registry\cache"),
-                ("cargo registry 源码", @"%USERPROFILE%\.cargo\registry\src"),
-            };
-            Parallel.ForEach(pkgCaches, InnerPar, item => CleanDir(item.name, item.path, log));
-            log("  [全盘筛查] 在 C 盘用户/程序目录查找额外同类缓存（避免遗漏）...");
-            CleanWholeDriveCaches(false, "全盘缓存·", log);
+                if (!seen.Add(p.ToLowerInvariant())) return;
+                if (!Directory.Exists(p)) return;
+                double mb = DirSizeCapped(p, 300000) / 1024.0 / 1024.0;
+                if (mb < Tier3DevMinMB) return;
+                DateTime lw = Directory.GetLastWriteTime(p), la = Directory.GetLastAccessTime(p);
+                found.Add(new Tier3Candidate { Path = p, SizeMB = Math.Round(mb, 1), LastActivity = lw > la ? lw : la, DaysUnused = -1, Description = "开发/包管理器缓存（可重建：下次 install 重新下载）；删除安全" });
+                log("    发现开发缓存: " + p + "  —  约 " + FmtSizeMB(mb));
+            }
+            foreach (var (name, raw) in DevCacheFixed) Add(Exec.ExpandEnv(raw));
+            foreach (var p in FindWholeDriveCaches(false, log)) Add(p);   // 全盘额外命中（固定位已在其排除表内，不会重复）
         }
 
         // ---- 第二档：基本安全（软件自动更新的旧安装包，删了只是下次更新重下） ----
@@ -953,7 +968,7 @@ namespace CpqSystemTool
         {
             found = new List<Tier3Candidate>();
             log("=== 第三档·旧资产筛查（先扫描，删除前逐项确认）===");
-            log("  规则：仅列出【≥" + Tier3MBThreshold + " MB 且 ≥" + Tier3DaysThreshold + " 天未使用】或【已知停用工具/备份旧目录】，且不含系统关键数据；删除需你逐项勾选确认。");
+            log("  规则：仅列出【≥" + Tier3MBThreshold + " MB 且 ≥" + Tier3DaysThreshold + " 天未使用】或【已知停用工具/备份旧目录】或【开发/包管理器缓存 ≥" + Tier3DevMinMB.ToString("F0") + " MB】，且不含系统关键数据；删除需你逐项勾选确认。node_modules 依赖目录永不入册。");
             var roots = ScanRoots();
             var rootBoundary = BuildRootBoundary(roots);   // 避免 LOCALAPPDATA/APPDATA ⊂ USERPROFILE 重复遍历
             var sigBag = new ConcurrentBag<string>();
@@ -984,6 +999,7 @@ namespace CpqSystemTool
                 foreach (var c in local) largeOldBag.Add(c);
             });
             found.AddRange(largeOldBag);
+            CollectDevCacheCandidates(log, found);   // 开发/包管理器缓存并入第三档候选（≥50MB，逐项确认）
             // 去重（按路径），按体积降序，最终保留前 60 项（与原版全局上限语义一致，避免对话框过长）。
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             found = found.Where(c => seen.Add(c.Path)).OrderByDescending(c => c.SizeMB).Take(60).ToList();
@@ -1052,7 +1068,7 @@ namespace CpqSystemTool
                 new SizeEntry { Name = "Edge 缓存", Path = @"%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\Cache" },
             });
 
-            total += ScanGroup("--- 用户开发/包缓存（第一档·绝对安全） ---", new List<SizeEntry> {
+            total += ScanGroup("--- 用户开发/包缓存（第三档·逐项确认后清） ---", new List<SizeEntry> {
                 new SizeEntry { Name = "npm 缓存", Path = @"%LOCALAPPDATA%\npm-cache" },
                 new SizeEntry { Name = "pnpm 缓存", Path = @"%LOCALAPPDATA%\pnpm-cache" },
                 new SizeEntry { Name = "NuGet v3 缓存", Path = @"%LOCALAPPDATA%\NuGet\v3-cache" },

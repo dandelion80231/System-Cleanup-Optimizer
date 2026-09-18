@@ -36,9 +36,6 @@ namespace CpqSystemTool
             new CleanupItemDef { Id="font_cache", Name="字体缓存", Desc="系统字体缓存（需重启字体服务）", Category="缓存文件", DefaultChecked=false, Action=log=>Cleanup.FontCache(log) },
             new CleanupItemDef { Id="icon_cache", Name="图标缓存", Desc="系统图标缓存", Category="缓存文件", DefaultChecked=false, Action=log=>Cleanup.IconCache(log) },
             new CleanupItemDef { Id="net_cache", Name=".NET程序集缓存", Desc="Native Image Cache (ngen)", Category="缓存文件", DefaultChecked=false, Action=log=>Cleanup.NetCache(log) },
-            // 【fix-1】默认不勾选（原 DefaultChecked=true 会把 node_modules 当缓存批量删除，2026-09-15 曾误删 pi 依赖事故）；
-            // 保留手动勾选能力，但任何名为 node_modules 的目录已被删除侧统一保护，不会被清理。
-            new CleanupItemDef { Id="tier1_usercache", Name="用户缓存·开发/包管理器", Desc="npm/pnpm/NuGet/pip/cargo 可重建缓存（默认不勾选：不清理任何 node_modules 依赖目录）", Category="缓存文件", DefaultChecked=false, Action=log=>Cleanup.UserCacheTier1(log) },
 
             // ---- 系统文件 ----
             new CleanupItemDef { Id="sys_temp", Name="系统 Temp", Desc="%SystemRoot%\\Temp 临时文件", Category="系统文件", DefaultChecked=true, Action=log=>Cleanup.CleanDir("系统 Temp",@"%SystemRoot%\Temp",log) },
@@ -339,7 +336,7 @@ namespace CpqSystemTool
             {
                 Content = new Emoji.Wpf.TextBlock
                 {
-                    Text = "🔍 第三档：多半可删，但需你确认（含旧资产/可能的数据）",
+                    Text = "🔍 第三档：多半可删，但需你确认（含开发缓存/旧资产/可能的数据）",
                     TextWrapping = TextWrapping.Wrap,
                     TextAlignment = TextAlignment.Left,
                     FontSize = 12,
