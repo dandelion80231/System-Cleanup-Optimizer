@@ -831,7 +831,7 @@ namespace CpqSystemTool
             MakeCheck("Windows更新不包括恶意软件删除工具(MRT)",
                 () => PrivacyCore.IsMRTUpdateDisabled(),
                 (l, b) => { if (b) PrivacyCore.DisableMRTUpdate(l); else PrivacyCore.EnableMRTUpdate(l); });
-            MakeCheck("禁止Win大版本更新(如23H2->24H2)",
+            MakeCheck("禁止Win大版本更新（锁定当前版本，如当前 24H2 即阻止升到 25H2）",
                 () => PrivacyCore.IsFeatureUpdateBlocked(),
                 (l, b) => { if (b) PrivacyCore.BlockFeatureUpdate(l); else PrivacyCore.UnblockFeatureUpdate(l); });
             MakeCheck("禁止Windows遥测数据收集",

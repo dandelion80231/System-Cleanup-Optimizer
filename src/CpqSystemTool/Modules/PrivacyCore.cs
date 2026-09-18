@@ -128,8 +128,22 @@ namespace CpqSystemTool
         public static void BlockFeatureUpdate(Action<string> log)
         {
             RegistryHelper.SetDword(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate", "TargetReleaseVersion", 1, log);
-            RegistryHelper.SetSz(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate", "TargetReleaseVersionInfo", "24H2", log);
-            log("[OK] 已锁定当前大版本（禁止升级到更新版本）");
+            // fix-8：原实现硬编码 TargetReleaseVersionInfo="24H2"，在 23H2 等系统上反而允许升级到 24H2。
+            // 改为读取当前 Windows DisplayVersion 并锁定在当前版本（阻止升级到下一大版本）。
+            string currentVer = "";
+            try
+            {
+                using (var k = HKLM.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion"))
+                    currentVer = k?.GetValue("DisplayVersion") as string ?? "";
+            }
+            catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+            if (string.IsNullOrWhiteSpace(currentVer))
+            {
+                log("[!] 未读取到当前 Windows 大版本（DisplayVersion），已按 24H2 锁定，请确认后手动调整");
+                currentVer = "24H2";
+            }
+            RegistryHelper.SetSz(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate", "TargetReleaseVersionInfo", currentVer, log);
+            log("[OK] 已锁定当前大版本 " + currentVer + "（禁止升级到更新版本）");
         }
         public static void UnblockFeatureUpdate(Action<string> log)
         {
