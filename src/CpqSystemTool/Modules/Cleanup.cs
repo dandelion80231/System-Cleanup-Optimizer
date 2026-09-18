@@ -125,6 +125,13 @@ namespace CpqSystemTool
         internal static void CleanPath(string name, string path, Action<string> log)
         {
             path = Exec.ExpandEnv(path);
+            // 【fix-1】node_modules 目录保护：任何名为 node_modules 的目录一律不删（项目/运行时依赖，非缓存）。
+            // 即使未来有其它调用方误传 node_modules 路径，也在此统一拦截，确保清理逻辑不会删除任何 node_modules。
+            if (Directory.Exists(path) && Path.GetFileName(path.TrimEnd('\\', '/')).Equals("node_modules", StringComparison.OrdinalIgnoreCase))
+            {
+                log(name + "  [SKIP] node_modules 受保护（依赖目录，不清理）");
+                return;
+            }
             // 【UI】名称与结果同行输出（旧：先刷名称行、删完再刷结果行 → 两行观感）
             string res;
             if (File.Exists(path) || Directory.Exists(path))
@@ -558,9 +565,11 @@ namespace CpqSystemTool
 
         // ---- 全盘筛查：在 C 盘用户/程序相关根目录中按安全模式名发现额外缓存/更新残留（避免遗漏） ----
         //   仅扫描用户与程序数据所在根（Users / ProgramData / Program Files / *AppData），不触碰 Windows 系统目录。
+        // 【fix-1】node_modules 已从第一档缓存名单移除：它是项目/运行时依赖目录而非缓存，
+        // 全盘筛查不再收集任何名为 node_modules 的目录；删除侧另有 CleanPath 统一保护（见下）。
         private static readonly HashSet<string> Tier1DirNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "node_modules", "npm-cache", "pnpm-cache", "yarn-cache", "__pycache__", "v3-cache", "http-cache"
+            "npm-cache", "pnpm-cache", "yarn-cache", "__pycache__", "v3-cache", "http-cache"
         };
         private static readonly HashSet<string> Tier2DirNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
