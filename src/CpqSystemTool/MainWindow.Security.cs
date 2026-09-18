@@ -123,6 +123,14 @@ namespace CpqSystemTool
             var defHostL = new Grid();  Grid.SetColumn(defHostL, 2);  defWp.Children.Add(defHostL);    // 一键禁用
             var defHostR = new Grid();  Grid.SetColumn(defHostR, 3);  defWp.Children.Add(defHostR);    // 一键恢复
 
+            // TP 行校准引用（「打开安全中心」左缘对齐「一键禁用 WD」按钮：Loaded 量一次 + resize 重算，不挂每帧事件）。
+            // 须在此处（早于下方按钮 RunInBg lambda）声明并赋值：闭包传递性捕获会检查默认赋值。
+            System.Windows.Controls.Button _bDisableRef = null;
+            System.Windows.Controls.Button _bOpenScRef = null;
+            Emoji.Wpf.TextBlock _tpLabelRef = null;
+            System.Windows.Controls.Grid _tpRowRef = null;
+            defInner.SizeChanged += (s, e) => CalibrateTpRow();   // 窗口宽度变化时重算对齐（CalibrateTpRow 见下方）
+
             // ===== 篡改防护(TP) 状态区（06 逻辑）=====
             // TP 开时，Windows 会拦截所有外部对 Defender 的运行时修改（含 Set-MpPreference），
             // 只有安全中心 GUI 能手动切换。本区只读 + 跳转，不让用户直接改 TP（改了也无效）。
@@ -166,6 +174,7 @@ namespace CpqSystemTool
                 });
                 bDisable.HorizontalAlignment = HorizontalAlignment.Center;
                 defHostL.Children.Add(bDisable);
+                _bDisableRef = bDisable;   // 供 TP 行对齐校准
                 var bEnable = Btn("✔ 一键恢复 WD", ShouldFillDef("restore", !disabled), () =>
                 {
                     if (!OperationLock.TryEnter("一键恢复 Defender", out string busyBy))
@@ -309,7 +318,22 @@ namespace CpqSystemTool
                 RebuildDefenderButtons();
             }
 
-            // 可复用的后台刷新函数：进页首次 + 操作 onDone + 重进页 + 定时轮询 都调它
+            // 「打开安全中心」左缘对齐「一键禁用 WD」按钮：列 2 左边距 = 按钮左缘 - 列 2 起点（TransformToVisual 量取）。
+            // 触发点：行 Loaded（每次重建后）+ defInner.SizeChanged（窗口宽度变化）；不挂每帧事件，无闪烁。
+            void CalibrateTpRow()
+            {
+                if (_bDisableRef == null || _bOpenScRef == null || _tpRowRef == null || _tpLabelRef == null) return;
+                if (_bDisableRef.ActualWidth <= 0) return;   // 尚未布局完成
+                double xBtn;
+                try { xBtn = _bDisableRef.TransformToVisual(_tpRowRef).Transform(new System.Windows.Point()).X; }
+                catch { return; }
+                double col0 = _tpLabelRef.ActualWidth + 10;   // Auto 列 = 标题宽 + 右 margin
+                double col2Start = (_tpRowRef.ActualWidth + col0) / 2;
+                _bOpenScRef.HorizontalAlignment = System.Windows.HorizontalAlignment.Left;
+                _bOpenScRef.Margin = new System.Windows.Thickness(Math.Max(0, xBtn - col2Start), 0, 0, 0);
+            }
+
+            // 每次进页首次 + 操作 onDone + 重进页 + 定时轮询 都调它
             // 每次重建 host 子项（tpHost.Clear() + 重新填充），避免累积
             // force=true（默认）：强制重建 UI，用于进页/操作后等必须刷新的场景。
             // force=false：供定时轮询使用——读到的 TP 状态与上次一致时直接返回，
@@ -347,6 +371,8 @@ namespace CpqSystemTool
                         };
                         Grid.SetColumn(tpLabel, 0);
                         row.Children.Add(tpLabel);
+                        _tpLabelRef = tpLabel;
+                        _tpRowRef = row;
                         // 方框 + 状态文字（与上方 4 个开关同款 CheckBox：勾选=已开启，未勾=已关闭）
                         // 纯指示用途：IsHitTestVisible=false + Cursor=Arrow，TP 只能手动在安全中心改
                         var tpState = new System.Windows.Controls.CheckBox
@@ -363,11 +389,13 @@ namespace CpqSystemTool
                         Grid.SetColumn(tpState, 1);
                         row.Children.Add(tpState);
                         var bOpenSc = Btn("🔗 打开安全中心", false, () => Defender.OpenSecurityCenter());
-                        bOpenSc.HorizontalAlignment = HorizontalAlignment.Center;   // 右半区居中
+                        bOpenSc.HorizontalAlignment = HorizontalAlignment.Center;   // 初始占位（右半区居中），Loaded/resize 时校准到「一键禁用 WD」左缘
                         bOpenSc.VerticalAlignment = VerticalAlignment.Center;
                         Grid.SetColumn(bOpenSc, 2);
                         row.Children.Add(bOpenSc);
+                        _bOpenScRef = bOpenSc;
                         tpHost.Children.Add(row);
+                        row.Loaded += (s, e) => CalibrateTpRow();   // 每次重建行后重校一次（便宜）
                         tpHost.Children.Add(new TextBlock
                         {
                             Text = "提示：TP 开启时「一键/临时禁用」会被 Windows 拦截不生效。点「打开安全中心」直达病毒和威胁防护→管理设置页，向下找到「篡改防护」开关手动关闭即可。",
