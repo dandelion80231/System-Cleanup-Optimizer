@@ -238,6 +238,5 @@
   3. **site-src/download.html**：旧版按钮全部指 R2 直链（历史版本 19→20 个时新增 1 行 R2 链接）；
      「历史版本 v1.01 – v1.19 存于 Cloudflare R2」措辞随版本递增更新
   4. **上传前先做哈希核验**（GitHub 官方资产为基准，本地 SHA-256 全量对照，见 D:/cpq-builds/verify/ 清单）
-- **已知待办**：`cab.dpdns.org` 裸域自定义域目前 CF Pages 侧 deactivated（根 404），需在
-  Dashboard → Pages → cpq-system-tool → Custom domains 重新添加（DNS 记 CNAME cab → cpq-system-tool.pages.dev）；
-  R2 托管域 r2.dev 有官方速率限制、建议后续挂自定义域（dl.cab.dpdns.org 类）替代
+- **域名终态（2026-09-18 已达成）**：根域 `cab.dpdns.org` 已在 Pages 重新激活（200）；exe 全部走 R2 自定义域 `dl.cab.dpdns.org`（r2.dev 公共开发 URL 已无引用，可选关闭）
+- **以后优化（暂不做）**：`dl.cab.dpdns.org/` 根路径直接访问返回 404（R2 是对象存储，无首页概念，正常现象）。可选优化：向桶 `mvp` 上传一个 `index.html` 对象（20 个版本的目录页，Content-Type text/html）。**注意：R2 公开桶不会自动把 index.html 当首页**，根路径是否显示 index.html 取决于公共访问行为；做之前先查官方文档（developers.cloudflare.com → R2 public buckets）确认根路径行为，或改用 301/跳转方案
