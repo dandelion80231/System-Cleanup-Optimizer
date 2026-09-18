@@ -834,6 +834,9 @@ namespace CpqSystemTool
             bRefreshFw.Click += (s, e) => LoadFirewallData();
             bBlockSearch.Click += (s, e) =>
             {
+                // fix-CB：此前添加规则直接写防火墙、无确认弹窗。增加确认，说明将新增出站阻止规则及影响。
+                if (MessageBox.Show("确定要添加「阻止 SearchHost 联网」出站规则吗？\n\n• 将新增防火墙出站阻止规则，阻止 SearchHost.exe 联网\n• 不影响已联网连接，后续联网请求将被拦截\n• 可通过「移除 SearchHost 规则」恢复\n\n是否继续？", "确认操作", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                    return;
                 if (!OperationLock.TryEnter("添加防火墙规则", out string busyBy))
                 {
                     MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -844,6 +847,9 @@ namespace CpqSystemTool
             };
             bBlockTele.Click += (s, e) =>
             {
+                // fix-CB：此前添加规则直接写防火墙、无确认弹窗。增加确认，说明将新增出站阻止规则及影响。
+                if (MessageBox.Show("确定要添加「阻止遥测域」出站规则吗？\n\n• 将新增防火墙出站阻止规则，阻止已知 Windows 遥测域名连接\n• 可能影响依赖这些域名的功能或软件更新\n• 可在规则列表中选中后「移除选中规则」恢复\n\n是否继续？", "确认操作", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                    return;
                 if (!OperationLock.TryEnter("添加防火墙规则", out string busyBy))
                 {
                     MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
