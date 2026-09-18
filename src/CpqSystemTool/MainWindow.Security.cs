@@ -338,26 +338,21 @@ namespace CpqSystemTool
                             return;             // 状态未变 → 保持现有 UI，不重建
                         _lastTpOn = tpOn;
                         tpHost.Children.Clear();
-                        // 与上方 4 开关的 defToggles 同为「2 等宽列」结构：
-                        // 第 0 列放标签，第 1 列放「方框+状态」，使方框左边缘与上方「行为监控」同一竖线。
-                        var row = new Grid { Margin = new Thickness(0, 4, 0, 4) };
-                        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 0: 标签（左半列）
-                        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 1: 状态（右半列）
-                        // 第 0 列：标签
-                        var tpLabel = new Emoji.Wpf.TextBlock
+                        // 标签独立行（整宽）
+                        tpHost.Children.Add(new Emoji.Wpf.TextBlock
                         {
                             Text = "🛡 篡改防护 (TP)",
                             Foreground = _textMain,
                             FontSize = 13,
                             FontWeight = FontWeights.SemiBold,
-                            VerticalAlignment = VerticalAlignment.Center
-                        };
-                        Grid.SetColumn(tpLabel, 0);
-                        // 第 1 列：内部再分「方框（左对齐=与行为监控同竖线）… 按钮（右对齐到行尾）」
-                        var rightBox = new Grid();
-                        rightBox.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 方框+状态
-                        rightBox.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 弹性间隔
-                        rightBox.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 按钮
+                            Margin = new Thickness(0, 0, 0, 4)
+                        });
+                        // 「2 等宽列」grid（与上方 defWp/tempBar 按钮行同结构）：
+                        // 第 0 列 = 方框+状态（水平居中，与「临时禁用 WD」按钮对齐），
+                        // 第 1 列 = 「打开安全中心」（水平居中，与「临时恢复 WD」按钮对齐）
+                        var row = new Grid { Margin = new Thickness(0, 4, 0, 4) };
+                        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                         // 方框 + 状态文字（与上方 4 个开关同款 CheckBox：勾选=已开启，未勾=已关闭）
                         // 纯指示用途：IsHitTestVisible=false + Cursor=Arrow，TP 只能手动在安全中心改
                         var tpState = new System.Windows.Controls.CheckBox
@@ -368,17 +363,16 @@ namespace CpqSystemTool
                             Cursor = Cursors.Arrow,
                             Foreground = tpOn ? _warnOrange : _successGreen,
                             FontSize = 12.5,
+                            HorizontalAlignment = HorizontalAlignment.Center,   // 与「临时禁用 WD」按钮同列居中对齐
                             VerticalAlignment = VerticalAlignment.Center
                         };
                         Grid.SetColumn(tpState, 0);
                         var bOpenSc = Btn("🔗 打开安全中心", false, () => Defender.OpenSecurityCenter());
+                        bOpenSc.HorizontalAlignment = HorizontalAlignment.Center;   // 与「临时恢复 WD」按钮同列居中对齐
                         bOpenSc.VerticalAlignment = VerticalAlignment.Center;
-                        Grid.SetColumn(bOpenSc, 2);
-                        rightBox.Children.Add(tpState);
-                        rightBox.Children.Add(bOpenSc);
-                        Grid.SetColumn(rightBox, 1);
-                        row.Children.Add(tpLabel);
-                        row.Children.Add(rightBox);
+                        Grid.SetColumn(bOpenSc, 1);
+                        row.Children.Add(tpState);
+                        row.Children.Add(bOpenSc);
                         tpHost.Children.Add(row);
                         tpHost.Children.Add(new TextBlock
                         {
