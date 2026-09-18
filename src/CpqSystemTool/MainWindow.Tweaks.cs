@@ -532,15 +532,15 @@ namespace CpqSystemTool
             SetTweaksStatus(sel ? "已全选所有优化项目，点「开始优化」应用" : "已取消全部选择");
         }
 
-        // 底部"开始优化"按钮 = 按当前勾选状态应用【所有】项（WYSIWYG）：
-        // 勾选=启用优化(On)，取消勾选=还原系统默认(Off)；三态项的不确定=交还系统默认(Default)。
-        // 因此"取消勾选 + 开始优化"即可把该项恢复默认，无需动用"还原所有项"（避免误伤其它优化项）。
+        // 底部"开始优化"按钮 = 仅应用用户【勾选】的项目（fix-4）：
+        // 勾选=启用优化(On)；未勾选项一律跳过、不被改动。
+        // 如需还原某项/全部项，请使用「还原所有项」（按优化前原始值恢复，见 fix-3）。
         private void ApplyChecked()
         {
             if (TweaksCheckBoxes == null || TweaksCheckBoxes.Count == 0) { System.Windows.MessageBox.Show(this, "当前没有可优化的项目", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning); return; }
             // P1 确认：应用前弹出确认，避免误点导致批量改动系统设置（此前无任何确认对话框）
             var confirm = System.Windows.MessageBox.Show(this,
-                "确定要应用这些优化吗？\n\n勾选=启用优化、取消勾选=恢复系统默认。部分优化项（如关闭系统还原、高风险项）可能影响系统稳定或失去还原点兜底。",
+                "确定要应用勾选的优化项目吗？\n\n仅勾选的项目会被启用优化，未勾选的项目不会被改动。部分优化项（如关闭系统还原、高风险项）可能影响系统稳定或失去还原点兜底。",
                 "确认应用优化", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
             if (confirm != System.Windows.MessageBoxResult.Yes) return;
             var desired = new Dictionary<string, TweakState?>();
@@ -549,11 +549,10 @@ namespace CpqSystemTool
                 var t = Tweaks.All.FirstOrDefault(x => x.Id == kv.Key);
                 if (t == null) continue;
                 var cb = kv.Value;
-                // 所有项都纳入：勾选框即为期望状态。二态项取消=Off(还原默认)，三态项按 On/Off/Default。
-                if (t.IsThreeState)
-                    desired[kv.Key] = cb.IsChecked == true ? TweakState.On : cb.IsChecked == false ? TweakState.Off : TweakState.Default;
-                else
-                    desired[kv.Key] = cb.IsChecked == true ? TweakState.On : TweakState.Off;
+                // fix-4：仅执行用户勾选的项目；未勾选项（含三态"不确定"）一律跳过，不被改动。
+                // 原实现把未勾选解释为 Off/Default 并全部执行，导致右侧只展示"已选中项目"、未勾选项也被还原/改动。
+                if (cb.IsChecked != true) continue;
+                desired[kv.Key] = TweakState.On;
             }
             ApplyTweaks(desired, "开始优化（" + desired.Count + "项）");
         }
