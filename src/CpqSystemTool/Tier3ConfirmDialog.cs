@@ -229,13 +229,14 @@ namespace CpqSystemTool
                     FontSize = 12,
                     FontWeight = FontWeights.SemiBold
                 });
-                rightMeta.Children.Add(new TextBlock
-                {
-                    Text = c.DaysUnused < 0 ? "  ·  规则命中（非按未使用天数判定）" : $"  ·  已 {c.DaysUnused} 天未使用",
-                    Foreground = dim,
-                    FontSize = 11.5,
-                    Margin = new Thickness(6, 1, 0, 0)
-                });
+                if (c.DaysUnused >= 0)   // 规则命中类（-1 标记）不显示天数栏，避免「规则命中」等内部术语暴露给用户
+                    rightMeta.Children.Add(new TextBlock
+                    {
+                        Text = $"  ·  已 {c.DaysUnused} 天未使用",
+                        Foreground = dim,
+                        FontSize = 11.5,
+                        Margin = new Thickness(6, 1, 0, 0)
+                    });
                 rightMeta.Children.Add(new TextBlock
                 {
                     Text = $"  ·  最后活动 {c.LastActivity:yyyy-MM-dd}",
