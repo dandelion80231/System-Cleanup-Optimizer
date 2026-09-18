@@ -616,6 +616,12 @@ namespace CpqSystemTool
         // MAS 交互式提权脚本超时：30 分钟（用户可能手动操作）
         private const int MAS_TIMEOUT_MS = 1800000;
 
+        // fix-10：钉死官方 get.activated.win 脚本的 SHA256，下载后校验一致才执行，杜绝上游被劫持即执行任意代码。
+        // 哈希获取/更新方式：MAS 官方脚本会随版本更新，更新时须重新下载 https://get.activated.win，
+        // 与 github.com/massgravel/Microsoft-Activation-Scripts 对应版本内容人工核对后，再替换本常量；
+        // 切勿使用未经核对的哈希。哈希记录时间：2026-09-18（脚本 6133 字节）。
+        private const string MasScriptSha256 = "1e64a2bc2132d274e99dc802a79aaea2bddc38b27d5ca93c41dc35636d7a2545";
+
         /// <summary>联网下载并执行官方 MAS 脚本完成对应方式激活，结束后自动刷新状态。</summary>
         public static void ActivateWithMAS(string methodId, Action<string> log)
         {
@@ -627,13 +633,21 @@ namespace CpqSystemTool
             log("=== 启动 Microsoft Activation Scripts (" + methodId + ") ===");
             log("将联网下载并执行官方 MAS 脚本（来源 massgrave.dev，采用 GNU GPL v3 许可）。");
             log("⚠️ 安全提示：此操作会联网下载并执行 get.activated.win 的官方脚本；仅使用官方 HTTPS 地址，"
-                + "执行前请确认网络环境可信。MAS 官方脚本自身带版本/完整性校验（头部含版本号与提交哈希），但本工具调用时未在本地钉死脚本哈希，"
-                + "故官方更新后下载内容会随之变化（依赖 HTTPS 信任官方源）。");
+                + "执行前请确认网络环境可信。脚本下载后先做 SHA256 校验（钉死哈希 " + MasScriptSha256.Substring(0, 16) + "…），"
+                + "哈希不一致将中止执行。");
             log("若弹出用户账户控制，请允许；过程中请按脚本窗口提示操作。");
 
-            // 预置 TLS1.2 兼容老系统；-Command 内用 ScriptBlock 包装以正确传递开关参数
-            string ps = "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;"
-                      + "& ([ScriptBlock]::Create((irm https://get.activated.win))) " + sw;
+            // 预置 TLS1.2 兼容老系统；下载脚本到临时文件 → 本地 SHA256 校验（fix-10 钉死哈希）→ 一致才用 ScriptBlock 执行
+            // -Command 内用 ScriptBlock 包装以正确传递开关参数
+            string ps =
+                  "$ErrorActionPreference='Stop';"
+                + "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;"
+                + "$_tmp=Join-Path $env:TEMP ('mas_'+[guid]::NewGuid().ToString('N')+'.ps1');"
+                + "Invoke-WebRequest -Uri 'https://get.activated.win' -OutFile $_tmp -UseBasicParsing;"
+                + "$_h=(Get-FileHash -LiteralPath $_tmp -Algorithm SHA256).Hash.ToLowerInvariant();"
+                + "if($_h -ne '" + MasScriptSha256 + "'){ Write-Error ('MAS 脚本哈希校验失败：期望 " + MasScriptSha256 + "，实际 '+$_h); Remove-Item -LiteralPath $_tmp -Force -ErrorAction SilentlyContinue; exit 1 };"
+                + "& ([ScriptBlock]::Create((Get-Content -LiteralPath $_tmp -Raw))) " + sw + ";"
+                + "Remove-Item -LiteralPath $_tmp -Force -ErrorAction SilentlyContinue";
 
             try
             {
@@ -642,8 +656,8 @@ namespace CpqSystemTool
                 //    避免依赖 PATH 解析裸 "powershell.exe" 被同名恶意程序劫持（PATH hijacking）；
                 // 2) 继续用 -EncodedCommand（Base64 UTF-16LE）传递脚本，规避 -Command 引号转义陷阱（与 Exec.RunPS 一致）；
                 // 3) 保留 UseShellExecute + Verb=runas 提权，让 MAS 能写入激活信息。
-                // 依赖 HTTPS 信任官方源：MAS 脚本由 get.activated.win 下载，脚本自身头部带「版本号+提交哈希」完整性校验（防篡改）；
-                // 但本工具调用层面未把官方脚本哈希钉死在本地（官方更新后下载内容会变化，行为随之更新）。
+                // 依赖 HTTPS 信任官方源 + 本地 SHA256 钉死校验（fix-10）：脚本由 get.activated.win 下载，
+                // 下载后必须与常量 MasScriptSha256 一致才执行；官方更新脚本后需按注释流程更新常量。
                 var psPath = System.IO.Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
                 var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(ps));
                 var psi = new ProcessStartInfo(psPath,
