@@ -123,10 +123,6 @@ namespace CpqSystemTool
             var defHostL = new Grid();  Grid.SetColumn(defHostL, 2);  defWp.Children.Add(defHostL);    // 一键禁用
             var defHostR = new Grid();  Grid.SetColumn(defHostR, 3);  defWp.Children.Add(defHostR);    // 一键恢复
 
-            // 提前声明（早于下方按钮 RunInBg lambda）：那些闭包传递性捕获 RefreshTpStatus，
-            // 而它用到 _tpAlignOffset——捕获变量必须在 lambda 创建前已赋值（否则 CS0165）。
-            double _tpAlignOffset = 0;
-
             // ===== 篡改防护(TP) 状态区（06 逻辑）=====
             // TP 开时，Windows 会拦截所有外部对 Defender 的运行时修改（含 Set-MpPreference），
             // 只有安全中心 GUI 能手动切换。本区只读 + 跳转，不让用户直接改 TP（改了也无效）。
@@ -216,28 +212,6 @@ namespace CpqSystemTool
             });
             bTempEnable.HorizontalAlignment = HorizontalAlignment.Center;
             tempHostR.Children.Add(bTempEnable);
-
-            // 「篡改防护」方框+状态 与上方「临时禁用 WD」按钮左边缘对齐：
-            // 按钮是列内居中，其左边缘随窗口宽度变化 → 运行时一次性校准（Loaded）+ 仅 resize 时重算，不挂每帧事件。
-            double GetLeftInDefInner(System.Windows.Media.Visual v)
-            {
-                try { return v.TransformToVisual(defInner).Transform(new System.Windows.Point()).X; }
-                catch { return 0; }
-            }
-            defInner.Loaded += (s, e) =>
-            {
-                _tpAlignOffset = Math.Max(0, GetLeftInDefInner(bTempDisable));
-                RefreshTpStatus(true);
-            };
-            defInner.SizeChanged += (s, e) =>
-            {
-                double want = Math.Max(0, GetLeftInDefInner(bTempDisable));
-                if (Math.Abs(want - _tpAlignOffset) > 1)   // 阈值防抖：未变化不重建，避免闪烁
-                {
-                    _tpAlignOffset = want;
-                    RefreshTpStatus(true);
-                }
-            };
 
             // 可复用的后台刷新函数见下方（RefreshTpStatus）
 
@@ -357,9 +331,9 @@ namespace CpqSystemTool
                             return;             // 状态未变 → 保持现有 UI，不重建
                         _lastTpOn = tpOn;
                         tpHost.Children.Clear();
-                        // 单行布局（第 0 列 = 标题 + 方框状态 同层叠加：标题贴卡片左缘，状态左缘=「临时禁用 WD」按钮左缘），
-                        // 第 1 列 = 「打开安全中心」居中（与「临时恢复 WD」对齐）
+                        // 单行 3 列：[Auto] 标题 ｜ [1★] 方框+状态（左对齐，紧跟标题不重叠）｜ [1★]「打开安全中心」居中
                         var row = new Grid { Margin = new Thickness(0, 4, 0, 4) };
+                        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                         var tpLabel = new Emoji.Wpf.TextBlock
@@ -368,7 +342,7 @@ namespace CpqSystemTool
                             Foreground = _textMain,
                             FontSize = 13,
                             FontWeight = FontWeights.SemiBold,
-                            HorizontalAlignment = HorizontalAlignment.Left,
+                            Margin = new Thickness(0, 0, 10, 0),
                             VerticalAlignment = VerticalAlignment.Center
                         };
                         Grid.SetColumn(tpLabel, 0);
@@ -384,15 +358,14 @@ namespace CpqSystemTool
                             Foreground = tpOn ? _warnOrange : _successGreen,
                             FontSize = 12.5,
                             HorizontalAlignment = HorizontalAlignment.Left,
-                            Margin = new Thickness(_tpAlignOffset, 0, 0, 0),   // 与「临时禁用 WD」按钮左边缘对齐（运行时校准）
                             VerticalAlignment = VerticalAlignment.Center
                         };
-                        Grid.SetColumn(tpState, 0);
+                        Grid.SetColumn(tpState, 1);
                         row.Children.Add(tpState);
                         var bOpenSc = Btn("🔗 打开安全中心", false, () => Defender.OpenSecurityCenter());
-                        bOpenSc.HorizontalAlignment = HorizontalAlignment.Center;   // 与「临时恢复 WD」按钮同列居中对齐
+                        bOpenSc.HorizontalAlignment = HorizontalAlignment.Center;   // 右半区居中
                         bOpenSc.VerticalAlignment = VerticalAlignment.Center;
-                        Grid.SetColumn(bOpenSc, 1);
+                        Grid.SetColumn(bOpenSc, 2);
                         row.Children.Add(bOpenSc);
                         tpHost.Children.Add(row);
                         tpHost.Children.Add(new TextBlock
