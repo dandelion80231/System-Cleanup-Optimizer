@@ -416,6 +416,7 @@ namespace CpqSystemTool
         private TextBlock TweaksOutputLine;   // ApplyTweaks 进度日志出口（原静态 outputLine 提升为字段）
         private HashSet<string> TweaksTouched; // 记录用户在状态加载完成前手动改动过的项
         private HashSet<string> TweaksOptimized; // 当前系统实际已处于优化状态的项（用于右侧「已优化」标识）
+        private readonly Dictionary<string, TweakState?> _originalTweakStates = new Dictionary<string, TweakState?>(StringComparer.Ordinal); // fix-3：优化前原始状态（仅首次记录），供"还原所有项"按原值恢复
         private bool _edgeOptimWarnShown; // Edge 优化组策略副作用提示：本会话仅提示一次
 
         private string _tweaksStatusBase = ""; // 窗口底部状态栏提示的“正文”，选中计数自动追加在后
@@ -557,17 +558,25 @@ namespace CpqSystemTool
             ApplyTweaks(desired, "开始优化（" + desired.Count + "项）");
         }
 
-        // "还原所有项" = 二态项全部关闭，三态项全部交还系统默认
+        // "还原所有项" = 按优化前记录的原始状态恢复（fix-3：不再一律二态 Off / 三态 Default）；
+        // 未记录原始值的项保留原行为（二态项 Off、三态项 Default），并在日志中如实提示"使用默认值"。
         private void RestoreAll()
         {
             var desired = new Dictionary<string, TweakState?>();
+            var usedDefault = new HashSet<string>(StringComparer.Ordinal);
             foreach (var kv in TweaksCheckBoxes)
             {
                 var t = Tweaks.All.FirstOrDefault(x => x.Id == kv.Key);
                 if (t == null) continue;
-                desired[kv.Key] = t.IsThreeState ? TweakState.Default : TweakState.Off;
+                if (_originalTweakStates.TryGetValue(kv.Key, out var orig) && orig.HasValue)
+                    desired[kv.Key] = orig.Value;
+                else
+                {
+                    desired[kv.Key] = t.IsThreeState ? TweakState.Default : TweakState.Off;
+                    usedDefault.Add(kv.Key);
+                }
             }
-            ApplyTweaks(desired, "还原所有项");
+            ApplyTweaks(desired, "还原所有项", usedDefault);
         }
 
         private void OtherMenuPopup(Panel anchor)
@@ -667,14 +676,27 @@ namespace CpqSystemTool
 
         /// <summary>统一应用入口：按期望三态应用一组优化项。
         /// desired[id]=null 表示该项不在此次范围（跳过，不改变系统）；
-        /// 三态项按 On/Off/Default 应用，二态项仅 On 时 Enable、Off 时 Disable。</summary>
-        private void ApplyTweaks(Dictionary<string, TweakState?> desired, string label)
+        /// 三态项按 On/Off/Default 应用，二态项仅 On 时 Enable、Off 时 Disable。
+        /// usedDefault：传入"未记录原始值、已按默认值还原"的项集合（fix-3），用于日志如实提示。</summary>
+        private void ApplyTweaks(Dictionary<string, TweakState?> desired, string label, HashSet<string> usedDefault = null)
         {
             // P1 防重入：全局互斥，防止连点或跨模块并发（清理/优化同一时间只允许一个耗时操作）
             if (!OperationLock.TryEnter("优化", out string busyBy))
             {
                 System.Windows.MessageBox.Show(this, "已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                 return;
+            }
+            // fix-3：优化/还原前记录每项当前系统实际状态（仅首次记录，供"还原所有项"按原值恢复）
+            foreach (var kv in desired)
+            {
+                if (kv.Value == null || _originalTweakStates.ContainsKey(kv.Key)) continue;
+                var t = Tweaks.All.FirstOrDefault(x => x.Id == kv.Key);
+                if (t == null) continue;
+                try
+                {
+                    _originalTweakStates[kv.Key] = t.IsThreeState ? (TweakState?)t.GetState3() : (t.State() ? TweakState.On : TweakState.Off);
+                }
+                catch { /* 读取失败则不记录，还原时走"使用默认值"提示路径 */ }
             }
             // 1) 同步勾选框（仅纳入范围且非"系统默认"的项；Default 留待刷新回写）
             foreach (var kv in desired)
@@ -701,6 +723,8 @@ namespace CpqSystemTool
                         if (t == null) { fail++; continue; }
                         try
                         {
+                            if (usedDefault != null && usedDefault.Contains(kv.Key))
+                                bgLog("   [i] " + t.Name + " 未记录优化前原始值，已按默认值" + (t.IsThreeState ? "（系统默认）" : "（关闭）") + "还原，如与原值不符请手动调整");
                             if (t.IsThreeState) t.Apply3(st.Value, bgLog);
                             else if (st == TweakState.On) t.Enable(bgLog);
                             else t.Disable(bgLog);

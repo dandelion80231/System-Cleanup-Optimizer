@@ -43,6 +43,9 @@ namespace CpqSystemTool
 
         private static readonly Action<string> Silent = s => { };
 
+        // fix-3：禁用前记录每项服务的原始启动类型（仅首次），恢复时按原值还原，不再一律恢复为 delayed-auto。
+        private static readonly Dictionary<string, string> _originalStartTypes = new Dictionary<string, string>(StringComparer.Ordinal);
+
         /// <summary>当前是否已禁用（true=禁用）。服务不存在时返回 false。</summary>
         public static bool IsDisabled(string name)
         {
@@ -56,6 +59,29 @@ namespace CpqSystemTool
             return false;
         }
 
+        /// <summary>读取服务当前启动类型，映射为 sc config start= 可用的参数值；读取失败返回 null。</summary>
+        private static string GetCurrentStartType(string name)
+        {
+            string outp = Exec.RunCmdGet(new[] { "sc", "qc", name }, Silent);
+            bool delayed = false;
+            string start = null;
+            foreach (var raw in outp.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var l = raw.Trim();
+                if (l.StartsWith("DELAYED_AUTO_START", StringComparison.OrdinalIgnoreCase) && l.IndexOf("1", StringComparison.Ordinal) >= 0)
+                    delayed = true;
+                else if (l.StartsWith("START_TYPE", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (l.IndexOf("AUTO_START", StringComparison.OrdinalIgnoreCase) >= 0) start = "auto";
+                    else if (l.IndexOf("DEMAND_START", StringComparison.OrdinalIgnoreCase) >= 0) start = "demand";
+                    else if (l.IndexOf("DISABLED", StringComparison.OrdinalIgnoreCase) >= 0) start = "disabled";
+                    else if (l.IndexOf("SYSTEM_START", StringComparison.OrdinalIgnoreCase) >= 0) start = "system";
+                    else if (l.IndexOf("BOOT_START", StringComparison.OrdinalIgnoreCase) >= 0) start = "boot";
+                }
+            }
+            return delayed ? "delayed-auto" : start;
+        }
+
         /// <summary>应用设置：enable=true 恢复，false=禁用。</summary>
         public static void Apply(ServiceEntry e, bool enable, Action<string> log)
         {
@@ -65,10 +91,35 @@ namespace CpqSystemTool
             else log("  [FAIL] " + (enable ? "恢复" : "禁用") + "失败，详见上方输出");
         }
 
-        /// <summary>写入服务的启动类型并顺带启/停。返回 true 表示启动类型已成功写入。</summary>
+        /// <summary>写入服务的启动类型并顺带启/停。返回 true 表示启动类型已成功写入。
+        /// fix-3：禁用前记录原始启动类型；恢复时按原值还原，未记录原始值才回退 delayed-auto 并如实提示。</summary>
         private static bool SetService(string name, bool enable, Action<string> log)
         {
-            string startType = enable ? "delayed-auto" : "disabled";
+            string startType;
+            if (enable)
+            {
+                if (_originalStartTypes.TryGetValue(name, out var orig) && !string.IsNullOrEmpty(orig))
+                {
+                    startType = orig;
+                    log("   [i] 按优化前原始启动类型还原：" + orig);
+                }
+                else
+                {
+                    startType = "delayed-auto";
+                    log("   [!] 未记录该服务优化前原始启动类型，按 delayed-auto 恢复（如需原值请手动调整）");
+                }
+            }
+            else
+            {
+                // 禁用前记录原始启动类型（仅记录首次；读取失败时留空，恢复时走提示路径）
+                if (!_originalStartTypes.ContainsKey(name))
+                {
+                    var cur = GetCurrentStartType(name);
+                    _originalStartTypes[name] = string.IsNullOrEmpty(cur) ? "delayed-auto" : cur;
+                    log("   [i] 已记录优化前启动类型：" + _originalStartTypes[name]);
+                }
+                startType = "disabled";
+            }
             int rc = Exec.RunCmd(new[] { "sc", "config", name, "start=" + startType }, log);
             if (rc != 0)
             {
