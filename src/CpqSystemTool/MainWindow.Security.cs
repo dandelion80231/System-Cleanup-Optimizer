@@ -400,7 +400,6 @@ namespace CpqSystemTool
                         bOpenSc.HorizontalAlignment = HorizontalAlignment.Center;   // 与「临时恢复 WD」按钮同列居中对齐
                         bOpenSc.VerticalAlignment = VerticalAlignment.Center;
                         Grid.SetColumn(bOpenSc, 1);
-                        row.Children.Add(tpState);
                         row.Children.Add(bOpenSc);
                         tpHost.Children.Add(row);
                         tpHost.Children.Add(new TextBlock
