@@ -245,6 +245,24 @@ namespace CpqSystemTool
                                 return;
                             }
                         }
+                        else if (methodId == "windows" || methodId == "win" || methodId == "office")
+                        {
+                            // fix-9：此前 Windows/Office 激活直接执行、无确认弹窗（与 MAS 路径不一致）。
+                            // 增加二次确认，如实说明将使用第三方 KMS 服务器 kms.03k.org 及潜在风险。
+                            var what = (methodId == "office") ? "Office" : "Windows";
+                            var msg = "即将通过第三方 KMS 服务器 kms.03k.org 对【" + what + "】执行激活。\n\n"
+                                    + "• 需要联网访问 kms.03k.org\n"
+                                    + "• 将安装批量授权密钥并设置 KMS 服务器，激活状态有效期约 180 天，需定期续期\n"
+                                    + "• 使用第三方 KMS 服务器存在授权合规与服务器可用性风险\n\n"
+                                    + "是否继续？";
+                            if (System.Windows.MessageBox.Show(this, msg, "KMS 激活确认",
+                                    System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning)
+                                != System.Windows.MessageBoxResult.Yes)
+                            {
+                                b.Background = _isDarkMode ? Brushes.Transparent : _bgCard;
+                                return;
+                            }
+                        }
 
                         pb.Visibility = Visibility.Visible;
                         // 激活日志写入本页共享纯文本日志框 sharedLog（不再走彩色富日志）
