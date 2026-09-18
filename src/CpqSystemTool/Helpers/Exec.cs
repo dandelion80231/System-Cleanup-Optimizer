@@ -438,15 +438,14 @@ namespace CpqSystemTool
             catch (Exception ex) { log?.Invoke("  [!] 执行 VBS " + args[0] + " 失败: " + ex.Message); return ""; }
         }
 
-        /// <summary>构建 cscript 进程参数：cscript //nologo //B "脚本路径" [参数...]。</summary>
+        /// <summary>构建 cscript 进程参数：cscript //nologo //B "脚本路径" [参数...]。
+        /// fix-7：改用 ProcessStartInfo.ArgumentList 传参，避免手工字符串转义（原 QuoteCmd 对末尾反斜杠路径存在缺陷）。</summary>
         private static ProcessStartInfo BuildVbsPsi(string[] args, bool redirect)
         {
             string vbsPath = args[0];
             if (!Path.IsPathRooted(vbsPath))
                 vbsPath = Path.Combine(Environment.SystemDirectory, vbsPath);  // slmgr.vbs 位于 System32（64 位进程不重定向）
-            var cmd = new StringBuilder("//nologo //B ").Append(QuoteCmd(vbsPath));
-            for (int i = 1; i < args.Length; i++) cmd.Append(' ').Append(QuoteCmd(args[i]));
-            return new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cscript.exe"), cmd.ToString())
+            var psi = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cscript.exe"))
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
@@ -456,6 +455,11 @@ namespace CpqSystemTool
                 // p.StandardOutput.BaseStream 原始字节，再用 DecodeCjk 自适应解码（UTF-8 优先、失败回退 GBK），
                 // 因为 cscript/slmgr/ospp 在中文 Windows 实际输出 GBK/CP936，设 UTF-8 反而必乱码。
             };
+            psi.ArgumentList.Add("//nologo");
+            psi.ArgumentList.Add("//B");
+            psi.ArgumentList.Add(vbsPath);
+            for (int i = 1; i < args.Length; i++) psi.ArgumentList.Add(args[i]);
+            return psi;
         }
 
         /// <summary>构建命令行参数字符串（跳过 args[0] 程序名）。</summary>
@@ -480,13 +484,17 @@ namespace CpqSystemTool
                 || s.IndexOf('>') >= 0 || s.IndexOf('%') >= 0;
             if (!needsQuote) return s;
             string body = s.Replace("\"", "\"\"");
-            // 修复：路径以反斜杠结尾（如 "C:\my dir\"）时，末尾 \" 会被解析成转义的字面双引号，
-            // 闭合引号丢失、后续参数被吞进同一个字符串。按 Windows CRT 规则：结尾 n 个反斜杠需写成 2n+1 个，
-            // 其中 2n 个还原为 n 个字面反斜杠，第 2n+1 个与紧跟其后的闭合引号组成转义对，使引号仍起闭合作用。
+            // fix-7：修正末尾反斜杠转义（原实现写成 trailing*2+1，逻辑缺陷）。
+            // Windows CRT/CommandLineToArgvW 规则：闭合引号前的连续反斜杠数为
+            //   - 偶数 2n：生成 n 个字面反斜杠，引号正常闭合；
+            //   - 奇数 2n+1：生成 n 个字面反斜杠，但多出的 1 个反斜杠会把闭合引号转义成字面引号，
+            //     参数无法闭合，后续内容被吞进同一参数。
+            // 原实现把末尾 n 个反斜杠替换为 2n+1 个（奇数），对 "C:\my dir\" 拼出 "C:\my dir\\\"，
+            // 闭合引号被转义 → 路径解析错误。正确做法：加倍为 2n 个（偶数），闭合引号前的反斜杠保持偶数。
             int trailing = 0;
             for (int i = body.Length - 1; i >= 0 && body[i] == '\\'; i--) trailing++;
             if (trailing > 0)
-                body = body.Substring(0, body.Length - trailing) + new string('\\', trailing * 2 + 1);
+                body = body.Substring(0, body.Length - trailing) + new string('\\', trailing * 2);
             return "\"" + body + "\"";
         }
     }
