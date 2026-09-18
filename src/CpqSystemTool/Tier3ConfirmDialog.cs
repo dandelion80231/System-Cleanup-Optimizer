@@ -231,7 +231,7 @@ namespace CpqSystemTool
                 });
                 rightMeta.Children.Add(new TextBlock
                 {
-                    Text = $"  ·  已 {c.DaysUnused} 天未使用",
+                    Text = c.DaysUnused < 0 ? "  ·  规则命中（非按未使用天数判定）" : $"  ·  已 {c.DaysUnused} 天未使用",
                     Foreground = dim,
                     FontSize = 11.5,
                     Margin = new Thickness(6, 1, 0, 0)
