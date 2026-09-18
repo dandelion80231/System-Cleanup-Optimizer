@@ -188,6 +188,7 @@
    - `--changelog` 必填（含本版更新日志内部 HTML：`<blockquote>`+`<h4>`+`<ul>`），脚本包成 `chlog-panel` 插右栏——这是旧 4 个脚本全漏的一步。
    - 默认 dry-run；确认无误加 `--apply`（先备份再写）。写文件前做完整契约自检，失败绝不写入。
    - 自动同步 `version.json` / `versions.json`（新版本 `is_latest=true`）。
+   - **（2026-09-18 R2 化）脚本默认 url = R2 直链 `https://dl.cab.dpdns.org/<exe>`**（面板按钮 + version.json.url + JSON-LD downloadUrl 均指它；可用 `--url` 覆盖）；自动同步 download.html 的「全部版本 v1.01 – vX」措辞、JSON-LD softwareVersion、导航 CTA「下载 vX」。`changelog.html` 需手工补 `.tl-item`（Step 3）+ meta/CTA 措辞（index.html 的 JSON-LD downloadUrl 也已指 dl 域，勿改回站点域——Pages 不存 exe）。
    - ❌ 严禁 `tools/_deprecated/` 下 `add_v117_only.py`/`add_version_panel.py`/`create_v117_template.py`/`sync_changelog.py`（已实测全破坏布局）。
    - 历史版本英文包名逐步改中文名（重命名 site-dist 旧 exe 并同步旧面板链接）。
 3. **更新 `changelog.html`（单一来源，禁止手抄）**：时间线由 `CHANGELOG.md` 经 `tools/sync_changelog_to_site.py` 重新生成，**不再手抄** `.tl-item` 内容。新流程：

@@ -1,0 +1,12 @@
+<blockquote>相对 v1.20：无新增功能；本版为版本晋升，将 v1.20 之后补入的加固与打磨（路径定位、日志、布局、文件夹说明）并入正式基线。</blockquote>
+<h4>♻️ 版本晋升</h4>
+<ul>
+<li>无新增功能：功能内容与 v1.20 一致（Office 部署卡片化 / 多线程下载 / 数据目录合并 / 全驱清理运行时保护等均已在 v1.20 交付）。</li>
+<li>加固并入正式基线：7 处路径定位加固（Assembly.Location → AppPaths.ExeDir / Environment.ProcessPath，单文件 IL3000 修复）；日志扫尾（CLIXML 噪声）；注册表双根（HKLM/HKCU）读写与删除重构为按根独立异常处理。</li>
+<li>打磨并入正式基线：工具栏五星等宽布局；文件夹说明.txt 更新至 v9。</li>
+<li>WebView2Loader.dll 并排分发（缺失时自动从 NuGet 恢复，不嵌入 exe）。</li>
+</ul>
+<h4>📌 版本元数据</h4>
+<ul>
+<li>APP_VERSION → v1.21；csproj 版本 1.0.20.0 → 1.0.21.0（四处一致）；CHANGELOG 新增本版记录。</li>
+</ul>

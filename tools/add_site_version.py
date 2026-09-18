@@ -113,6 +113,7 @@ def main():
     ap.add_argument("--size", required=True, type=int, help="exe 字节数")
     ap.add_argument("--sha256", required=True, help="64 位十六进制")
     ap.add_argument("--exe", default=None, help="exe 文件名，默认 系统清理与优化工具_<version>.exe")
+    ap.add_argument("--url", default=None, help="下载按钮/version.json 的链接；默认 R2 直链 https://dl.cab.dpdns.org/<exe>")
     ap.add_argument("--changelog", required=True, help="含本版更新日志内部 HTML 的文件（<blockquote>+<h4>+<ul>）")
     ap.add_argument("--apply", action="store_true", help="真正写入（默认 dry-run）")
     ap.add_argument("--download-html", default=DEF_DL)
@@ -132,6 +133,7 @@ def main():
     if args.size <= 0:
         fail("--size 必须为正")
     exe = args.exe or ("系统清理与优化工具_%s.exe" % ver)
+    url = args.url or ("https://dl.cab.dpdns.org/" + exe)
     if not os.path.isfile(args.changelog):
         fail("changelog 文件不存在: %s" % args.changelog)
     body = open(args.changelog, encoding="utf-8").read().strip()
@@ -174,9 +176,14 @@ def main():
         r'<div class="chlog-panel" data-panel="\1"\2>',
         html, count=1)
     html = re.sub(r'(<h3 class="dl-ver"(?: data-page-node-id="[^"]*")?>[^<]*<span[^>]*>)（最新 · ', r"\1（", html, count=1)
-    # 顶部「本站直接托管 v1.01 – vX.XX 全部 exe」文案
-    html = re.sub(r'本站直接托管 v1\.01\s*[–-]\s*v1\.\d+ 全部 exe',
-                  "本站直接托管 v1.01 – %s 全部 exe" % ver, html, count=1)
+    # 顶部「全部版本 v1.01 – vX.XX 长期保留…」文案（R2 时代措辞；历史正则「本站直接托管」已废弃）
+    html = re.sub(r'全部版本 v1\.01\s*[–-]\s*v1\.\d+', "全部版本 v1.01 – %s" % ver, html)
+    html = re.sub(r'v1\.01\s*[–-]\s*v1\.\d+', "v1.01 – %s" % ver, html)  # title/meta/og/twitter/JSON-LD 全量
+    # JSON-LD：softwareVersion / downloadUrl 指向新版 R2 直链
+    html = re.sub(r'"softwareVersion"\s*:\s*"[^"]*"', '"softwareVersion": "%s"' % ver, html, count=1)
+    html = re.sub(r'"downloadUrl"\s*:\s*"[^"]*"', '"downloadUrl": "%s"' % url, html, count=1)
+    # 导航 CTA「下载 v1.XX」→ 新版
+    html = re.sub(r'(class="nav-cta"[^>]*>下载 )v1\.\d+(</a>)', r"\1%s\2" % ver, html)
 
     # ---- 2) 插入三处新版本 ----
     tab_block = ('          <button class="dl-tab active" role="tab" aria-selected="true" '
@@ -185,9 +192,9 @@ def main():
         '            <div class="dl-panel active" role="tabpanel" id="panel-%s" data-panel="%s">\n'
         '              <h3 class="dl-ver">下载 %s <span style="font-size:14px;opacity:.75;font-weight:500;">（最新 · %s · %.2f MB）</span></h3>\n'
         '              <p class="meta"><span>📦 单文件 exe</span><span>💾 %.2f MB</span><span>🪟 Win 10 / 11</span><span>🔓 开源免费</span></p>\n'
-        '              <a class="btn btn-primary" href="./%s" download>⬇️ 下载 %s</a>\n'
+        '              <a class="btn btn-primary" href="%s" download>⬇️ 下载 %s</a>\n'
         '              <div class="hash">SHA256: %s</div>\n'
-        '            </div>' % (ver, ver, ver, args.date, size_mb, size_mb, exe, exe, args.sha256))
+        '            </div>' % (ver, ver, ver, args.date, size_mb, size_mb, url, exe, args.sha256))
     chlog_block = (
         '              <div class="chlog-panel active" data-panel="%s">\n'
         '                <div class="chg-body">\n%s\n'
@@ -205,7 +212,7 @@ def main():
         vj = json.load(open(args.version_json, encoding="utf-8"))
         vj.update({
             "version": ver, "date": args.date, "name": exe,
-            "url": "https://cpq-system-tool.pages.dev/%s" % exe,
+            "url": url,
             "size": args.size, "sha256": args.sha256,
         })
         ver_json_changed = True
