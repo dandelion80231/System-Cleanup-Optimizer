@@ -324,7 +324,7 @@ namespace CpqSystemTool
         /// <summary>
         /// 下载后完整性/可信性校验（针对可执行安装包 .exe/.msi）：
         /// 1) 数字签名（Authenticode）验证 —— 无需预设哈希，即可发现文件被篡改/损坏；
-        ///    - 有效 → 通过；未签名 → 仅警告（保持改动前放行行为）；无效 → 默认警告放行，StrictSignatureCheck=true 时拒绝。
+        ///    - 有效 → 通过；未签名 → 仅警告（保持改动前放行行为）；无效 → 默认拒绝（fix-2：StrictSignatureCheck 默认 true），显式关闭开关后才警告放行。
         /// 2) 若配置了 SoftwareDef.Sha256，哈希校验已在 Download() 内完成（此处不重复）。
         /// 非 .exe/.msi 文件（如 .zip 容器）不做签名校验，直接放行。
         /// </summary>
@@ -1203,10 +1203,12 @@ namespace CpqSystemTool
     internal static class SoftwareInstall
     {
         /// <summary>
-        /// 严格签名校验开关：默认 false（非严格 —— 数字签名无效的安装包仅警告并继续，保持改动前放行行为）。
-        /// 设为 true 时，签名无效的 .exe/.msi 安装包将被拒绝（防篡改更强，但可能拦截个别使用非主流 CA 签名的合法安装包）。
+        /// 严格签名校验开关：默认 true（严格 —— 数字签名无效（Invalid）的安装包将被拒绝安装）。
+        /// 【fix-2】原默认 false 会在签名校验失败时仅警告并继续放行，导致签名不通过也能安装。
+        /// 现在默认严格拒绝；如需保留宽松模式，须由用户在此显式关闭开关（显式确认后才会放行）。
+        /// 关闭后签名无效的安装包仅警告并继续（可能拦截到非法/篡改包，谨慎使用）。
         /// </summary>
-        public static bool StrictSignatureCheck = false;
+        public static bool StrictSignatureCheck = true;
 
         /// <summary>兜底分类：软件未标注分类或自定义条目缺 category 字段时使用的默认分类。</summary>
         public const string DefaultCategory = "其他";
