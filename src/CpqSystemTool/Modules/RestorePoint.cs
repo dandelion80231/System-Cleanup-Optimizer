@@ -6,7 +6,9 @@ namespace CpqSystemTool
 {
     /// <summary>
     /// 系统还原点：优化/修改前的安全兜底。
-    /// 对应 ZyperWin++ 的「恢复中心」——每次优化前自动创建还原点，不满意可一键还原。
+    /// fix-11：原头注声称「每次优化前自动创建还原点」与实现不符——当前仅在「系统工具」页点击
+    /// 「创建还原点」按钮时手动调用 RestorePoint.Create（见 MainWindow.SystemTools.cs），
+    /// 清理/优化流程并未自动调用。此注释已修正为如实描述。
     /// 底层使用 PowerShell 的 Checkpoint-Computer / Get-ComputerRestorePoint / Restore-Computer。
     /// </summary>
     internal static class RestorePoint
