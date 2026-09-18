@@ -245,16 +245,28 @@ namespace CpqSystemTool
             // 优化按钮：优化完成后在 UI 线程自动重新分析内存，让「内存使用拆解」视图实时刷新
             // （RAMMap 清理后即可瞬间看到变化；此前缺少 onDoneUi 回调，视图一直冻结，误以为优化无效）。
             Action reanalyze = () => DoMemoryAnalyze(pb, applyUi);
-            btnPurge.Click += (s, e) => RunInBg(optLog, l =>
+            btnPurge.Click += (s, e) =>
             {
-                string r = MemoryAnalyzer.OptimizePurgeStandby();
-                foreach (var line in r.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) l(line);
-            }, "已清空备用列表", reanalyze);
-            btnEmpty.Click += (s, e) => RunInBg(optLog, l =>
+                // fix-CD：此前点击直接执行（仅默认收起的风险文案）。增加确认，说明清缓存本质与缺页延迟影响。
+                if (MessageBox.Show("确定要清空备用列表（Standby）吗？\n\n• 本质是把备用缓存转为即时空闲内存，效果为临时\n• Windows 再次访问文件时将产生缺页延迟（重新从磁盘读取）\n\n是否继续？", "确认操作", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                    return;
+                RunInBg(optLog, l =>
+                {
+                    string r = MemoryAnalyzer.OptimizePurgeStandby();
+                    foreach (var line in r.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) l(line);
+                }, "已清空备用列表", reanalyze);
+            };
+            btnEmpty.Click += (s, e) =>
             {
-                string r = MemoryAnalyzer.OptimizeEmptyWorkingSets();
-                foreach (var line in r.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) l(line);
-            }, "已尝试清空工作集", reanalyze);
+                // fix-CD：此前点击直接执行（仅默认收起的风险文案）。增加确认，说明清缓存本质与缺页延迟影响。
+                if (MessageBox.Show("确定要清空所有进程工作集吗？\n\n• 本质是让进程内存回写磁盘，效果为临时\n• 进程再次访问内存时将产生缺页延迟（重新从磁盘读取）\n• 可能短暂影响正在运行的程序性能\n\n是否继续？", "确认操作", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                    return;
+                RunInBg(optLog, l =>
+                {
+                    string r = MemoryAnalyzer.OptimizeEmptyWorkingSets();
+                    foreach (var line in r.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) l(line);
+                }, "已尝试清空工作集", reanalyze);
+            };
 
             // 初次分析（后台拉取，不阻塞 UI）
             DoMemoryAnalyze(pb, applyUi);
