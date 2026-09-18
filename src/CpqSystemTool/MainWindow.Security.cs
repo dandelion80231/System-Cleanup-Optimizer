@@ -329,8 +329,10 @@ namespace CpqSystemTool
                 catch { return; }
                 double col0 = _tpLabelRef.ActualWidth + 10;   // Auto 列 = 标题宽 + 右 margin
                 double col2Start = (_tpRowRef.ActualWidth + col0) / 2;
+                // 注意：col2Start 常大于目标 xBtn（窗口多数宽度下），左边距必须允许负值（WPF 支持，child 向左画出 cell），
+                // 否则 Math.Max(0,·) 钳到 0 后按钮留在列起点 → 视觉上偏右（实测 12px 量级）。
                 _bOpenScRef.HorizontalAlignment = System.Windows.HorizontalAlignment.Left;
-                _bOpenScRef.Margin = new System.Windows.Thickness(Math.Max(0, xBtn - col2Start), 0, 0, 0);
+                _bOpenScRef.Margin = new System.Windows.Thickness(xBtn - col2Start, 0, 0, 0);
             }
 
             // 每次进页首次 + 操作 onDone + 重进页 + 定时轮询 都调它
