@@ -112,20 +112,16 @@ namespace CpqSystemTool
             defToggles.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             defInner.Children.Add(defToggles);
 
-            // ===== 一键禁用/恢复（双路同步 Policies + ClearAllPolicies）=====
-            // 等宽均分整行：Grid(2×★Star) + 按钮居中、保持原始大小（与安全防护更新按钮行一致）
+            // ===== 禁用/恢复按钮行（4 等宽列）：左 2 = 临时禁用/临时恢复（仅 Set-MpPreference，不动 Policies 注册表，
+            // 重启自动还原；比一键更轻，适合"让位给某安装程序"场景），右 2 = 一键禁用/一键恢复（双路同步 Policies + ClearAllPolicies）=====
+            // 每列一个 host 单元格：重建（defWp 旧实现）只清自己两个 host，不碰相邻的临时按钮。
             var defWp = new Grid { Margin = new Thickness(0, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Stretch };
-            defWp.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            defWp.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            for (int i = 0; i < 4; i++) defWp.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             defInner.Children.Add(defWp);
-
-            // ===== 临时禁用/恢复（03/04 逻辑：仅 Set-MpPreference，不动 Policies 注册表）=====
-            // 定位：比"一键禁用"更轻——适合"让位给某安装程序"场景，重启后自动还原，无需手动恢复。
-            // 视觉上紧跟「一键禁用/恢复」成行（defWp 之下），次级样式（非 accent 填充）。
-            var tempBar = new Grid { Margin = new Thickness(0, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Stretch };
-            tempBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            tempBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            defInner.Children.Add(tempBar);
+            var tempHostL = new Grid(); Grid.SetColumn(tempHostL, 0); defWp.Children.Add(tempHostL);   // 临时禁用
+            var tempHostR = new Grid(); Grid.SetColumn(tempHostR, 1); defWp.Children.Add(tempHostR);   // 临时恢复
+            var defHostL = new Grid();  Grid.SetColumn(defHostL, 2);  defWp.Children.Add(defHostL);    // 一键禁用
+            var defHostR = new Grid();  Grid.SetColumn(defHostR, 3);  defWp.Children.Add(defHostR);    // 一键恢复
 
             // 提前声明（早于下方按钮 RunInBg lambda）：那些闭包传递性捕获 RefreshTpStatus，
             // 而它用到 _tpAlignOffset——捕获变量必须在 lambda 创建前已赋值（否则 CS0165）。
@@ -143,7 +139,7 @@ namespace CpqSystemTool
             // 填充规则：哪个按钮代表"当前实际状态"，哪个就填充；点击后最后操作的按钮也填充
             string _lastDefAction = null;
             // 上一次读到的 TP 状态（供 RefreshTpStatus(force:false) 判断是否真的变化，避免无谓重建 UI）。
-            // 声明位置须早于下方 tempBar 按钮闭包（那里会调用 RefreshTpStatus）——局部变量作用域自声明处起。
+            // 声明位置须早于下方临时禁用/恢复按钮闭包（那里会调用 RefreshTpStatus）——局部变量作用域自声明处起。
             bool? _lastTpOn = null;
             bool ShouldFillDef(string actionKey, bool stateDefault)
             {
@@ -154,7 +150,8 @@ namespace CpqSystemTool
             void RebuildDefenderButtons()
             {
                 bool disabled = Defender.IsDisabled();
-                defWp.Children.Clear();
+                defHostL.Children.Clear();
+                defHostR.Children.Clear();
                 var bDisable = Btn("✘ 一键禁用 WD", ShouldFillDef("disable", disabled), () =>
                 {
                     // 危险操作确认
@@ -172,8 +169,7 @@ namespace CpqSystemTool
                     RunInBg(log, Defender.Disable, "已禁用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); });
                 });
                 bDisable.HorizontalAlignment = HorizontalAlignment.Center;
-                Grid.SetColumn(bDisable, 0);
-                defWp.Children.Add(bDisable);
+                defHostL.Children.Add(bDisable);
                 var bEnable = Btn("✔ 一键恢复 WD", ShouldFillDef("restore", !disabled), () =>
                 {
                     if (!OperationLock.TryEnter("一键恢复 Defender", out string busyBy))
@@ -187,11 +183,10 @@ namespace CpqSystemTool
                     RunInBg(log, Defender.Enable, "已启用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); });
                 });
                 bEnable.HorizontalAlignment = HorizontalAlignment.Center;
-                Grid.SetColumn(bEnable, 1);
-                defWp.Children.Add(bEnable);
+                defHostR.Children.Add(bEnable);
             }
 
-            // ===== 临时禁用/恢复按钮（挂到已声明的 tempBar） =====
+            // ===== 临时禁用/恢复按钮（挂到上方 4 列按钮行的前 2 列 host） =====
             var bTempDisable = Btn("🔒 临时禁用 WD", false, () =>
             {
                 // fix-CA：此前点击直接执行、无确认弹窗（与「一键禁用 WD」不一致）。增加确认，
@@ -207,8 +202,7 @@ namespace CpqSystemTool
                 RunInBg(log, Defender.TemporaryDisable, "已临时禁用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); });
             });
             bTempDisable.HorizontalAlignment = HorizontalAlignment.Center;
-            Grid.SetColumn(bTempDisable, 0);
-            tempBar.Children.Add(bTempDisable);
+            tempHostL.Children.Add(bTempDisable);
 
             var bTempEnable = Btn("🔓 临时恢复 WD", false, () =>
             {
@@ -221,8 +215,7 @@ namespace CpqSystemTool
                 RunInBg(log, Defender.TemporaryEnable, "已临时恢复 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); });
             });
             bTempEnable.HorizontalAlignment = HorizontalAlignment.Center;
-            Grid.SetColumn(bTempEnable, 1);
-            tempBar.Children.Add(bTempEnable);
+            tempHostR.Children.Add(bTempEnable);
 
             // 「篡改防护」方框+状态 与上方「临时禁用 WD」按钮左边缘对齐：
             // 按钮是列内居中，其左边缘随窗口宽度变化 → 运行时一次性校准（Loaded）+ 仅 resize 时重算，不挂每帧事件。
