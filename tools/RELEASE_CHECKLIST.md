@@ -228,7 +228,7 @@
 
 **架构变更**：exe 不再托管于 Cloudflare Pages（重新部署会整树替换、旧版 exe 消失的根因）。
 - **历史版本 v1.01–v1.19 + 当前版本 exe 全部存 R2 桶 `mvp`**（对象键 = 中文文件名 `系统清理与优化工具_v1.XX.exe`），
-  公开直链 `https://pub-728749f7c2ea45ed909c38f4c489ba5d.r2.dev/<对象键>`（托管域，已开启 public bucket）
+  公开直链 `https://dl.cab.dpdns.org/<对象键>`（自定义域通道，带 CF 缓存；生产级）
 - **Pages 只托管 HTML/JS/CSS/JSON**（site-dist 不再含 exe；upload batch 会丢中文键大文件——已验证）
 - 发版清单新增：
   1. **R2 上传新 exe**：`PUT https://api.cloudflare.com/client/v4/accounts/{ACCT}/r2/buckets/mvp/objects/{urlencode(中文键)}`
