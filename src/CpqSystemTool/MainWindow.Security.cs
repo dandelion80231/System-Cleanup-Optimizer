@@ -190,6 +190,10 @@ namespace CpqSystemTool
             // ===== 临时禁用/恢复按钮（挂到已声明的 tempBar） =====
             var bTempDisable = Btn("🔒 临时禁用 WD", false, () =>
             {
+                // fix-CA：此前点击直接执行、无确认弹窗（与「一键禁用 WD」不一致）。增加确认，
+                // 说明临时失去实时防护、重启后自动还原。
+                if (MessageBox.Show("确定要临时禁用 Windows Defender 吗？\n\n• 临时失去实时病毒防护\n• 仅通过 Set-MpPreference 调整，不修改策略注册表\n• 重启或执行「临时恢复 WD」后自动还原\n\n是否继续？", "确认操作", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                    return;
                 if (!OperationLock.TryEnter("临时禁用 Defender", out string busyBy))
                 {
                     MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
