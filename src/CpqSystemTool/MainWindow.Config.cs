@@ -1386,46 +1386,31 @@ namespace CpqSystemTool
 
 
 
-                                    var retry = MainWindow.TryLoadImagePublic(dlg.FileName);
-
-
-
-                                    if (retry != null)
-
-
-
+                                    // 安装成功：无论当前进程能否立即加载，先保存图片设置（重启工具/电脑后原生通道即可自动生效）
+                                    try
                                     {
-
-
-
-                                        // Q42：背景线程不再直接写 _backgroundSettings/调 Save（与 UI 线程并发读写→竞争），移入 Dispatcher.Invoke 内。
-                                        try
+                                        Dispatcher.Invoke(() =>
                                         {
-                                            Dispatcher.Invoke(() =>
-                                            {
-                                                _backgroundSettings.DarkPath = dlg.FileName;
-                                                SaveBackgroundSettings();
-                                                refreshThumbs();
-                                                ApplyShellColors();
-                                            });
-                                        }
-                                        catch { /* 窗口已关闭，忽略 */ }
-
-
-
-                                        l("[OK] WebP 解码器已安装，背景已自动应用");
-
-
-
-                                        return;
-
-
-
+                                            _backgroundSettings.DarkPath = dlg.FileName;
+                                            SaveBackgroundSettings();
+                                            InvalidateConfigCache();
+                                        });
                                     }
-
-
-
-                                    l("[FAIL] 解码器已安装但该图片仍无法加载（文件可能损坏）");
+                                    catch { /* 窗口已关闭，忽略 */ }
+                                    var retry = MainWindow.TryLoadImagePublic(dlg.FileName);
+                                    if (retry != null)
+                                    {
+                                        try { Dispatcher.Invoke(() => { refreshThumbs(); ApplyShellColors(); }); }
+                                        catch { /* 窗口已关闭，忽略 */ }
+                                        l("[OK] WebP 解码器已安装，背景已自动应用");
+                                    }
+                                    else
+                                    {
+                                        // 新解码器对当前进程不可见（WIC 编解码器目录按进程缓存，装完需重启进程才认得）
+                                        l("[OK] WebP 解码器安装完成。当前会话暂无法立即加载新解码器的图片（属正常现象）。");
+                                        l("       图片设置已保存：重新打开本工具或重启电脑后自动生效。");
+                                    }
+                                    return;
 
 
 
@@ -1845,46 +1830,31 @@ namespace CpqSystemTool
 
 
 
-                                    var retry = MainWindow.TryLoadImagePublic(dlg.FileName);
-
-
-
-                                    if (retry != null)
-
-
-
+                                    // 安装成功：无论当前进程能否立即加载，先保存图片设置（重启工具/电脑后原生通道即可自动生效）
+                                    try
                                     {
-
-
-
-                                        // Q42：背景线程不再直接写 _backgroundSettings/调 Save（与 UI 线程并发读写→竞争），移入 Dispatcher.Invoke 内。
-                                        try
+                                        Dispatcher.Invoke(() =>
                                         {
-                                            Dispatcher.Invoke(() =>
-                                            {
-                                                _backgroundSettings.LightPath = dlg.FileName;
-                                                SaveBackgroundSettings();
-                                                refreshThumbs();
-                                                ApplyShellColors();
-                                            });
-                                        }
-                                        catch { /* 窗口已关闭，忽略 */ }
-
-
-
-                                        l("[OK] WebP 解码器已安装，背景已自动应用");
-
-
-
-                                        return;
-
-
-
+                                            _backgroundSettings.LightPath = dlg.FileName;
+                                            SaveBackgroundSettings();
+                                            InvalidateConfigCache();
+                                        });
                                     }
-
-
-
-                                    l("[FAIL] 解码器已安装但该图片仍无法加载（文件可能损坏）");
+                                    catch { /* 窗口已关闭，忽略 */ }
+                                    var retry = MainWindow.TryLoadImagePublic(dlg.FileName);
+                                    if (retry != null)
+                                    {
+                                        try { Dispatcher.Invoke(() => { refreshThumbs(); ApplyShellColors(); }); }
+                                        catch { /* 窗口已关闭，忽略 */ }
+                                        l("[OK] WebP 解码器已安装，背景已自动应用");
+                                    }
+                                    else
+                                    {
+                                        // 新解码器对当前进程不可见（WIC 编解码器目录按进程缓存，装完需重启进程才认得）
+                                        l("[OK] WebP 解码器安装完成。当前会话暂无法立即加载新解码器的图片（属正常现象）。");
+                                        l("       图片设置已保存：重新打开本工具或重启电脑后自动生效。");
+                                    }
+                                    return;
 
 
 
