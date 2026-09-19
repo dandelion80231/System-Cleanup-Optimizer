@@ -16,7 +16,8 @@ param(
     [switch]$SelfContained = $false,
     [switch]$Folder = $false,
     [switch]$Zip = $false,
-    [switch]$KeepPdb = $false   # P7: 保留 .pdb（默认剥离调试符号，公开分发不带 2.8MB 符号文件）
+    [switch]$KeepPdb = $false,  # P7: 保留 .pdb（默认剥离调试符号，公开分发不带 2.8MB 符号文件）
+    [switch]$StripDupWebView2Loader = $false # P8: 移除 runtimes/ 下冗余 WebView2Loader.dll（默认关，需 smoke-test）
 )
 
 $ErrorActionPreference = "Stop"
@@ -135,6 +136,21 @@ if (-not $KeepPdb) {
         foreach ($p in $pdbs) { Remove-Item $p.FullName -Force; Write-Host ("[P7] 已删除符号文件: " + $p.FullName) }
     } else {
         Write-Host "[P7] 无 .pdb 需删除。"
+    }
+}
+
+# ===== P8：可选移除 runtimes/ 下冗余的 WebView2Loader.dll =====
+# 单文件发布会把 native 依赖放到 app 基目录（顶层 WebView2Loader.dll），同时 NuGet 的 RID
+# 资产又留在 runtimes\<rid>\native\WebView2Loader.dll，形成两份。运行时按名加载顶层那份，
+# runtimes/ 那份属冗余（约 1.5MB）。删除它安全，但无法在本环境离线 smoke-test WebView2
+# 是否仍能加载，故默认【关闭】；确认顶层加载无误后再显式传 -StripDupWebView2Loader 启用。
+if ($StripDupWebView2Loader) {
+    $dup = Get-ChildItem $outDir -Recurse -Filter WebView2Loader.dll -File -ErrorAction SilentlyContinue |
+           Where-Object { $_.FullName -like "*runtimes*native\WebView2Loader.dll" }
+    if ($dup) {
+        foreach ($d in $dup) { Remove-Item $d.FullName -Force; Write-Host ("[P8] 已删除冗余 WebView2Loader: " + $d.FullName) }
+    } else {
+        Write-Host "[P8] 未找到 runtimes/ 下冗余 WebView2Loader.dll，跳过。"
     }
 }
 
