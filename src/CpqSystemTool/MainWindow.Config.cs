@@ -1327,7 +1327,14 @@ namespace CpqSystemTool
 
 
 
-                    var testImg = MainWindow.TryLoadImagePublic(dlg.FileName);
+                    string picked = dlg.FileName;
+                    string ext0 = System.IO.Path.GetExtension(picked).ToLowerInvariant();
+                    // [Q22] webp 且系统无原生 WebP 解码器时，同步首图取图会触发 pwsh 转码（最长 ~15s）冻结 UI。
+                    // 该慢路径强制 testImg=null，直接落入下方已有后台通道（安装 WebP 解码器 + 后台取图应用）；
+                    // 其余格式 / 已有原生 webp 解码器 → 同步取图毫秒级，保持原路径不变。
+                    var testImg = (ext0 == ".webp" && !MainWindow.IsWebpCodecAvailable())
+                        ? null
+                        : MainWindow.TryLoadImagePublic(picked);
 
 
 
@@ -1615,7 +1622,8 @@ namespace CpqSystemTool
 
 
 
-                BgImage.Opacity = _backgroundSettings.DarkOpacity;
+                // [Q39] 仅深色模式下 BgImage 才渲染深色背景图；浅色模式误改会错误驱动可见图层（与 L2072 浅色滑块已加 _isDarkMode 判断的模式对齐）
+                if (_isDarkMode) BgImage.Opacity = _backgroundSettings.DarkOpacity;
 
 
 
@@ -1779,7 +1787,14 @@ namespace CpqSystemTool
 
 
 
-                    var testImg = MainWindow.TryLoadImagePublic(dlg.FileName);
+                    string picked = dlg.FileName;
+                    string ext0 = System.IO.Path.GetExtension(picked).ToLowerInvariant();
+                    // [Q22] webp 且系统无原生 WebP 解码器时，同步首图取图会触发 pwsh 转码（最长 ~15s）冻结 UI。
+                    // 该慢路径强制 testImg=null，直接落入下方已有后台通道（安装 WebP 解码器 + 后台取图应用）；
+                    // 其余格式 / 已有原生 webp 解码器 → 同步取图毫秒级，保持原路径不变。
+                    var testImg = (ext0 == ".webp" && !MainWindow.IsWebpCodecAvailable())
+                        ? null
+                        : MainWindow.TryLoadImagePublic(picked);
 
 
 
