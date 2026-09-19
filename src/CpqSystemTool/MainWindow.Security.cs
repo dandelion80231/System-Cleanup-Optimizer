@@ -329,12 +329,15 @@ namespace CpqSystemTool
             // 触发点：行 Loaded（每次重建后）+ defInner.SizeChanged（窗口宽度变化）；不挂每帧事件，无闪烁。
             void CalibrateTpRow()
             {
+                // P2：标题右边距抽常量——tpLabel 的 right margin 固定 10（见下方 tpLabel 构造）。
+                // 改 tpLabel margin 时须同步此常量，否则 col0 推算失准、对齐静默偏移。
+                const double TP_LABEL_RIGHT_GAP = 10;
                 if (_bDisableRef == null || _bOpenScRef == null || _tpRowRef == null || _tpLabelRef == null) return;
                 if (_bDisableRef.ActualWidth <= 0) return;   // 尚未布局完成
                 double xBtn;
                 try { xBtn = _bDisableRef.TransformToVisual(_tpRowRef).Transform(new System.Windows.Point()).X; }
                 catch { return; }
-                double col0 = _tpLabelRef.ActualWidth + 10;   // Auto 列 = 标题宽 + 右 margin
+                double col0 = _tpLabelRef.ActualWidth + TP_LABEL_RIGHT_GAP;   // Auto 列 = 标题宽 + 右边距(TP_LABEL_RIGHT_GAP)
                 double col2Start = (_tpRowRef.ActualWidth + col0) / 2;
                 // 注意：col2Start 常大于目标 xBtn（窗口多数宽度下），左边距必须允许负值（WPF 支持，child 向左画出 cell），
                 // 否则 Math.Max(0,·) 钳到 0 后按钮留在列起点 → 视觉上偏右（实测 12px 量级）。
