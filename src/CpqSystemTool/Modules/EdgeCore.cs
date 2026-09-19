@@ -714,9 +714,11 @@ namespace CpqSystemTool
 
             log($"=== 卸载 Edge {channel} ===");
 
-            // 结束进程（Q10）：只强杀「本频道」的 msedge（按可执行路径落在本频道 Application 根下匹配），
-            // 避免 taskkill /im msedge.exe 无差别杀掉其它频道（Stable/Beta/Dev/Canary）正在运行的浏览器。
-            // 定位不到本频道安装根、或权限读不到进程路径时，退回全量 taskkill（旧行为，保证卸载不被锁文件卡住）。
+            // 结束进程（Q10）：只强杀「本频道」的 msedge——按可执行路径落在本频道的版本目录
+            // （UpdateClientPath 所在的 \\Microsoft\\Edge\\Application\\<ver>）下匹配；各频道
+            // （Stable/Beta/Dev/Canary）在默认安装布局下分属不同版本目录，可避免误杀其它频道。
+            // 定位不到本频道安装目录、或没有匹配到可终止进程（如自更新后版本目录已变）时，
+            // 退回全量 taskkill（旧行为，保证卸载不被锁文件卡住）。
             string chAppRoot = null;
             {
                 string probe = Path.GetDirectoryName(regPath);
@@ -748,7 +750,7 @@ namespace CpqSystemTool
                 }
                 if (!killedAny)
                 {
-                    log("   [*] 未能在本频道目录匹配到可终止的 msedge 进程（或权限不足），退回全量 taskkill 兜底。");
+                    log("   [*] 未能在本频道目录匹配到可终止的 msedge 进程（如自更新后版本目录已变），退回全量 taskkill 兜底。");
                     Exec.RunCmd(new[] { "taskkill", "/f", "/im", "msedge.exe" }, log);
                 }
             }

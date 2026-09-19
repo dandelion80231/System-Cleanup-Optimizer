@@ -971,8 +971,14 @@ namespace CpqSystemTool
                 {
                     // [Q35] 剪贴板被占用时 Clipboard.SetText 会抛异常 → UI 线程崩溃（无 try/catch 兑底）。
                     // 改走带 Win32 兑底+重试的 TrySetClipboardTextAsync（内部全 catch，不崩），完成后再回填状态。
-                    _ = TrySetClipboardTextAsync(_lastSystemInfo).ContinueWith(t => Dispatcher.Invoke(() =>
-                        SetStatus(t.Result ? "已复制到剪贴板" : "[!] 复制失败：剪贴板暂不可用，请重试")));
+                    // [Q35-fix] 完成回填包在 try 里：窗口已关/Dispatcher 已停时 Dispatcher.Invoke 会抛，
+                    // 不兑住会落入无人观察的 Task（不崩但不干净）；源任务失败时读 t.Result 的异常同样被兑住
+                    _ = TrySetClipboardTextAsync(_lastSystemInfo).ContinueWith(t =>
+                    {
+                        try { Dispatcher.Invoke(() =>
+                            SetStatus(t.Result ? "已复制到剪贴板" : "[!] 复制失败：剪贴板暂不可用，请重试")); }
+                        catch { /* 窗口已关闭，忽略 */ }
+                    });
                 }
                 }, 150),
                 Btn("💾 导出为 TXT...", false, () =>
