@@ -222,6 +222,13 @@ namespace CpqSystemTool
             bTempEnable.HorizontalAlignment = HorizontalAlignment.Center;
             tempHostR.Children.Add(bTempEnable);
 
+            // P4：重建后「一键禁用/恢复」是全新按钮实例，「打开安全中心」此前对齐的是
+            // 旧实例左缘，可能已失准。等视觉树完成布局后（Loaded 优先级）重算一次，
+            // 避免旧边距滞留（旧实现直到下次 SizeChanged/row.Loaded 才更新）。
+            Dispatcher.BeginInvoke(
+                System.Windows.Threading.DispatcherPriority.Loaded,
+                new Action(() => CalibrateTpRow()));
+
             // 可复用的后台刷新函数见下方（RefreshTpStatus）
 
             // ============ 5 个独立 Defender 开关（每个 Get/Set 实时同步） ============
