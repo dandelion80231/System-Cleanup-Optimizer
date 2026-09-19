@@ -64,6 +64,7 @@ namespace CpqSystemTool
         public static void AddBlockAddressRule(string displayName, string[] addresses, Action<string> log)
         {
             log?.Invoke("添加防火墙规则: " + displayName);
+            if (HasWildcardName(displayName)) { log?.Invoke("  [!] 规则名含通配符 [ ] * ?，已跳过（防火墙规则名不支持通配符匹配）: " + displayName); return; }
             // 安全加固：逐个校验地址（仅允许 IP/域名/CIDR 的合法字符，拒绝空白与 shell 元字符
             // ; & | $ ( ) ' " 等），并对每个地址用单引号包裹 + 转义内部单引号，避免命令注入。
             var validAddrs = new System.Collections.Generic.List<string>();
@@ -96,6 +97,7 @@ namespace CpqSystemTool
         public static void RemoveRule(string displayName, Action<string> log)
         {
             log?.Invoke("移除防火墙规则: " + displayName);
+            if (HasWildcardName(displayName)) { log?.Invoke("  [!] 规则名含通配符 [ ] * ?，无法安全删除，已跳过: " + displayName); return; }
             // 修正：同 AddBlockAddressRule，原先丢弃退出码，Remove-NetFirewallRule 失败也打印 [OK]
             int rc = Exec.RunPowerShell($"Remove-NetFirewallRule -DisplayName '{EscapeLiteral(displayName)}' -ErrorAction SilentlyContinue", log);
             if (rc == 0) log?.Invoke("[OK] 防火墙规则已移除");
@@ -114,16 +116,14 @@ namespace CpqSystemTool
             && (error.Contains("拒绝访问") || error.Contains("Access is denied")
                 || error.Contains("0x80070005") || error.Contains("E_ACCESSDENIED"));
 
-        // PS 单引号字符串：' 转义为 ''（复用 Exec.EscapeSingleQuote）；-DisplayName 按通配符匹配，故对 [ ] * ? 加 ` 转义，避免误删
+        // PS 单引号字符串：' 转义为 ''（复用 Exec.EscapeSingleQuote）。
+        // [Q2] 关键：单引号字符串中反引号是“字面字符”而非转义符，原实现“对 [ ] * ? 加 ` 前缀”是无效的，
+        // 且使 创建(New 用 Escape) 与 删除(Remove 用 EscapeLiteral) 匹配值不一致 → 删除静默失配。
+        // 现：EscapeLiteral 与 Escape 保持一致（都只做单引号转义）保证创建/删除对称；名称含通配符 [ ] * ?
+        // 由 HasWildcardName 在上游显式拒绝（-DisplayName 由 cmdlet 做通配符匹配，单引号内无法可靠转义）。
         private static string Escape(string s) => Exec.EscapeSingleQuote(s);
-        private static string EscapeLiteral(string s)
-        {
-            if (string.IsNullOrEmpty(s)) return s;
-            s = Exec.EscapeSingleQuote(s);
-            foreach (var c in new[] { '[', ']', '*', '?' })
-                s = s.Replace(c.ToString(), "`" + c);
-            return s;
-        }
+        private static string EscapeLiteral(string s) => Escape(s);
+        private static bool HasWildcardName(string s) => !string.IsNullOrEmpty(s) && s.IndexOfAny("[]*?".ToCharArray()) >= 0;
 
         // 通用：执行 PS、检查退出码、按 '|' 解析多行输出为多态项列表（GetProfiles / ListRules 共用）。
         private static List<T> ParseNetItems<T>(string ps, Func<string[], T> map, int minParts, string debugTag, Action<string> log, out string error)
