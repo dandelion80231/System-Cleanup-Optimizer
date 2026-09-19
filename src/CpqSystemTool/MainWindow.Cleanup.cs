@@ -307,8 +307,14 @@ namespace CpqSystemTool
             btnScan = Btn("🔍 扫描大小", false, () =>
             {
                 ApplyMode(btnScan);   // 切换到「扫描大小」高亮（填充转移）
+                // [Q24] 防重入：扫描也走全局 OperationLock，与「开始清理/第三档」互斥，避免并发删同目录/写同键竞态
+                if (!OperationLock.TryEnter("清理", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, Cleanup.RunScan, "扫描完成", () => pb.Visibility = Visibility.Collapsed);
+                RunInBg(log, Cleanup.RunScan, "扫描完成", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; });
             }, 90);
             actionBar.Children.Add(btnScan);
 
@@ -355,6 +361,13 @@ namespace CpqSystemTool
             };
             btnTier3.Click += (s, e) =>
             {
+                // [Q24] 防重入：第三档扫描/删除走全局 OperationLock，与「开始清理」互斥；
+                // 锁在「扫描后未删/取消/未勾选」各退出点释放，删除完成时在删除的 done 里释放
+                if (!OperationLock.TryEnter("清理", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
                 pb.Visibility = Visibility.Visible;
                 List<Cleanup.Tier3Candidate> found = null;
                 RunInBg(log, l =>
@@ -366,15 +379,20 @@ namespace CpqSystemTool
                     if (found == null || found.Count == 0)
                     {
                         log.AppendText("\r\n[i] 未发现明显可删的旧资产（或均已较新），无需确认。\r\n");
+                        OperationLock.Exit();
                         return;
                     }
                     var dlg = new Tier3ConfirmDialog(this, found);
                     if (dlg.ShowDialog() == true)
                     {
                         var toDel = dlg.Selected;
-                        if (toDel.Count == 0) { log.AppendText("\r\n[i] 未勾选任何项，已取消删除。\r\n"); return; }
+                        if (toDel.Count == 0) { log.AppendText("\r\n[i] 未勾选任何项，已取消删除。\r\n"); OperationLock.Exit(); return; }
                         pb.Visibility = Visibility.Visible;
-                        RunInBg(log, l2 => Cleanup.DeleteTier3(toDel, l2), "第三档删除完成", () => { pb.Visibility = Visibility.Collapsed; _cleanupCache.Invalidate(); });
+                        RunInBg(log, l2 => Cleanup.DeleteTier3(toDel, l2), "第三档删除完成", () => { pb.Visibility = Visibility.Collapsed; _cleanupCache.Invalidate(); OperationLock.Exit(); });
+                    }
+                    else
+                    {
+                        OperationLock.Exit();  // 用户在确认框点了取消 → 释放锁
                     }
                 });
             };
