@@ -295,8 +295,12 @@ namespace CpqSystemTool
 
         /// <summary>读 Get-MpComputerStatus.IsTamperProtected（runtime 真实状态，与诊断一致）。
         /// 不要用 Get-MpPreference.TamperProtection 判断——本机实测该字段为空，会误判 TP 关闭，导致禁用操作漏报。</summary>
-        public static bool IsTamperProtectionEnabled()
+        public static bool IsTamperProtectionEnabled() => IsTamperProtectionEnabled(out _);
+
+        /// <summary>Q13：区分「TP 确实开启」与「查询失败/无法确定」。known=false 表示无法确认（保守仍视为开启，避免漏报）。</summary>
+        public static bool IsTamperProtectionEnabled(out bool known)
         {
+            known = true;
             try
             {
                 var s = Exec.RunPowerShellGet(
@@ -305,8 +309,9 @@ namespace CpqSystemTool
                 s = (s ?? "").Trim();
                 if (s == "1") return true;
                 if (s == "0") return false;
+                known = false; // 既非 '1' 也非 '0'：Get-MpComputerStatus 查询失败/无结果
             }
-            catch (Exception ex) { DebugLog.Ignore(ex); }
+            catch (Exception ex) { known = false; DebugLog.Ignore(ex); }
             // 解析失败回退：默认视为开启（保守——让用户先手动关 TP 再操作，避免漏报）
             return true;
         }
@@ -403,14 +408,21 @@ namespace CpqSystemTool
         public static void TemporaryDisable(Action<string> log)
         {
             log("=== 临时禁用 Defender（仅 Preferences，不动 Policies）===");
-            if (IsTamperProtectionEnabled())
-            {
-                log("   ⚠ 篡改防护(TP)已开启：Windows 会拦截 Set-MpPreference，临时禁用不会真正生效。");
-                log("   请先在「Windows 安全中心 → 病毒和威胁防护 → 管理设置」关闭「篡改防护」，再重试。");
-                log("   正在跳转到安全中心设置页…");
-                OpenSecurityCenter();
-                return;
-            }
+              if (IsTamperProtectionEnabled(out bool tpKnown))
+              {
+                  if (tpKnown)
+                  {
+                      log("   ⚠ 篡改防护(TP)已开启：Windows 会拦截 Set-MpPreference，临时禁用不会真正生效。");
+                      log("   请先在「Windows 安全中心 → 病毒和威胁防护 → 管理设置」关闭「篡改防护」，再重试。");
+                  }
+                  else
+                  {
+                      log("   ⚠ 无法确认篡改防护(TP)状态（Get-MpComputerStatus 查询失败/无结果）：保守起见先暂停，请人工在安全中心确认 TP 已关闭后重试。");
+                  }
+                  log("   正在跳转到安全中心设置页…");
+                  OpenSecurityCenter();
+                  return;
+              }
             int ok = 0, fail = 0;
             // 临时禁用走"直接 Set-MpPreference"（不写 Policies），与一键禁用（双路同步）区分
             if (SetPrefOnly("实时保护", "DisableRealtimeMonitoring", 1, log)) ok++; else fail++;

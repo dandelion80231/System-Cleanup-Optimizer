@@ -236,7 +236,37 @@ namespace CpqSystemTool
 
         private const string REG_KEY_BACKUP = @"SOFTWARE\CpqSystemTool\VersionSwitch";
 
-        /// <summary>备份当前 Windows 激活信息（转换前调用，便于"还原"）</summary>
+        /// <summary>Q11：从注册表 DigitalProductId 解码 25 位完整产品密钥（best-effort；部分 SKU/新版可能解不出，返回 null）。
+        /// 比 slmgr /dlv 的「后 5 位」更全，便于还原时 slmgr /ipk 恢复激活。</summary>
+        public static string TryGetWindowsProductKey()
+        {
+            try
+            {
+                byte[] dp;
+                using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion"))
+                    dp = k?.GetValue("DigitalProductId") as byte[];
+                if (dp == null || dp.Length < 32) return null;
+                byte[] data = new byte[32];
+                Array.Copy(dp, data, 32);
+                const string chars = "BCDFGHJKMPQRTVWXY2346789";
+                var keyChars = new char[25];
+                for (int i = 0; i < 25; i++)
+                {
+                    int digit = 0;
+                    for (int j = 14; j >= 0; j--)
+                    {
+                        int t = data[j + 5] * 8 + digit;
+                        data[j + 5] = (byte)(t / 256);
+                        digit = t % 256;
+                    }
+                    keyChars[i] = (digit < chars.Length) ? chars[digit] : '?';
+                }
+                return new string(keyChars).Insert(20, "-").Insert(16, "-").Insert(12, "-").Insert(8, "-").Insert(4, "-");
+            }
+            catch (Exception ex) { DebugLog.Ignore(ex); return null; }
+        }
+
+        /// <summary>备份当前 Windows 激活信息（转换前调用，便于“还原”）</summary>
         public static void BackupActivation(Action<string> log)
         {
             log("=== 备份当前激活信息 ===");
@@ -272,6 +302,10 @@ namespace CpqSystemTool
                             }
                         }
                     }
+                    // Q11：同时备份完整 25 位密钥（DigitalProductId 解码，best-effort），比仅“后 5 位”更可用于还原。
+                    string fullKey = TryGetWindowsProductKey();
+                    if (!string.IsNullOrEmpty(fullKey))
+                        k.SetValue("FullKey", fullKey);
                     log("   [OK] 已备份到注册表 " + REG_KEY_BACKUP);
                     log("   [*] 当前版本: " + (currentEdition ?? "(未知)"));
                 }
@@ -291,6 +325,7 @@ namespace CpqSystemTool
                     string savedAt = k.GetValue("SavedAt") as string;
                     string edition = k.GetValue("Edition") as string;
                     string last5 = k.GetValue("Last5Key") as string;
+                    string fullKey = k.GetValue("FullKey") as string;
                     log("   [*] 备份时间: " + (savedAt ?? "(未知)"));
                     log("   [*] 备份时版本: " + (edition ?? "(未知)"));
                     if (string.IsNullOrEmpty(edition))
@@ -298,16 +333,28 @@ namespace CpqSystemTool
                         log("   [!] 备份内容不完整，无法还原。请手动用 MAS 重新激活。");
                         return;
                     }
-                    // 还原：重装许可存储以恢复激活状态（slmgr /rilc，复用 Exec.RunCmd 的 cscript 调用形态）
                     log("   [*] 备份的密钥后 5 位：" + (last5 ?? "(无)"));
-                    if (string.IsNullOrEmpty(last5))
+                    if (!string.IsNullOrEmpty(fullKey))
+                        log("   [*] 备份的完整密钥：" + fullKey);
+                    else if (string.IsNullOrEmpty(last5))
                         log("   [!] 备份中未包含任何密钥信息，无法自动还原，请手动用 MAS/HWID 或 slmgr /ipk 重新激活。");
                     log("   [*] 正在重装许可存储以恢复激活（slmgr /rilc）...");
                     try
                     {
                         int rcR = Exec.RunCmd(new[] { "slmgr.vbs", "/rilc" }, log, capture: true);
                         if (rcR == 0)
-                            log("   [OK] 许可存储已重装。若仍提示未激活，请用备份密钥后 5 位（" + (last5 ?? "无") + "）以 slmgr /ipk <完整密钥> 重新激活。");
+                        {
+                            if (!string.IsNullOrEmpty(fullKey))
+                            {
+                                log("   [*] 重新注入完整密钥（slmgr /ipk " + fullKey + "）...");
+                                int rcIpk = Exec.RunCmd(new[] { "slmgr.vbs", "/ipk", fullKey }, log, capture: true);
+                                log(rcIpk == 0
+                                    ? "   [OK] 许可存储已重装，完整密钥已重新注入。"
+                                    : "   [!] slmgr /ipk 返回码 " + rcIpk + "，请手动以管理员重新激活。");
+                            }
+                            else
+                                log("   [OK] 许可存储已重装。若仍提示未激活，请用备份密钥后 5 位（" + (last5 ?? "无") + "）以 slmgr /ipk <完整密钥> 重新激活。");
+                        }
                         else
                             log("   [!] slmgr /rilc 返回码 " + rcR + "，重装未完成，请手动以管理员运行 slmgr.vbs /rilc。");
                     }

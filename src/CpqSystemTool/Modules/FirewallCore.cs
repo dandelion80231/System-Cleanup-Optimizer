@@ -33,7 +33,7 @@ namespace CpqSystemTool
         public static List<ProfileInfo> GetProfiles(Action<string> log, out string error)
         {
             return ParseNetItems(
-                "Get-NetFirewallProfile | ForEach-Object { \"$($_.Name)|$($_.Enabled)\" }",
+                "Get-NetFirewallProfile | ForEach-Object { \"$($_.Name)+[char]1+$($_.Enabled)\" }",
                 p => new ProfileInfo
                 {
                     Name = p[0].Trim(),
@@ -49,7 +49,7 @@ namespace CpqSystemTool
         public static List<RuleInfo> ListRules(Action<string> log, out string error)
         {
             return ParseNetItems(
-                "Get-NetFirewallRule | ForEach-Object { \"$($_.DisplayName)|$($_.Direction)|$($_.Action)|$($_.Enabled)\" }",
+                "Get-NetFirewallRule | ForEach-Object { \"$($_.DisplayName)+[char]1+$($_.Direction)+[char]1+$($_.Action)+[char]1+$($_.Enabled)\" }",
                 p => new RuleInfo
                 {
                     DisplayName = p[0].Trim(),
@@ -144,7 +144,9 @@ namespace CpqSystemTool
                     {
                         var s = line.Trim();
                         if (string.IsNullOrEmpty(s)) continue;
-                        var parts = s.Split('|');
+                        // Q12：按 \u0001(SOH) 分隔而非 '|' —— 防火墙规则 DisplayName 可能含 '|'，
+                        // 用 '|' 切分会串列/漏行；SOH 不会出现在合法 DisplayName 中。
+                        var parts = s.Split('\u0001');
                         if (parts.Length >= minParts) list.Add(map(parts));
                     }
                 }

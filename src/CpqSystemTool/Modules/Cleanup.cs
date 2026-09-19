@@ -485,7 +485,12 @@ namespace CpqSystemTool
             // 【P3 复审】Clear-RecycleBin 被 -EA 0 静默，失败（受保护项/访问拒绝）也会打 [OK]；
             // 以 C:\$Recycle.bin 残留量兑底（requireAdministrator 下可直接枚举）
             int remain = -1;
-            try { if (Directory.Exists(@"C:\$Recycle.bin")) remain = Directory.GetFiles(@"C:\$Recycle.bin", "*", SearchOption.AllDirectories).Length; else remain = 0; }
+            try
+            {
+                // Q14：回收站验证改用「系统盘」的 $Recycle.bin（原先硬编码 C:\$Recycle.bin，系统盘非 C: 时失真）。
+                string rbDir = Path.GetPathRoot(Environment.SystemDirectory) + @"$Recycle.bin";
+                if (Directory.Exists(rbDir)) remain = Directory.GetFiles(rbDir, "*", SearchOption.AllDirectories).Length; else remain = 0;
+            }
             catch { remain = -1; }
             string res = remain > 0 ? "[PARTIAL] 回收站清理不完全（受保护/锁定项，余 " + remain + " 个文件）"
                 : remain >= 0 ? "[OK]"

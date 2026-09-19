@@ -217,9 +217,16 @@ namespace CpqSystemTool
         {
             log("添加阻止 Windows 搜索联网的防火墙规则...");
             // 修正：原先丢弃 RunPowerShell 的退出码，规则添加失败也照样打印 [OK]
-            int rc = Exec.RunPowerShell("Remove-NetFirewallRule -DisplayName '阻止Windows搜索联网' -ErrorAction SilentlyContinue;" +
-                "New-NetFirewallRule -DisplayName '阻止Windows搜索联网' -Direction Outbound " +
-                "-Program \"$env:SystemRoot\\SystemApps\\Microsoft.Windows.Search_cw5n1h2txyewy\\SearchHost.exe\" -Action Block", log);
+            // Q20：搜索包路径不再硬编码家族名(…_cw5n1h2txyewy)——不同系统/语言下家族后缀可能不同，硬编码会失效。
+            // 先按稳定应用名 Microsoft.Windows.Search 动态解析实际安装路径；解析不到再退回原硬编码家族路径兜底。
+            string ps =
+                "$prog = $null; " +
+                "$pkg = Get-AppxPackage -Name 'Microsoft.Windows.Search' -ErrorAction SilentlyContinue | Select-Object -First 1; " +
+                "if ($pkg) { $c = Join-Path $pkg.InstallLocation 'SearchHost.exe'; if (Test-Path $c) { $prog = $c } }; " +
+                "if (-not $prog) { $c2 = \"$env:SystemRoot\\SystemApps\\Microsoft.Windows.Search_cw5n1h2txyewy\\SearchHost.exe\"; if (Test-Path $c2) { $prog = $c2 } }; " +
+                "Remove-NetFirewallRule -DisplayName '阻止Windows搜索联网' -ErrorAction SilentlyContinue; " +
+                "if ($prog) { New-NetFirewallRule -DisplayName '阻止Windows搜索联网' -Direction Outbound -Program $prog -Action Block }";
+            int rc = Exec.RunPowerShell(ps, log);
             if (rc == 0) log("[OK] 防火墙规则已添加");
             else log("[FAIL] 防火墙规则添加失败（退出码 " + rc + "）");
         }

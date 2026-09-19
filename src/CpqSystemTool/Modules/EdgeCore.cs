@@ -714,8 +714,44 @@ namespace CpqSystemTool
 
             log($"=== 卸载 Edge {channel} ===");
 
-            // 结束进程
-            Exec.RunCmd(new[] { "taskkill", "/f", "/im", "msedge.exe" }, log);
+            // 结束进程（Q10）：只强杀「本频道」的 msedge（按可执行路径落在本频道 Application 根下匹配），
+            // 避免 taskkill /im msedge.exe 无差别杀掉其它频道（Stable/Beta/Dev/Canary）正在运行的浏览器。
+            // 定位不到本频道安装根、或权限读不到进程路径时，退回全量 taskkill（旧行为，保证卸载不被锁文件卡住）。
+            string chAppRoot = null;
+            {
+                string probe = Path.GetDirectoryName(regPath);
+                while (!string.IsNullOrEmpty(probe))
+                {
+                    if (probe.IndexOf(@"\Microsoft\Edge\Application", StringComparison.OrdinalIgnoreCase) >= 0)
+                    { chAppRoot = probe; break; }
+                    probe = Path.GetDirectoryName(probe);
+                }
+            }
+            if (string.IsNullOrEmpty(chAppRoot))
+            {
+                Exec.RunCmd(new[] { "taskkill", "/f", "/im", "msedge.exe" }, log);
+            }
+            else
+            {
+                bool killedAny = false;
+                foreach (var p in Process.GetProcessesByName("msedge"))
+                {
+                    using (p)
+                    {
+                        string fn = null;
+                        try { fn = p.MainModule?.FileName; } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                        if (fn != null && fn.StartsWith(chAppRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                        {
+                            try { p.Kill(true); killedAny = true; } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
+                        }
+                    }
+                }
+                if (!killedAny)
+                {
+                    log("   [*] 未能在本频道目录匹配到可终止的 msedge 进程（或权限不足），退回全量 taskkill 兜底。");
+                    Exec.RunCmd(new[] { "taskkill", "/f", "/im", "msedge.exe" }, log);
+                }
+            }
 
             // 读卸载字符串
             string uninstallString = null;
