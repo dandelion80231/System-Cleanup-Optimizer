@@ -307,8 +307,14 @@ namespace CpqSystemTool
 
             var bCreateRp = Btn("📌 创建还原点", false, () =>
                 {
+                    // [Q25] 防重入：创建还原点走全局 OperationLock，避免连点/与其它系统工具并发
+                    if (!OperationLock.TryEnter("系统工具", out string busyBy))
+                    {
+                        MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
                     pb.Visibility = Visibility.Visible;
-                    RunInBg(sharedLog, l => RestorePoint.Create("ZyperTool-" + DateTime.Now.ToString("MMdd-HHmm"), l), "还原点已创建", () => pb.Visibility = Visibility.Collapsed);
+                    RunInBg(sharedLog, l => RestorePoint.Create("ZyperTool-" + DateTime.Now.ToString("MMdd-HHmm"), l), "还原点已创建", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; });
                 }, 130);
             var bRefreshRp = Btn("🔄 刷新列表", true, () =>
                 {
@@ -327,8 +333,14 @@ namespace CpqSystemTool
                 {
                     var sel = listBox.SelectedItem as RestorePoint.RestoreInfo;
                     if (sel == null) { sharedLog.AppendText("[!] 请先选择还原点\r\n"); return; }
+                    // [Q25] 防重入：还原（高危）走全局 OperationLock
+                    if (!OperationLock.TryEnter("系统工具", out string busyBy))
+                    {
+                        MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
                     pb.Visibility = Visibility.Visible;
-                    RunInBg(sharedLog, l => RestorePoint.Restore(sel.Seq, l), "已发起还原", () => pb.Visibility = Visibility.Collapsed);
+                    RunInBg(sharedLog, l => RestorePoint.Restore(sel.Seq, l), "已发起还原", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; });
                 }, 110);
             // 标题左对齐 + 三按钮星等分平分间距、占满剩余位置（MakeBtnRow 三列 star）
             var wp = MakeBtnRow(bCreateRp, bRefreshRp, bRestoreSel);
@@ -393,9 +405,15 @@ namespace CpqSystemTool
                 if (rbVol.IsChecked == true) sharedLog.AppendText("[*] 已选 Business-VOL 批量版：转换后需自行配置 KMS 服务器激活（参考本工具「系统激活」页 KMS 方式）\r\n");
                 string cnName = EditionMap.ToChinese(edition) ?? "(未知)";
                 if (System.Windows.MessageBox.Show(VersionSwitch.WARNING + "\n\n确认转换到 " + cnName + " ？", "版本转换（需重启 + 重新激活）", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+                // [Q25] 防重入：版本转换（高危、需重启）走全局 OperationLock，避免连点/并发
+                if (!OperationLock.TryEnter("系统工具", out string busyBy))
+                {
+                    MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
                 VersionSwitch.BackupActivation(text => sharedLog.AppendText(text + "\r\n"));
                 pb.Visibility = Visibility.Visible;
-                RunInBg(sharedLog, l => VersionSwitch.SwitchEdition(edition, key, l), "版本转换结束", () => { pb.Visibility = Visibility.Collapsed; vsRestoreBtn.IsEnabled = true; });
+                RunInBg(sharedLog, l => VersionSwitch.SwitchEdition(edition, key, l), "版本转换结束", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; vsRestoreBtn.IsEnabled = true; });
             };
             vsRestoreBtn.Click += (s, e) =>
             {
