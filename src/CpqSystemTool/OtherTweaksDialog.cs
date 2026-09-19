@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -51,6 +52,7 @@ namespace CpqSystemTool
     public class OtherTweaksDialog : Window
     {
         private readonly MainWindow _owner;
+        private bool _eventLogBusy; // [Q23] 防止“清除系统日志”后台任务被重复点击并发触发
         private Brush _bg, _fg, _accent, _cardBg, _cardBorder, _dimText, _rowHover;
         private Brush _success, _danger, _btnFg, _btnSec, _inputBg, _inputFg;
 
@@ -176,8 +178,17 @@ namespace CpqSystemTool
                 {
                     if (MessageBox.Show("确定要完全清除Windows系统日志吗？", "清除系统日志", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
                     {
-                        // 先枚举全部日志名，再逐条 wevtutil cl "日志名" 清空（wevtutil cl 需要日志名作参数，不能从管道读）
-                        Cleanup.EventLogs(_ => { });
+                        // 先枚举全部日志名，再逐条 wevtutil cl "日志名" 清空（wevtutil cl 需要日志名作参数，不能从管道读）。
+                        // [Q23] 这会派生上百个子进程（耗时数十秒），原在 UI 线程同步执行 → 对话框冻结。
+                        // 现放后台执行；_eventLogBusy 防止重复点击并发触发。
+                        if (_eventLogBusy) return;
+                        _eventLogBusy = true;
+                        Task.Run(() =>
+                        {
+                            try { Cleanup.EventLogs(_ => { }); }
+                            catch (Exception ex) { DebugLog.Ignore(ex); }
+                            finally { _eventLogBusy = false; }
+                        });
                     }
                 });
             AddButtonItem(root, "刷新 DNS 解析缓存",
