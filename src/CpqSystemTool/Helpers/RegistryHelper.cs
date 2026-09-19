@@ -441,7 +441,12 @@ namespace CpqSystemTool
                 using (var p = Process.Start(psi))
                 {
                     if (p == null) { log("  [!] 无法启动: " + exe); return -1; }
-                    if (!p.WaitForExit(timeoutMs)) { try { p.Kill(); } catch (Exception ex) { DebugLog.Ignore(ex); } }
+                    if (!p.WaitForExit(timeoutMs))
+                    {
+                        try { p.Kill(); } catch (Exception ex) { DebugLog.Ignore(ex); }
+                        log("  [!] " + exe + " 超时（" + timeoutMs + "ms）未返回，已终止进程");
+                        return -2; // [Q1] 与“启动失败(-1)”区分：-2=超时被杀；此时 p.ExitCode 无意义（进程未正常退出即读取会误导）
+                    }
                     return p.ExitCode;
                 }
             }
