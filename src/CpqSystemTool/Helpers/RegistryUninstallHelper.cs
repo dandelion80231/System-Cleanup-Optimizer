@@ -124,10 +124,38 @@ namespace CpqSystemTool
             catch (Exception ex) { DebugLog.Ignore(ex); remaining = null; }
             if (remaining == null) return false;
 
+            // [Q3] 安全校验：marker 位于用户可写目录（ConfigDir / %LOCALAPPDATA%\CpqSystemTool），若被手工写入越权路径，
+            // 本工具（管理员运行）会对它 Remove-Item -Recurse -Force。仅允许删除「已知应用残留根」下的子目录；
+            // 越权目标（盘符根/系统目录/其它盘）拒绝并保留在 stillThere（不删空 marker）。
+            string[] safeRoots =
+            {
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+            };
+            static bool UnderRoot(string p, string root)
+            {
+                if (string.IsNullOrEmpty(root)) return false;
+                string a = Path.TrimEndingDirectorySeparator(p), b = Path.TrimEndingDirectorySeparator(root);
+                return a.Length > b.Length
+                    && a.StartsWith(b, System.StringComparison.OrdinalIgnoreCase)
+                    && a[b.Length] == Path.DirectorySeparatorChar;
+            }
             var stillThere = new List<string>();
             foreach (var d in remaining)
             {
                 if (!Directory.Exists(d)) continue;
+                string full;
+                try { full = Path.GetFullPath(d); }
+                catch (Exception ex) { DebugLog.Ignore(ex); if (log != null) log(logTag + " 拒绝非法路径（无法解析全路径）: " + d); stillThere.Add(d); continue; }
+                if (!safeRoots.Any(r => UnderRoot(full, r)))
+                {
+                    if (log != null) log(logTag + " 拒绝越权补删路径（不在已知残留根 " + "Program Files/ProgramData/本地/用户 下）: " + full);
+                    stillThere.Add(d);
+                    continue;
+                }
                 if (log != null) log(logTag + " 补删残留目录: " + d);
                 // 与卸载阶段一致的强删方式（PowerShell 忽略单文件占用错误）
                 Exec.RunPowerShell("Remove-Item -Path " + Exec.QuotePS(d) + " -Recurse -Force -EA 0", log);
