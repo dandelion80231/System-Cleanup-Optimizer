@@ -79,7 +79,9 @@
 ### 系统要求
 
 - **操作系统**: Windows 10 1903+ 或 Windows 11
-- **运行时**: .NET 10 Desktop Runtime（exe 为框架依赖单文件发布，需先安装运行时：https://dotnet.microsoft.com/download/dotnet/10.0）
+- **运行时**: .NET 10 Desktop Runtime（exe 为框架依赖单文件发布，需先安装运行时：https://dotnet.microsoft.com/download/dotnet/10.0）。
+  注意：Windows 10/11 默认**不**自带 .NET (Core) 桌面运行时（系统自带的 .NET Framework 4.x 与 .NET 10 不通用），
+  目标机若未预装 .NET 10 Desktop Runtime，双击 exe 会提示缺失；先安装运行时，或用 `-SelfContained` 发布内嵌运行时免装。
 - **权限**: 多数功能需管理员权限，程序会自动请求 UAC 提权
 
 > [!CAUTION]
