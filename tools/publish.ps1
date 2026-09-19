@@ -15,7 +15,8 @@ param(
     [string]$Runtime = "win-x64",
     [switch]$SelfContained = $false,
     [switch]$Folder = $false,
-    [switch]$Zip = $false
+    [switch]$Zip = $false,
+    [switch]$KeepPdb = $false   # P7: 保留 .pdb（默认剥离调试符号，公开分发不带 2.8MB 符号文件）
 )
 
 $ErrorActionPreference = "Stop"
@@ -123,6 +124,18 @@ $exePath = Join-Path $outDir $exeName
 if (-not (Test-Path $exePath)) {
     Write-Error "EXE missing: $exePath"
     exit 1
+}
+
+# ===== P7：剥离调试符号（.pdb）=====
+# 公开发布的产物默认不带 .pdb（约 2.8MB，可反查源码行号、增大分发体积）。
+# 需要保留做崩溃回溯时传 -KeepPdb。
+if (-not $KeepPdb) {
+    $pdbs = Get-ChildItem $outDir -Filter *.pdb -Recurse -File -ErrorAction SilentlyContinue
+    if ($pdbs) {
+        foreach ($p in $pdbs) { Remove-Item $p.FullName -Force; Write-Host ("[P7] 已删除符号文件: " + $p.FullName) }
+    } else {
+        Write-Host "[P7] 无 .pdb 需删除。"
+    }
 }
 
 if ($Folder) {
