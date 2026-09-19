@@ -1407,8 +1407,43 @@ namespace CpqSystemTool
                                     else
                                     {
                                         // 新解码器对当前进程不可见（WIC 编解码器目录按进程缓存，装完需重启进程才认得）
-                                        l("[OK] WebP 解码器安装完成。当前会话暂无法立即加载新解码器的图片（属正常现象）。");
-                                        l("       图片设置已保存：重新打开本工具或重启电脑后自动生效。");
+                                        l("[OK] WebP 解码器安装完成。当前会话暂无法立即加载该图片（属正常现象）。");
+                                        bool restartNow = false;
+                                        try
+                                        {
+                                            Dispatcher.Invoke(() =>
+                                            {
+                                                if (!Dispatcher.HasShutdownStarted)
+                                                {
+                                                    restartNow = MessageBox.Show(this,
+                                                        "WebP 解码器已安装完成，图片设置已保存。\n当前会话无法立即加载新解码器（属正常现象），需要重启工具后才能生效。\n\n是否立即重启工具？",
+                                                        "WebP 解码器安装完成",
+                                                        MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes;
+                                                }
+                                            });
+                                        }
+                                        catch { /* 窗口已关闭 */ }
+                                        if (restartNow)
+                                        {
+                                            try
+                                            {
+                                                // IL3000：单文件 publish 下 Assembly.Location 为空，用 Environment.ProcessPath
+                                                string exePath = System.Environment.ProcessPath
+                                                    ?? System.Reflection.Assembly.GetExecutingAssembly().Location;
+                                                if (!string.IsNullOrEmpty(exePath))
+                                                {
+                                                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exePath) { UseShellExecute = true });
+                                                    System.Windows.Application.Current.Shutdown();
+                                                    return;
+                                                }
+                                            }
+                                            catch { }
+                                            l("[!] 自动重启失败，请手动重新打开工具。");
+                                        }
+                                        else
+                                        {
+                                            l("       图片设置已保存：重新打开本工具或重启电脑后自动生效。");
+                                        }
                                     }
                                     return;
 
@@ -1851,8 +1886,43 @@ namespace CpqSystemTool
                                     else
                                     {
                                         // 新解码器对当前进程不可见（WIC 编解码器目录按进程缓存，装完需重启进程才认得）
-                                        l("[OK] WebP 解码器安装完成。当前会话暂无法立即加载新解码器的图片（属正常现象）。");
-                                        l("       图片设置已保存：重新打开本工具或重启电脑后自动生效。");
+                                        l("[OK] WebP 解码器安装完成。当前会话暂无法立即加载该图片（属正常现象）。");
+                                        bool restartNow = false;
+                                        try
+                                        {
+                                            Dispatcher.Invoke(() =>
+                                            {
+                                                if (!Dispatcher.HasShutdownStarted)
+                                                {
+                                                    restartNow = MessageBox.Show(this,
+                                                        "WebP 解码器已安装完成，图片设置已保存。\n当前会话无法立即加载新解码器（属正常现象），需要重启工具后才能生效。\n\n是否立即重启工具？",
+                                                        "WebP 解码器安装完成",
+                                                        MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes;
+                                                }
+                                            });
+                                        }
+                                        catch { /* 窗口已关闭 */ }
+                                        if (restartNow)
+                                        {
+                                            try
+                                            {
+                                                // IL3000：单文件 publish 下 Assembly.Location 为空，用 Environment.ProcessPath
+                                                string exePath = System.Environment.ProcessPath
+                                                    ?? System.Reflection.Assembly.GetExecutingAssembly().Location;
+                                                if (!string.IsNullOrEmpty(exePath))
+                                                {
+                                                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exePath) { UseShellExecute = true });
+                                                    System.Windows.Application.Current.Shutdown();
+                                                    return;
+                                                }
+                                            }
+                                            catch { }
+                                            l("[!] 自动重启失败，请手动重新打开工具。");
+                                        }
+                                        else
+                                        {
+                                            l("       图片设置已保存：重新打开本工具或重启电脑后自动生效。");
+                                        }
                                     }
                                     return;
 
