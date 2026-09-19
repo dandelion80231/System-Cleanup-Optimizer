@@ -206,8 +206,11 @@ namespace CpqSystemTool
                     if (ptr == IntPtr.Zero) { GlobalFree(hMem); return false; }
                     Marshal.Copy(bytes, 0, ptr, bytes.Length);
                     GlobalUnlock(hMem);
-                    // SetClipboardData 成功后，hMem 所有权转移给系统，不能再 GlobalFree
-                    return SetClipboardData(CF_UNICODETEXT, hMem) != IntPtr.Zero;
+                    // [Q26] SetClipboardData 成功后 hMem 所有权转移给系统（不可再 GlobalFree）；
+                    // 若失败（返回 0）内存仍归本进程所有，必须 GlobalFree，否则每次复制失败都泄漏一块 hMem
+                    IntPtr hRc = SetClipboardData(CF_UNICODETEXT, hMem);
+                    if (hRc == IntPtr.Zero) { GlobalFree(hMem); return false; }
+                    return true;
                 }
                 catch
                 {
