@@ -5,5 +5,13 @@
     "size": 10143356,
     "sha256": "78383488f00856909b2e25f47b705e0fe058f567c56ddb7930aa34d0957c3d01",
     "key": "系统清理与优化工具_v1.22.exe"
+  },
+  {
+    "version": "net10-runtime-10.0.12",
+    "date": "2026-09-19",
+    "size": 60032984,
+    "sha256": "55a67d8476cde95a9cc43a95803b4f54446e7c9251ed22aa6421d4908174ae84",
+    "key": "net-runtime/windowsdesktop-runtime-10.0.12-win-x64.exe",
+    "note": "跨版本永久对象：.NET 10 WindowsDesktop 运行时镜像（微软官方签名 Valid），引导器设计 R2 运行时源"
   }
 ]
