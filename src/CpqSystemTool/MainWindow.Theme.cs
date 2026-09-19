@@ -159,16 +159,17 @@ namespace CpqSystemTool
         // ===================== WebP 解码器检测 + 自动安装 =====================
 
         /// <summary>检测系统是否已安装 WebP 解码器（Microsoft Store 的 WebP Image Extensions）。
-        /// ★ Get-AppxPackage 没有 -PackageFamilyName 参数，必须用 -AllUsers | Where-Object Name 匹配。
-        /// 注意：-AllUsers 需要管理员权限（我们的 exe 是 UAC admin，OK）。</summary>
+        /// ★ 查【当前用户】作用域而非 -AllUsers：WebP WIC 解码器按当前用户注册，本进程 WPF/WIC 用的
+        ///   就是当前用户视图；-AllUsers 需完整管理员令牌，非提权/受限令牌会"拒绝访问"→ stdout 空 → 误判无解码器。
+        /// ★ 输出仅认纯数字 count（"1"/"2"…），空/拒绝访问/多行文本一律当查不到。</summary>
         public static bool IsWebpCodecAvailable()
         {
             try
             {
                 var s = Exec.RunPowerShellGet(
-                    "@(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object { `$_.Name -eq 'Microsoft.WebpImageExtension' }).Count", null);
+                    "@(Get-AppxPackage -ErrorAction SilentlyContinue | Where-Object { `$_.Name -eq 'Microsoft.WebpImageExtension' }).Count", null);
                 var t = s.Trim();
-                return !string.IsNullOrEmpty(t) && t != "0";
+                return t.Length == 1 && char.IsDigit(t[0]) && t[0] != '0';
             }
             catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  return false; }
         }
@@ -315,9 +316,12 @@ namespace CpqSystemTool
                 {
                     try
                     {
-                        var img = TryLoadImage(_backgroundSettings.DarkPath);
+                        // 背景图渲染端与选择器一致走【双通道】TryLoadImagePublic(WIC + pwsh 转码)，
+                        // 原只用单通道 TryLoadImage(WIC)，解 webp 失败会静默回退内置图 → "选了不生效"。
+                        var img = TryLoadImagePublic(_backgroundSettings.DarkPath);
                         if (img == null)
                         {
+                            DebugLog.Warn("深色背景图加载失败，回退内置 background.png: " + _backgroundSettings.DarkPath);
                             img = new BitmapImage(
                                 new Uri("pack://application:,,,/系统清理与优化工具;component/background.png", UriKind.Absolute));
                             img.Freeze();
@@ -331,9 +335,11 @@ namespace CpqSystemTool
                 {
                     try
                     {
-                        var img = TryLoadImage(_backgroundSettings.LightPath);
+                        // 浅色对称：双通道加载 + 回退时记日志
+                        var img = TryLoadImagePublic(_backgroundSettings.LightPath);
                         if (img == null)
                         {
+                            DebugLog.Warn("浅色背景图加载失败，回退内置 background-light.png: " + _backgroundSettings.LightPath);
                             img = new BitmapImage(
                                 new Uri("pack://application:,,,/系统清理与优化工具;component/background-light.png", UriKind.Absolute));
                             img.Freeze();
