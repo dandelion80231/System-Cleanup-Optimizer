@@ -1473,7 +1473,57 @@ namespace CpqSystemTool
 
 
 
-                        log.AppendText("[FAIL] 图片加载失败：" + Path.GetFileName(dlg.FileName) + "\r\n");
+
+                        // 解码器已安装但当前会话仍加载失败（典型场景：本工具会话早于解码器安装启动，
+                        // WIC 编解码器目录按进程缓存，旧进程认不得新解码器）。
+                        // 处理：保存图片设置 + 提供重启选项；重新打开工具后原生通道自动生效。
+                        if (ext == ".webp" && MainWindow.IsWebpCodecAvailable())
+                        {
+                            try
+                            {
+                                Dispatcher.Invoke(() =>
+                                {
+                                    _backgroundSettings.DarkPath = dlg.FileName;
+                                    SaveBackgroundSettings();
+                                    InvalidateConfigCache();
+                                });
+                            }
+                            catch { /* 窗口已关闭，忽略 */ }
+                            log.AppendText("[*] WebP 解码器已安装，但当前会话暂无法立即加载该图片（若本工具是在安装解码器之前打开的，属正常现象）。\r\n");
+                            log.AppendText("    图片设置已保存。是否立即重启工具使背景生效？\r\n");
+                            bool restartNow = false;
+                            try
+                            {
+                                restartNow = MessageBox.Show(this,
+                                    "WebP 解码器已安装，图片设置已保存。\n当前会话暂无法立即加载（本工具可能在解码器安装之前就已打开，属正常现象）。\n\n是否立即重启工具使背景生效？",
+                                    "背景图设置已保存",
+                                    MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes;
+                            }
+                            catch { /* 窗口已关闭 */ }
+                            if (restartNow)
+                            {
+                                try
+                                {
+                                    // IL3000：单文件 publish 下 Assembly.Location 为空，用 Environment.ProcessPath
+                                    string exePath = System.Environment.ProcessPath
+                                        ?? System.Reflection.Assembly.GetExecutingAssembly().Location;
+                                    if (!string.IsNullOrEmpty(exePath))
+                                    {
+                                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exePath) { UseShellExecute = true });
+                                        System.Windows.Application.Current.Shutdown();
+                                        return;
+                                    }
+                                }
+                                catch { }
+                                log.AppendText("[!] 自动重启失败，请手动重新打开工具。\r\n");
+                                return;
+                            }
+                            else
+                            {
+                                log.AppendText("    重新打开本工具（或重启电脑）后自动生效。\r\n");
+                            }
+                            return;
+                        }                        log.AppendText("[FAIL] 图片加载失败：" + Path.GetFileName(dlg.FileName) + "\r\n");
 
 
 
@@ -1948,7 +1998,57 @@ namespace CpqSystemTool
 
 
 
-                        log.AppendText("[FAIL] 图片加载失败：" + Path.GetFileName(dlg.FileName) + "\r\n");
+
+                        // 解码器已安装但当前会话仍加载失败（典型场景：本工具会话早于解码器安装启动，
+                        // WIC 编解码器目录按进程缓存，旧进程认不得新解码器）。
+                        // 处理：保存图片设置 + 提供重启选项；重新打开工具后原生通道自动生效。
+                        if (ext == ".webp" && MainWindow.IsWebpCodecAvailable())
+                        {
+                            try
+                            {
+                                Dispatcher.Invoke(() =>
+                                {
+                                    _backgroundSettings.LightPath = dlg.FileName;
+                                    SaveBackgroundSettings();
+                                    InvalidateConfigCache();
+                                });
+                            }
+                            catch { /* 窗口已关闭，忽略 */ }
+                            log.AppendText("[*] WebP 解码器已安装，但当前会话暂无法立即加载该图片（若本工具是在安装解码器之前打开的，属正常现象）。\r\n");
+                            log.AppendText("    图片设置已保存。是否立即重启工具使背景生效？\r\n");
+                            bool restartNow = false;
+                            try
+                            {
+                                restartNow = MessageBox.Show(this,
+                                    "WebP 解码器已安装，图片设置已保存。\n当前会话暂无法立即加载（本工具可能在解码器安装之前就已打开，属正常现象）。\n\n是否立即重启工具使背景生效？",
+                                    "背景图设置已保存",
+                                    MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes;
+                            }
+                            catch { /* 窗口已关闭 */ }
+                            if (restartNow)
+                            {
+                                try
+                                {
+                                    // IL3000：单文件 publish 下 Assembly.Location 为空，用 Environment.ProcessPath
+                                    string exePath = System.Environment.ProcessPath
+                                        ?? System.Reflection.Assembly.GetExecutingAssembly().Location;
+                                    if (!string.IsNullOrEmpty(exePath))
+                                    {
+                                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exePath) { UseShellExecute = true });
+                                        System.Windows.Application.Current.Shutdown();
+                                        return;
+                                    }
+                                }
+                                catch { }
+                                log.AppendText("[!] 自动重启失败，请手动重新打开工具。\r\n");
+                                return;
+                            }
+                            else
+                            {
+                                log.AppendText("    重新打开本工具（或重启电脑）后自动生效。\r\n");
+                            }
+                            return;
+                        }                        log.AppendText("[FAIL] 图片加载失败：" + Path.GetFileName(dlg.FileName) + "\r\n");
 
 
 
