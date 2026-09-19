@@ -215,6 +215,11 @@ namespace CpqSystemTool
 
             ContentArea.ScrollToTop();
 
+            // P5：TP 轮询定时器只应在「安全防护」页活跃时运行——切到其它页即停（避免后台
+            // 每 10s 空跑 Get-MpComputerStatus），进安全页时（重建/命中缓存后）确保已启动。
+            if (key == "security") _tpPollTimer?.Start();
+            else _tpPollTimer?.Stop();
+
             // 递归遍历侧边栏视觉树，找到所有导航按钮（Sidebar.Child 是 DockPanel，按钮嵌套在内部 StackPanel，必须递归）
             if (Sidebar.Child is Panel p)
             {

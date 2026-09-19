@@ -31,6 +31,8 @@ namespace CpqSystemTool
         // 安全防护页 TP 状态轮询定时器：TP 只能外部（安全中心）改，无事件可感知，靠轮询检测变化。
         // 页面重建（主题切换）时先 Stop 旧的再建新的，避免多个 timer 并存。
         private System.Windows.Threading.DispatcherTimer _tpPollTimer;
+        // P5：主窗 Closing 钩子只订阅一次的守卫（避免每次进安全页重复 +=）
+        private bool _tpCloseHooked;
 
         private UIElement BuildSecurity()
         {
@@ -461,6 +463,14 @@ namespace CpqSystemTool
                 catch (Exception ex) { DebugLog.Ignore(ex); }
             };
             _tpPollTimer.Start();
+
+            // P5：主窗关闭时停止 TP 轮询，避免关闭过程中 Timer Tick 再发起后台读。
+            // 只订阅一次（_tpCloseHooked 守卫），多次进安全页不重复 +=。
+            if (!_tpCloseHooked)
+            {
+                _tpCloseHooked = true;
+                this.Closing += (s, e) => { _tpPollTimer?.Stop(); };
+            }
 
             // 清理策略 + 诊断 Runtime 按钮同一行
             var policyBar = new Grid { Margin = new Thickness(0, 4, 0, 0), HorizontalAlignment = HorizontalAlignment.Stretch };
