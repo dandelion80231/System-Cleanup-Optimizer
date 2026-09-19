@@ -406,7 +406,19 @@ namespace CpqSystemTool
                             TextWrapping = TextWrapping.Wrap,
                             Margin = new Thickness(0, 0, 0, 4)
                         });
-                    }); } catch { /* 窗口已关闭，忽略 */ }
+                    }); } catch (Exception ex)
+                    {
+                        // P6：区分「窗口/Dispatcher 已关闭」(保持原静默行为) 与 真异常。
+                        // 旧代码把所有异常都当"关窗"吞掉——若重建中抛真 bug（Grid 列不匹配、
+                        // 控件 parent 冲突等）会被静默吞掉，此时 tpHost 已 Clear → TP 行悄悄
+                        // 消失且无日志（正是历史 49571d4"整行消失"的同款雷点）。非关窗异常落日志。
+                        bool closing = false;
+                        try { closing = System.Windows.Application.Current == null
+                                           || System.Windows.Application.Current.Dispatcher.IsShutdown; }
+                        catch { closing = true; }
+                        if (!closing)
+                            DebugLog.Warn("RefreshTpStatus 非关窗异常，TP 行可能未重建: " + ex);
+                    }
                 }) { IsBackground = true, Name = "TpStatusLoader" }.Start();
             }
 
