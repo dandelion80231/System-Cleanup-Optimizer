@@ -567,41 +567,42 @@ namespace CpqSystemTool
                             }
 
                             // 模式 2：关键词合并搜索，结果**内嵌到**下方列表区（不再弹窗）
+                            // [Q21] winget 联网搜索（SearchMerged→winget search，约 3-30s）原在 UI 线程同步执行，
+                            // 导致窗口冻结、进度条无法渲染。现移到 RunInBg 后台，完成后回 UI 线程渲染结果。
                             pb.Visibility = Visibility.Visible;
-                            var rs = AppxManager.SearchMerged(input, l => log.AppendText(l + "\r\n"));
-                            pb.Visibility = Visibility.Collapsed;
-                            if (rs.Count == 0)
+                            List<StoreSearchResult> rs = null;
+                            RunInBg(log, bg => { rs = AppxManager.SearchMerged(input, bg); }, "搜索", () =>
                             {
-                                MessageBox.Show("没有找到匹配 '" + input + "' 的应用。\n\n提示：可在浏览器打开 https://apps.microsoft.com/store/search?q=" + input + " 找到应用后复制链接回来粘贴。",
-                                    "搜索结果", MessageBoxButton.OK, MessageBoxImage.Information);
-                                return;
-                            }
-
-                            // ★ 关键改造：rowsPanel 清空，替换成搜索结果行（3 列：名称+源标 / 安装）
-                            rowsPanel.Children.Clear();
-                            countLabel.Text = $"🔍 搜索结果：{rs.Count} 个（关键词：{input}）";
-                            // 搜索结果专用 3 列 header（名称/来源/操作）
-                            var hdrBorder = new Border { Background = _bgCard, BorderBrush = _panelBorder, BorderThickness = new Thickness(1, 1, 1, 0), Padding = new Thickness(0) };
-                            var hdrGrid = new Grid();
-                            hdrGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
-                            hdrGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                            hdrGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                            string[] colNames = { "软件名称", "来源", "操作" };
-                            for (int c = 0; c < colNames.Length; c++)
-                            {
-                                var hdr = new TextBlock { Text = colNames[c], FontWeight = FontWeights.SemiBold, Foreground = _accent, FontSize = 13, Padding = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-                                Grid.SetColumn(hdr, c);
-                                hdrGrid.Children.Add(hdr);
-                            }
-                            hdrBorder.Child = hdrGrid;
-                            rowsPanel.Children.Add(hdrBorder);
-
-                            // 渲染搜索结果行（每行：名称 / 来源标签 / 一键安装按钮）
-                            foreach (var r in rs)
-                            {
-                                rowsPanel.Children.Add(BuildSearchResultRow(r, pb, log, () => log.AppendText("— 安装启动完成，详情见上方日志 —\r\n")));
-                            }
-                            btnBackToLocal.Visibility = Visibility.Visible;  // 显示"返回本地列表"
+                                pb.Visibility = Visibility.Collapsed;
+                                if (rs == null || rs.Count == 0)
+                                {
+                                    MessageBox.Show("没有找到匹配 '" + input + "' 的应用。\n\n提示：可在浏览器打开 https://apps.microsoft.com/store/search?q=" + input + " 找到应用后复制链接回来粘贴。",
+                                        "搜索结果", MessageBoxButton.OK, MessageBoxImage.Information);
+                                    return;
+                                }
+                                // 渲染搜索结果（3 列：名称/来源/操作）。内联在此以捕获 pb/rowsPanel/countLabel/btnBackToLocal 等局部变量。
+                                rowsPanel.Children.Clear();
+                                countLabel.Text = $"🔍 搜索结果：{rs.Count} 个（关键词：{input}）";
+                                var hdrBorder = new Border { Background = _bgCard, BorderBrush = _panelBorder, BorderThickness = new Thickness(1, 1, 1, 0), Padding = new Thickness(0) };
+                                var hdrGrid = new Grid();
+                                hdrGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
+                                hdrGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                                hdrGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                                string[] colNames = { "软件名称", "来源", "操作" };
+                                for (int c = 0; c < colNames.Length; c++)
+                                {
+                                    var hdr = new TextBlock { Text = colNames[c], FontWeight = FontWeights.SemiBold, Foreground = _accent, FontSize = 13, Padding = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+                                    Grid.SetColumn(hdr, c);
+                                    hdrGrid.Children.Add(hdr);
+                                }
+                                hdrBorder.Child = hdrGrid;
+                                rowsPanel.Children.Add(hdrBorder);
+                                foreach (var r in rs)
+                                {
+                                    rowsPanel.Children.Add(BuildSearchResultRow(r, pb, log, () => log.AppendText("— 安装启动完成，详情见上方日志 —\r\n")));
+                                }
+                                btnBackToLocal.Visibility = Visibility.Visible;  // 显示"返回本地列表"
+                            });
                         }, 200));
                         // 1) 刷新状态（原地刷新，保留日志）
                         actionBar.Children.Add(Btn("🔄 刷新状态", false, () =>
