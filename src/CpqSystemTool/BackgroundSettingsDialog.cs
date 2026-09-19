@@ -952,7 +952,11 @@ namespace CpqSystemTool
         private void HexBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             if (_isUpdating) return;
-            var c = BackgroundSettings.ParseColor(_hexBox.Text);
+            // [Q41] 裸 ParseColor 直接吃原始输入（#RGB 3 位 / 带 alpha / 中间态畸形串）会误解析；
+            // 先经 NormalizeHexColor 归一化+校验（非法/不完整返回 null），合法再解析
+            var norm = NormalizeHexColor(_hexBox.Text);
+            if (norm == null) return;
+            var c = BackgroundSettings.ParseColor(norm);
             if (c.A > 0)
             {
                 _currentColor = c;
@@ -1399,7 +1403,10 @@ namespace CpqSystemTool
             hex.TextChanged += (s, e) =>
             {
                 if (_isUpdating) return;
-                var c = BackgroundSettings.ParseColor(hex.Text);
+                // [Q41] 用户输入的 hex 先归一化+校验（NormalizeHexColor 对畸形/不完整返回 null），避免裸 ParseColor 误解析
+                var norm = NormalizeHexColor(hex.Text);
+                if (norm == null) return;
+                var c = BackgroundSettings.ParseColor(norm);
                 if (c.A > 0)
                 {
                     stop.Color = BackgroundSettings.ColorToHex(c);
@@ -1547,7 +1554,10 @@ namespace CpqSystemTool
             hex.TextChanged += (s, e) =>
             {
                 if (_isUpdating) return;
-                var c = BackgroundSettings.ParseColor(hex.Text);
+                // [Q41] 用户输入的 hex 先归一化+校验（NormalizeHexColor 对畸形/不完整返回 null），避免裸 ParseColor 误解析
+                var norm = NormalizeHexColor(hex.Text);
+                if (norm == null) return;
+                var c = BackgroundSettings.ParseColor(norm);
                 if (c.A > 0)
                 {
                     blob.Color = BackgroundSettings.ColorToHex(c);
