@@ -687,11 +687,12 @@ namespace CpqSystemTool
                     cb.UpdateLayout();
                     cb.InvalidateVisual();
 
-                    // 诊断 ToolTip：鼠标悬停就能看到 Refresh 读到的 cur 和设的 idx
+#if DEBUG
+                    // Q37：仅 Debug 构建保留调试输出（原先每次 Refresh 把 flags 下拉的 ToolTip 覆盖成调试串 + Debug.WriteLine，属调试遗留，
+                    // Release 构建不应保留，且会破坏 flags 的正常 ToolTip）。
                     cb.ToolTip = $"cur={(current ?? "<null>"),-12} → idx={idx} / {cb.Items.Count}";
-
-                    // Debug 输出（VS 输出窗口可见）
                     System.Diagnostics.Debug.WriteLine($"[Flag] {def.Key,-40} cur={(current ?? "<null>"),-12} idx={idx} items={cb.Items.Count}");
+#endif
                 }
             }
             finally

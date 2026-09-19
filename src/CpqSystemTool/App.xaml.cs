@@ -198,13 +198,32 @@ namespace CpqSystemTool
             catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  /* 日志失败也不应再抛异常 */ }
         }
 
+        // Q32：3s 节流——循环/重复异常不再刷屏弹窗；被抑制的异常已逐条写入 crash.log（WriteCrashLog 已在 OnDispatcherUnhandled 落盘）。
+        private static readonly object _exUiGate = new object();
+        private static DateTime _lastCrashPopupUtc = DateTime.MinValue;
+        private static int _suppressedSinceLast = 0;
+
         private static void ShowCrash(Exception ex)
         {
+            int suppressedToMention = 0;
+            lock (_exUiGate)
+            {
+                if ((DateTime.UtcNow - _lastCrashPopupUtc).TotalMilliseconds < 3000)
+                {
+                    _suppressedSinceLast++;           // 3s 窗口内：不弹窗，仅 crash.log
+                    return;
+                }
+                suppressedToMention = _suppressedSinceLast;
+                _suppressedSinceLast = 0;
+                _lastCrashPopupUtc = DateTime.UtcNow;
+            }
             try
             {
                 var msg = (ex?.GetType().FullName ?? "Unknown") + ": " + (ex?.Message ?? "");
                 if (ex?.InnerException != null)
                     msg += "\n内层: " + ex.InnerException.GetType().FullName + ": " + ex.InnerException.Message;
+                if (suppressedToMention > 0)
+                    msg += "\n\n（另有 " + suppressedToMention + " 条异常 3s 内重复，已抑制弹窗）";
                 msg += "\n\n（详细已写入 crash.log）";
                 MessageBox.Show(msg, "系统清理与优化工具 · 未处理异常", MessageBoxButton.OK, MessageBoxImage.Error);
             }

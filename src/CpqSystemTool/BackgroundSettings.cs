@@ -256,19 +256,19 @@ namespace CpqSystemTool
                 if (solid != null) s.SolidColor = solid;
 
                 var ga = ExtractJsonDouble(json, "GradientAngle");
-                if (ga.HasValue) s.GradientAngle = ga.Value;
+                if (ga.HasValue && double.IsFinite(ga.Value)) s.GradientAngle = ga.Value;
                 var rcx = ExtractJsonDouble(json, "RadialCenterX");
-                if (rcx.HasValue) s.RadialCenterX = rcx.Value;
+                if (rcx.HasValue && double.IsFinite(rcx.Value)) s.RadialCenterX = rcx.Value;
                 var rcy = ExtractJsonDouble(json, "RadialCenterY");
-                if (rcy.HasValue) s.RadialCenterY = rcy.Value;
+                if (rcy.HasValue && double.IsFinite(rcy.Value)) s.RadialCenterY = rcy.Value;
                 var rrx = ExtractJsonDouble(json, "RadialRadiusX");
-                if (rrx.HasValue) s.RadialRadiusX = rrx.Value;
+                if (rrx.HasValue && double.IsFinite(rrx.Value)) s.RadialRadiusX = rrx.Value;
                 var rry = ExtractJsonDouble(json, "RadialRadiusY");
-                if (rry.HasValue) s.RadialRadiusY = rry.Value;
+                if (rry.HasValue && double.IsFinite(rry.Value)) s.RadialRadiusY = rry.Value;
                 var lcx = ExtractJsonDouble(json, "LinearCenterX");
-                if (lcx.HasValue) s.LinearCenterX = lcx.Value;
+                if (lcx.HasValue && double.IsFinite(lcx.Value)) s.LinearCenterX = lcx.Value;
                 var lcy = ExtractJsonDouble(json, "LinearCenterY");
-                if (lcy.HasValue) s.LinearCenterY = lcy.Value;
+                if (lcy.HasValue && double.IsFinite(lcy.Value)) s.LinearCenterY = lcy.Value;
 
                 s.Stops = ExtractGradientStops(json, "Stops");
                 s.Blobs = ExtractMeshBlobs(json, "Blobs");

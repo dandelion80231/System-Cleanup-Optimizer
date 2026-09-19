@@ -17,8 +17,10 @@ namespace CpqSystemTool
         private static StreamWriter _writer;
         private static string _writerFile;
         private static bool _prunedThisSession;
+        // Q30：批量 flush —— 原先每行 Append 都 _writer.Flush()（ODT 成百上千行 → 逐次同步磁盘 IO）；改为每 100 行 flush 一次（切天/Dispose 时仍会 flush 剩余）。
+        private static int _linesSinceFlush;
 
-        /// <summary>追加一行日志（UI 线程调用；写盘在锁内同步完成，单行开销可忽略）。</summary>
+        /// <summary>追加一行日志（写盘在锁内完成，批量 flush 控制 IO 频率）。</summary>
         public static void Append(OfficeDeployControl.LogEntry entry)
         {
             if (entry == null) return;
@@ -46,7 +48,9 @@ namespace CpqSystemTool
                         _writerFile = file;
                     }
                     _writer.WriteLine((entry.Timestamp ?? "") + "  " + (entry.Text ?? ""));
-                    _writer.Flush();
+                    _linesSinceFlush++;
+                    // Q30：每 100 行才 flush 一次，避免 ODT 逐行同步写盘拖慢日志。
+                    if (_linesSinceFlush >= 100) { _writer.Flush(); _linesSinceFlush = 0; }
                 }
                 catch { /* 写盘失败不阻塞 UI 显示 */ }
             }

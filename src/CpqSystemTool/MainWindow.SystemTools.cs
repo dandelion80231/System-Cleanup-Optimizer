@@ -597,7 +597,8 @@ namespace CpqSystemTool
             // LogEntry.Icon=="check" → 绿色矢量对勾；其它 → 彩色 emoji。
             officeDeploy.ExternalLogSink = entry =>
             {
-                logRich.Dispatcher.Invoke(() =>
+                // Q30：BeginInvoke 非阻塞（同一后台线程顺序投递，Dispatcher FIFO 保序）；原先 Invoke 逐行阻塞。
+                logRich.Dispatcher.BeginInvoke(() =>
                 {
                     logRich.Items.Add(entry);
                     // 显示上限 2000 行（与 OfficeDeployControl.MaxLogLines 同一约定）：

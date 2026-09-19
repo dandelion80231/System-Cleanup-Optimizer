@@ -2555,7 +2555,8 @@ namespace CpqSystemTool
             };
             randHarmonyBtn.Click += (s, e) =>
             {
-                _currentHue = new Random().Next(360);
+                // Q44：原先 new Random() 时间种子，快速连点同毫秒内会得同值；改用已声明的类级静态 _rng（跨点击持久、不重造）。
+                _currentHue = _rng.Next(360);
                 SyncColorFromHsv();
                 UpdateHarmonySwatches();
             };

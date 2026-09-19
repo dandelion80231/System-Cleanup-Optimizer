@@ -474,12 +474,15 @@ namespace CpqSystemTool
         /// 【P2-12】⚠ 同步封异步（GetAwaiter().GetResult() 阻塞 10 秒级网络 IO）：仅限后台线程调用（现调用点已在 Task.Run 内）；UI 线程调用会卡界面，WPF SyncContext 下有死锁风险。</summary>
         private static string DownloadStringDirect(string url)
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            // Q36：原先一个 10s CTS 同时盖住 connect+read 两阶段，慢连接下 read 阶段可用预算被 connect 吃掉；
+            // 改为两个独立 CTS，各 10s（总最多 20s）。
+            using var ctsConn = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.UserAgent.ParseAdd("CpqSystemTool");
-            using var resp = _aboutUpdateHttpClient.SendAsync(req, cts.Token).GetAwaiter().GetResult();
+            using var resp = _aboutUpdateHttpClient.SendAsync(req, ctsConn.Token).GetAwaiter().GetResult();
             resp.EnsureSuccessStatusCode();
-            return resp.Content.ReadAsStringAsync(cts.Token).GetAwaiter().GetResult();
+            using var ctsRead = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            return resp.Content.ReadAsStringAsync(ctsRead.Token).GetAwaiter().GetResult();
         }
 
         /// <summary>检查官网 version.json 是否有新版本，结果经 Dispatcher 回到 UI 线程写入状态栏。</summary>
