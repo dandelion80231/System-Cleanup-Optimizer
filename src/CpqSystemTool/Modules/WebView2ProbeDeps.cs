@@ -88,7 +88,8 @@ namespace CpqSystemTool
             string tempNupkg = null;
             try
             {
-                tempNupkg = Path.Combine(Path.GetTempPath(), "Microsoft.Web.WebView2." + WebView2PkgVersion + ".nupkg");
+                // Q18：临时 nupkg 加 GUID 后缀 —— 原先固定名 "…WebView2.<ver>.nupkg"，两处同时安装会争抢/互删；每次调用独占一个临时文件。
+                tempNupkg = Path.Combine(Path.GetTempPath(), "Microsoft.Web.WebView2." + WebView2PkgVersion + "." + System.Guid.NewGuid().ToString("N") + ".nupkg");
                 WriteDepsLog("tempNupkg=" + tempNupkg);
                 await DownloadFileWithClientAsync(nupkgUrl, tempNupkg, log, progress).ConfigureAwait(false);
                 WriteDepsLog("[*] nupkg 下载完成，大小=" + new FileInfo(tempNupkg).Length);

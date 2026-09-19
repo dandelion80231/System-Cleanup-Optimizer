@@ -205,9 +205,11 @@ namespace CpqSystemTool
                 {
                     if (p == null) { logf("[!] 无法启动: " + fileName); return false; }
                     var sb = new StringBuilder();
+                    // Q27：OutputDataReceived 在事件线程 Append，调用线程再 ToString —— sb 需加锁防数据竞争。
+                    var sbLock = new object();
                     p.OutputDataReceived += (s, e) =>
                     {
-                        if (e.Data != null) { sb.AppendLine(e.Data); logf(e.Data); }
+                        if (e.Data != null) { lock (sbLock) { sb.AppendLine(e.Data); } logf(e.Data); }
                     };
                     p.ErrorDataReceived += (s, e) =>
                     {
@@ -222,11 +224,11 @@ namespace CpqSystemTool
                         // [Q28] 整树终止（.NET10 Process.Kill(bool)）：原 p.Kill() 只杀直接子进程（node），
                         // 其派生的 Playwright/Chromium 子进程会成孤儿残留；Kill(true) 连带整棵进程树一起杀。
                         try { p.Kill(true); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }
-                        outStdout = sb.ToString();
+                        lock (sbLock) { outStdout = sb.ToString(); }
                         logf("[!] 进程超时（15 分钟）已被强制结束。" + "（含其子进程树）");
                         return false;
                     }
-                    outStdout = sb.ToString();
+                    lock (sbLock) { outStdout = sb.ToString(); }
                     return p.ExitCode == 0;
                 }
             }

@@ -820,7 +820,28 @@ namespace CpqSystemTool
             catch (Exception ex) { DebugLog.Ignore(ex); }
             try { if (_thread != null && _thread.IsAlive) _thread.Join(2000); } catch (Exception ex) { DebugLog.Ignore(ex); }
             // 清理本次使用的临时用户数据目录（避免残留缓存/锁文件累积导致后续初始化挂起）
-            try { if (!string.IsNullOrEmpty(_userDataDir) && Directory.Exists(_userDataDir)) Directory.Delete(_userDataDir, true); } catch (Exception ex) { DebugLog.Ignore(ex); }
+            // Q19：子进程可能仍在释放文件句柄（Chromium 锁文件），立即删常因锁定失败而泄漏；
+            // 改为后台重试删除（10×300ms），失败仅留痕不阻断。
+            string dirToDelete = _userDataDir;
+            _userDataDir = null;
+            if (!string.IsNullOrEmpty(dirToDelete) && Directory.Exists(dirToDelete))
+            {
+                _ = System.Threading.Tasks.Task.Run(() =>
+                {
+                    for (int attempt = 0; attempt < 10; attempt++)
+                    {
+                        try
+                        {
+                            if (!Directory.Exists(dirToDelete)) return;
+                            Directory.Delete(dirToDelete, true);
+                            return;
+                        }
+                        catch (Exception ex) { DebugLog.Ignore(ex); }
+                        try { System.Threading.Thread.Sleep(300); } catch { }
+                    }
+                    DebugLog.Warn("[ProbeBrowserHost] userDataDir 延迟删除失败，可能残留：" + dirToDelete);
+                });
+            }
         }
     }
 }

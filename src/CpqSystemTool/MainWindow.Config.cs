@@ -1398,19 +1398,22 @@ namespace CpqSystemTool
 
 
 
-                                        _backgroundSettings.DarkPath = dlg.FileName;
-
-
-
-                                        SaveBackgroundSettings();
+                                        // Q42：背景线程不再直接写 _backgroundSettings/调 Save（与 UI 线程并发读写→竞争），移入 Dispatcher.Invoke 内。
+                                        try
+                                        {
+                                            Dispatcher.Invoke(() =>
+                                            {
+                                                _backgroundSettings.DarkPath = dlg.FileName;
+                                                SaveBackgroundSettings();
+                                                refreshThumbs();
+                                                ApplyShellColors();
+                                            });
+                                        }
+                                        catch { /* 窗口已关闭，忽略 */ }
 
 
 
                                         l("[OK] WebP 解码器已安装，背景已自动应用");
-
-
-
-                                        try { Dispatcher.Invoke(() => { refreshThumbs(); ApplyShellColors(); }); } catch { /* 窗口已关闭，忽略 */ }
 
 
 
@@ -1854,19 +1857,22 @@ namespace CpqSystemTool
 
 
 
-                                        _backgroundSettings.LightPath = dlg.FileName;
-
-
-
-                                        SaveBackgroundSettings();
+                                        // Q42：背景线程不再直接写 _backgroundSettings/调 Save（与 UI 线程并发读写→竞争），移入 Dispatcher.Invoke 内。
+                                        try
+                                        {
+                                            Dispatcher.Invoke(() =>
+                                            {
+                                                _backgroundSettings.LightPath = dlg.FileName;
+                                                SaveBackgroundSettings();
+                                                refreshThumbs();
+                                                ApplyShellColors();
+                                            });
+                                        }
+                                        catch { /* 窗口已关闭，忽略 */ }
 
 
 
                                         l("[OK] WebP 解码器已安装，背景已自动应用");
-
-
-
-                                        try { Dispatcher.Invoke(() => { refreshThumbs(); ApplyShellColors(); }); } catch { /* 窗口已关闭，忽略 */ }
 
 
 

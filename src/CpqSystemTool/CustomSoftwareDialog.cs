@@ -560,7 +560,8 @@ namespace CpqSystemTool
             }
             var r = sb.ToString();
             // 过滤后为空（纯中文/纯符号名）→ 回退到稳定的默认 ID，保证仍能保存
-            if (string.IsNullOrEmpty(r)) r = "custom" + DateTime.Now.ToString("yyyyMMddHHmmss");
+            // Q31：同秒多次创建会 ID 冲突，加 6 位 GUID 后缀避免；超长由下方 64 截断兼容。
+            if (string.IsNullOrEmpty(r)) r = "custom" + DateTime.Now.ToString("yyyyMMddHHmmss") + "_" + System.Guid.NewGuid().ToString("N").Substring(0, 6);
             // 白名单位置限制长度 1-64，超长截断（避免长英文名生成超长 ID 再次被拒）
             if (r.Length > 64) r = r.Substring(0, 64);
             return r;
