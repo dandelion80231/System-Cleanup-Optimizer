@@ -342,7 +342,11 @@ namespace CpqSystemTool
                 // 注意：col2Start 常大于目标 xBtn（窗口多数宽度下），左边距必须允许负值（WPF 支持，child 向左画出 cell），
                 // 否则 Math.Max(0,·) 钳到 0 后按钮留在列起点 → 视觉上偏右（实测 12px 量级）。
                 _bOpenScRef.HorizontalAlignment = System.Windows.HorizontalAlignment.Left;
-                _bOpenScRef.Margin = new System.Windows.Thickness(xBtn - col2Start, 0, 0, 0);
+                double targetLeft = xBtn - col2Start;
+                // P3：让注释里“阈值防抖”属实——目标左边距变化 ≤ 0.5px 时跳过赋值，
+                // 避免窗口高频微抖/resize 逐像素重设 margin（无可见变化的赋值）。
+                if (Math.Abs(_bOpenScRef.Margin.Left - targetLeft) <= 0.5) return;
+                _bOpenScRef.Margin = new System.Windows.Thickness(targetLeft, 0, 0, 0);
             }
 
             // 每次进页首次 + 操作 onDone + 重进页 + 定时轮询 都调它
