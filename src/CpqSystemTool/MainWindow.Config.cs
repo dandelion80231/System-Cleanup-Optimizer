@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 
 
@@ -1378,6 +1378,16 @@ namespace CpqSystemTool
 
 
 
+                                // WebP bug 修复③：深色背景：检测不确定≠真解不了——先在后台直接试双通道加载，能解就直接保存并应用（不进 60s 装解码器死路）
+                                var direct = MainWindow.TryLoadImagePublic(dlg.FileName);
+                                if (direct != null)
+                                {
+                                    try { Dispatcher.Invoke(() => { _backgroundSettings.DarkPath = dlg.FileName; SaveBackgroundSettings(); InvalidateConfigCache(); refreshThumbs(); ApplyShellColors(); }); }
+                                    catch { /* 窗口已关闭，忽略 */ }
+                                    try { Dispatcher.Invoke(() => { pb.Visibility = Visibility.Collapsed; }); } catch { }
+                                    l("[OK] 深色背景已应用（直接解码成功）");
+                                    return;
+                                }
                                 if (MainWindow.InstallWebpExtension(l))
 
 
@@ -1907,6 +1917,16 @@ namespace CpqSystemTool
 
 
 
+                                // WebP bug 修复③：浅色背景：检测不确定≠真解不了——先在后台直接试双通道加载，能解就直接保存并应用（不进 60s 装解码器死路）
+                                var direct = MainWindow.TryLoadImagePublic(dlg.FileName);
+                                if (direct != null)
+                                {
+                                    try { Dispatcher.Invoke(() => { _backgroundSettings.LightPath = dlg.FileName; SaveBackgroundSettings(); InvalidateConfigCache(); refreshThumbs(); ApplyShellColors(); }); }
+                                    catch { /* 窗口已关闭，忽略 */ }
+                                    try { Dispatcher.Invoke(() => { pb.Visibility = Visibility.Collapsed; }); } catch { }
+                                    l("[OK] 浅色背景已应用（直接解码成功）");
+                                    return;
+                                }
                                 if (MainWindow.InstallWebpExtension(l))
 
 
