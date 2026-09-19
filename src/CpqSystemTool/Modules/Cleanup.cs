@@ -291,6 +291,7 @@ namespace CpqSystemTool
             // 删除完成后一次打行，避免先刷名称再刷 [OK] 的双行观感
             try
             {
+                int deleted = 0, failed = 0;
                 foreach (var profileDir in Directory.EnumerateDirectories(baseDir))
                 {
                     string nf = Path.Combine(profileDir, "Network");
@@ -300,16 +301,19 @@ namespace CpqSystemTool
                         foreach (var cf in ckFiles)
                         {
                             string fp = Path.Combine(nf, cf);
-                            try { if (File.Exists(fp)) File.Delete(fp); } catch (Exception caughtEx) { LogIgnored(caughtEx); }
+                            try { if (File.Exists(fp)) { File.Delete(fp); deleted++; } } catch (Exception caughtEx) { LogIgnored(caughtEx); failed++; }
                         }
                         // 删除剩余的 Cookies-* 文件
                         foreach (var cf in Directory.EnumerateFiles(nf, "Cookies-*", SearchOption.TopDirectoryOnly))
                         {
-                            try { File.Delete(cf); } catch (Exception caughtEx) { LogIgnored(caughtEx); }
+                            try { File.Delete(cf); deleted++; } catch (Exception caughtEx) { LogIgnored(caughtEx); failed++; }
                         }
                     }
                 }
-                log(name + " Cookies  [OK]");
+                // [Q7] 结果行反映真实删除情况：不再无脑 [OK]（避免“全部删不掉却报成功”）
+                if (failed > 0 && deleted == 0) log(name + " Cookies  [!] " + failed + " 个 Cookie 文件删除失败（可能被浏览器占用），请关闭浏览器后重试");
+                else if (failed > 0) log(name + " Cookies  [PARTIAL] 已删 " + deleted + " 个，" + failed + " 个失败（被占用）");
+                else log(name + " Cookies  [OK]");
                 return true;
             }
             catch (Exception caughtEx)
@@ -344,6 +348,11 @@ namespace CpqSystemTool
                 () => CleanDir("NVIDIA ComputeCache", @"%APPDATA%\NVIDIA\ComputeCache", log),
             };
             Parallel.Invoke(InnerPar, nvidiaCaches);
+            // [Q6] 服务仅为临时清理缓存而停止，清完必须重启；否则 NVIDIA 显示容器/驱动服务保持停止，
+            // 可能导致显卡功能异常直至重启系统。与上方 net stop 对称，用 net start 恢复。
+            log("重启 NVIDIA 服务...");
+            foreach (var svc in new[] { "NVDisplay.ContainerLocalSystem", "NVIDIA Display Container" })
+                Exec.RunCmd(new[] { "net", "start", svc }, log);
         }
 
         internal static void NetCache(Action<string> log)
@@ -782,6 +791,32 @@ namespace CpqSystemTool
         /// 待删路径是否受保护：位于受保护根目录之内、就是受保护根目录本身，或是某个盘符根目录（C:\、D:\ …）。
         /// 命中前缀后必须紧跟分隔符或已结束，避免 "C:\Program Files" 误匹配 "C:\Program FilesData"。
         /// </summary>
+        // [Q5] Tier-aware 保护：Tier2「更新残留」的已知目标集中在 %ProgramData%（NVIDIA ota-artifacts / Downloader、
+        // DeliveryOptimization Cache 等），全量 IsProtectedPath 会对 ProgramData 子树整体拦截 → 这些目标恒 [SKIP]（哑火）。
+        // 故 Tier2 仅放开 ProgramData 子树（这些是更新缓存，可删）；其余保护（Windows / Program Files / 用户根 / 应用运行时）不变。
+        private static bool IsProtectedPathForTier(string fullPath, bool tier2)
+        {
+            if (string.IsNullOrWhiteSpace(fullPath)) return true;
+            string norm = NormalizeForCompare(fullPath);
+            if (norm == null) return true;
+            if (norm.Length <= 2 || (norm.Length == 3 && norm[1] == ':' && norm[2] == '\\')) return true; // 盘符根目录
+            string pd = tier2 ? NormalizeForCompare(Exec.ExpandEnv(@"%ProgramData%")) : null;
+            foreach (var root in _protectedSubtreeRoots)
+            {
+                if (tier2 && pd != null && string.Equals(root, pd, StringComparison.OrdinalIgnoreCase)) continue; // Tier2 放开 ProgramData
+                string r = NormalizeForCompare(root);
+                if (r == null) continue;
+                if (norm == r || norm.StartsWith(r + "\\", StringComparison.Ordinal)) return true;
+            }
+            foreach (var root in _protectedSelfRoots)
+            {
+                string r = NormalizeForCompare(root);
+                if (r == null) continue;
+                if (norm == r) return true;
+            }
+            return false;
+        }
+
         private static bool IsProtectedPath(string fullPath)
         {
             if (string.IsNullOrWhiteSpace(fullPath)) return true;   // 空路径一律不删
@@ -817,10 +852,11 @@ namespace CpqSystemTool
                 {
                     // 防误删：受保护根（Windows / Program Files / ProgramData / 用户目录根 / 盘符根）
                     // 下的同名命中可能是用户数据，跳过删除并记录跳过原因，不打断自动化清理。
-                    if (IsProtectedPath(p))
+                    // [Q5] Tier2 用 tier-aware 保护（放开 ProgramData 子树），避免「更新残留」恒 [SKIP] 哑火；Tier1 保持全量保护。
+                    if (IsProtectedPathForTier(p, tier2))
                     {
                         guard++;
-                        log("  [SKIP] 受保护路径，跳过删除（防误删用户数据）: " + p);
+                        log((tier2 ? "  [SKIP] 受保护路径（Tier2），跳过删除: " : "  [SKIP] 受保护路径，跳过删除（防误删用户数据）: ") + p);
                         continue;
                     }
                     if (TryCleanDir(p)) ok++; else skip++;
