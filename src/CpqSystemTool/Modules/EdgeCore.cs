@@ -339,12 +339,18 @@ namespace CpqSystemTool
             Directory.CreateDirectory(dataRoot);
             string setupPath = Path.Combine(dataRoot, "MicrosoftEdgeWebview2Setup.exe");
             log("正在下载 WebView2 Runtime...");
-            Exec.RunPowerShell("Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile " + Exec.QuotePS(setupPath), log);
+            int dlrc = Exec.RunPowerShell("Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile " + Exec.QuotePS(setupPath), log);
+            // [Q9] 下载安装 rc 不再丢弃：下载失败/文件缺失时不再误报“完成”，明确告警并终止后续安装。
+            if (dlrc != 0 || !File.Exists(setupPath))
+            {
+                log("  [!] WebView2 Runtime 下载失败（退出码 " + dlrc + (File.Exists(setupPath) ? "" : "，文件缺失") + "），已跳过安装。请检查网络后重试。");
+                return;
+            }
             log("正在安装 WebView2 Runtime...");
             // 不经 cmd：原写法 cmd /c "\"路径\"" 会被 Exec.QuoteCmd 把内层 " 翻倍成 ""，
             // TEMP 含空格时 cmd 解析失败、安装静默 no-op。exe 直接作 args[0]（FileName，无需引号）。
-            Exec.RunCmd(new[] { setupPath, "/silent", "/install" }, log);
-            log("WebView2 Runtime 安装/升级完成");
+            int inrc = Exec.RunCmd(new[] { setupPath, "/silent", "/install" }, log);
+            log(inrc == 0 ? "WebView2 Runtime 安装/升级完成" : "  [!] WebView2 Runtime 安装退出码 " + inrc + "（非 0，可能失败，见上方输出）");
             // 位数终验：未提权静默安装只装 32 位（用户级），64 位进程用不了 → 明确告知。
             ReportRuntimeCompleteness(log);
 
@@ -665,14 +671,21 @@ namespace CpqSystemTool
                 return;
             }
             string url = info.InstallUrl;
+            string setup = Environment.GetEnvironmentVariable("TEMP") + "\\MicrosoftEdgeSetup.exe";
             log($"正在下载 Edge {channel}...");
-            Exec.RunPowerShell($"Invoke-WebRequest -Uri '{url}' -OutFile \"$env:TEMP\\MicrosoftEdgeSetup.exe\"", log);
+            int dlrc = Exec.RunPowerShell($"Invoke-WebRequest -Uri '{url}' -OutFile \"$env:TEMP\\MicrosoftEdgeSetup.exe\"", log);
+            // [Q9] 下载安装 rc 不再丢弃：下载失败/文件缺失时不再误报“完成”，明确告警并终止安装。
+            if (dlrc != 0 || !File.Exists(setup))
+            {
+                log("  [!] Edge " + channel + " 下载失败（退出码 " + dlrc + "），已跳过安装。请检查网络后重试。");
+                return;
+            }
             log("正在安装...");
             // 不要写成 cmd /c "\"路径\"" ——Exec.QuoteCmd 会把内层 " 翻倍成 ""，
             // TEMP 含空格（如 C:\Users\张 三\AppData\Local\Temp）时 cmd 解析失败、安装静默 no-op。
             // 直接把 exe 作为 args[0]（ProcessStartInfo.FileName，无需引号），参数各自独立传。
-            Exec.RunCmd(new[] { Environment.GetEnvironmentVariable("TEMP") + "\\MicrosoftEdgeSetup.exe", "/silent", "/install" }, log);
-            log($"Edge {channel} 安装完成");
+            int inrc = Exec.RunCmd(new[] { setup, "/silent", "/install" }, log);
+            log(inrc == 0 ? "Edge " + channel + " 安装完成" : "  [!] Edge " + channel + " 安装退出码 " + inrc + "（非 0，可能失败，见上方输出）");
         }
 
         // === 卸载 Edge ===
@@ -749,7 +762,9 @@ namespace CpqSystemTool
                 ForceCleanupEdge(displayName, log);
                 return true;
             }
-            Exec.RunCmd(argv, log);
+            int rc = Exec.RunCmd(argv, log);
+            // [Q8] 不再无条件报“卸载完成”：捕获退出码，非 0 时明确告警（forceClean 的强制清理作为兜底）
+            if (rc != 0) log("  [!] Edge 卸载命令退出码 " + rc + "（非 0：可能部分失败" + (forceClean ? "，将执行强制清理兜底" : "") + "）");
 
             if (forceClean)
             {
@@ -757,7 +772,7 @@ namespace CpqSystemTool
                 ForceCleanupEdge(displayName, log);
             }
 
-            log($"Edge {channel} 卸载完成");
+            log(rc == 0 ? "Edge " + channel + " 卸载完成" : "Edge " + channel + " 卸载命令已执行（退出码 " + rc + "，详见上方输出）");
             return true;
         }
 
