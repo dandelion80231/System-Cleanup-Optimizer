@@ -1329,12 +1329,12 @@ namespace CpqSystemTool
 
                     string picked = dlg.FileName;
                     string ext0 = System.IO.Path.GetExtension(picked).ToLowerInvariant();
-                    // [Q22] webp 且系统无原生 WebP 解码器时，同步首图取图会触发 pwsh 转码（最长 ~15s）冻结 UI。
-                    // 该慢路径强制 testImg=null，直接落入下方已有后台通道（安装 WebP 解码器 + 后台取图应用）；
-                    // 其余格式 / 已有原生 webp 解码器 → 同步取图毫秒级，保持原路径不变。
-                    var testImg = (ext0 == ".webp" && !MainWindow.IsWebpCodecAvailable())
-                        ? null
-                        : MainWindow.TryLoadImagePublic(picked);
+                    // [Q22 提速] webp 跳过同步 IsWebpCodecAvailable 预检查（v5.1 Get-AppxPackage 冷启动 5-6s，切换 webp 每次 UI 冻结）：
+                    // 只试进程内 WPF 原生解码（毫秒级）。解出→立即应用；解不出→testImg=null，仍落入下方原有分支：
+                    // 真缺解码器→安装流（含③后台直解预检+装成保存+重启提示）；WIC 缓存受限→当前会话受限分支；行为不变。
+                    var testImg = (ext0 == ".webp")
+                        ? MainWindow.TryLoadImageWpfOnly(picked)   // webp：进程内 WPF 原生解码（毫秒级）；跳过 5-6s 同步 Get-AppxPackage 预检查
+                        : MainWindow.TryLoadImagePublic(picked);   // 其余格式保持双通道
 
 
 
@@ -1872,12 +1872,12 @@ namespace CpqSystemTool
 
                     string picked = dlg.FileName;
                     string ext0 = System.IO.Path.GetExtension(picked).ToLowerInvariant();
-                    // [Q22] webp 且系统无原生 WebP 解码器时，同步首图取图会触发 pwsh 转码（最长 ~15s）冻结 UI。
-                    // 该慢路径强制 testImg=null，直接落入下方已有后台通道（安装 WebP 解码器 + 后台取图应用）；
-                    // 其余格式 / 已有原生 webp 解码器 → 同步取图毫秒级，保持原路径不变。
-                    var testImg = (ext0 == ".webp" && !MainWindow.IsWebpCodecAvailable())
-                        ? null
-                        : MainWindow.TryLoadImagePublic(picked);
+                    // [Q22 提速] webp 跳过同步 IsWebpCodecAvailable 预检查（v5.1 Get-AppxPackage 冷启动 5-6s，切换 webp 每次 UI 冻结）：
+                    // 只试进程内 WPF 原生解码（毫秒级）。解出→立即应用；解不出→testImg=null，仍落入下方原有分支：
+                    // 真缺解码器→安装流（含③后台直解预检+装成保存+重启提示）；WIC 缓存受限→当前会话受限分支；行为不变。
+                    var testImg = (ext0 == ".webp")
+                        ? MainWindow.TryLoadImageWpfOnly(picked)   // webp：进程内 WPF 原生解码（毫秒级）；跳过 5-6s 同步 Get-AppxPackage 预检查
+                        : MainWindow.TryLoadImagePublic(picked);   // 其余格式保持双通道
 
 
 

@@ -84,6 +84,10 @@ namespace CpqSystemTool
         /// <summary>尝试从文件路径加载 BitmapImage（双通道：BitmapImage 原生 + System.Drawing 转码 webp）。失败返回 null。</summary>
         public static BitmapImage TryLoadImagePublic(string path) => TryLoadImageAny(path);
 
+        /// <summary>仅进程内 WPF 原生解码（毫秒级，不经过 pwsh 转码通道）。WebP 背景选择器同步取图专用：
+        /// 跳过 v5.1 Get-AppxPackage 预检查带来的 5-6s UI 冻结；解码失败返回 null，由调用方落入安装流/会话受限分支。双通道版见 TryLoadImagePublic。</summary>
+        public static BitmapImage TryLoadImageWpfOnly(string path) => TryLoadImage(path);
+
         /// <summary>双通道加载：
         /// ① BitmapImage 原生解码（png/jpg/bmp/gif）
         /// ② System.Drawing (GDI+/WIC) 转码——Win10 1709+ / Win11 内置 webp 解码器，转 PNG 后喂给 BitmapImage。
