@@ -67,8 +67,11 @@ namespace CpqSystemTool
             // <Display Level> 控制：此处安装用 Level="Full" 显示原生进度，无需 /quiet。
             // workingDirectory=setup.exe 所在目录：固定 ODT 子进程 CWD，避免其继承父进程 CWD（双击 exe=桌面）
             // 后在桌面建日志/数据文件夹。
-            Exec.RunCmd(new[] { setup, "/configure", xmlPath }, log, workingDirectory: Path.GetDirectoryName(setup));
-            log("  [完成] 安装结束，请查看上方输出确认结果（安装失败多为网络/版本密钥问题）");
+            int rc = Exec.RunCmd(new[] { setup, "/configure", xmlPath }, log, workingDirectory: Path.GetDirectoryName(setup));
+            // [Q4] 此前丢弃 ODT 退出码，安装失败也打印“安装结束”，易误判为成功。现明确报告非零退出码。
+            log(rc == 0
+                ? "  [OK] ODT 安装流程正常退出（退出码 0）"
+                : "  [!] ODT 安装退出码 " + rc + "（非 0：多为网络/版本密钥问题，请查看上方输出确认）");
         }
 
         /// <summary>
