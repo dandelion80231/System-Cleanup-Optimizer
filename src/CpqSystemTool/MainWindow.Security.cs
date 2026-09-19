@@ -384,15 +384,24 @@ namespace CpqSystemTool
                         _tpRowRef = row;
                         // 方框 + 状态文字（与上方 4 个开关同款 CheckBox：勾选=已开启，未勾=已关闭）
                         // 纯指示用途：IsHitTestVisible=false + Cursor=Arrow，TP 只能手动在安全中心改
+                        // P1：状态文字改为带省略号的可裁切 TextBlock + 让 CheckBox 撑满 col1(Stretch)，
+                        // 使文案在极窄窗口下“截断”而非越列压到「打开安全中心」；正常宽度 col1 足够宽，
+                        // 完整显示、观感不变。
                         var tpState = new System.Windows.Controls.CheckBox
                         {
-                            Content = tpOn ? "已开启（外部脚本无法修改 Defender）" : "已关闭（外部脚本可正常改 Defender）",
+                            Content = new Emoji.Wpf.TextBlock
+                            {
+                                Text = tpOn ? "已开启（外部脚本无法修改 Defender）" : "已关闭（外部脚本可正常改 Defender）",
+                                Foreground = tpOn ? _warnOrange : _successGreen,
+                                FontSize = 12.5,
+                                VerticalAlignment = VerticalAlignment.Center,
+                                TextTrimming = TextTrimming.CharacterEllipsis
+                            },
                             IsChecked = tpOn,
                             IsHitTestVisible = false,
                             Cursor = Cursors.Arrow,
-                            Foreground = tpOn ? _warnOrange : _successGreen,
-                            FontSize = 12.5,
-                            HorizontalAlignment = HorizontalAlignment.Left,
+                            Foreground = tpOn ? _warnOrange : _successGreen,   // 方框勾选符号颜色（与文字同色）
+                            HorizontalAlignment = HorizontalAlignment.Stretch,
                             VerticalAlignment = VerticalAlignment.Center
                         };
                         Grid.SetColumn(tpState, 1);
