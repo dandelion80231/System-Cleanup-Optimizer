@@ -929,6 +929,18 @@ namespace CpqSystemTool
                                 string repoReadme = CpqFindRepoReadme(srcPkg);
                                 if (!string.IsNullOrEmpty(repoReadme))
                                     File.Copy(repoReadme, Path.Combine(extractDir, "README.md"), true);
+                                // v1.23 修订：回退分支也带上外壳源码 tools\cpq-shell（与 src 同仓库根），
+                                // 保证「导出源码」= 完整源码（主程序 + 智能外壳）。
+                                string repoRoot = srcPkg.EndsWith("CpqSystemTool", System.StringComparison.OrdinalIgnoreCase)
+                                    ? Path.GetFullPath(Path.Combine(srcPkg, "..", ".."))
+                                    : Path.GetFullPath(Path.Combine(srcPkg, ".."));
+                                string shellSrcDir = Path.Combine(repoRoot, "tools", "cpq-shell");
+                                if (Directory.Exists(shellSrcDir))
+                                {
+                                    Directory.CreateDirectory(Path.Combine(extractDir, "tools", "cpq-shell"));
+                                    CpqCopySourceDir(shellSrcDir, Path.Combine(extractDir, "tools", "cpq-shell"),
+                                        new string[] { "bin", "obj" }, new string[] { ".exe", ".dll", ".pdb", ".bak", ".tmp", ".log" });
+                                }
                             }
 
                             // 3) 背景图 + 组件图标：从运行中的程序集提取，补齐源码包里刻意排除的图片
@@ -941,7 +953,7 @@ namespace CpqSystemTool
                             if (restored.Length > 0) restored.Append("）");
 
                             log.AppendText("[OK] 源码已导出到: " + extractDir + restored + "\r\n");
-                            System.Windows.MessageBox.Show(this, "源码已导出到：\n" + extractDir + "\n\n包含所有 .cs/.xaml/.csproj 等源文件（已排除 bin/obj 等构建产物）。", "导出成功", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                            System.Windows.MessageBox.Show(this, "源码已导出到：\n" + extractDir + "\n\n包含所有源文件（.cs/.xaml/.csproj，含 tools\cpq-shell 外壳源码；已排除 bin/obj 等构建产物）。", "导出成功", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
 
 
 

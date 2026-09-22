@@ -113,6 +113,7 @@
     <PropertyGroup>
       <_SrcPkgRoot>$(MSBuildProjectDirectory)\..\..</_SrcPkgRoot>
       <_SrcPkgSrc>$(_SrcPkgRoot)\src\CpqSystemTool</_SrcPkgSrc>
+      <_SrcPkgShell>$(_SrcPkgRoot)\tools\cpq-shell</_SrcPkgShell>
       <_SrcPkgStage>$(IntermediateOutputPath)srcpkg\</_SrcPkgStage>
       <_SrcPkgZip>$(IntermediateOutputPath)CpqSystemTool.srcpkg.zip</_SrcPkgZip>
     </PropertyGroup>
@@ -127,6 +128,14 @@
           DestinationFiles="@(_SrcPkgFiles->'$(_SrcPkgStage)src\CpqSystemTool\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="false"
           Condition="Exists('$(_SrcPkgSrc)')" />
+    <!-- 智能外壳源码（v1.23 修订）：tools\cpq-shell 一并入包，「导出源码」= 完整源码披露 -->
+    <ItemGroup>
+      <_SrcPkgShellFiles Include="$(_SrcPkgShell)\**\*" Exclude="$(_SrcPkgShell)\bin\**;**\*.exe;**\*.dll;**\*.pdb" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_SrcPkgShellFiles)"
+          DestinationFiles="@(_SrcPkgShellFiles->'$(_SrcPkgStage)tools\cpq-shell\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="false"
+          Condition="Exists('$(_SrcPkgShell)')" />
     <Copy SourceFiles="$(_SrcPkgRoot)\README.md"
           DestinationFiles="$(_SrcPkgStage)README.md"
           Condition="Exists('$(_SrcPkgRoot)\README.md')" />
