@@ -31,12 +31,59 @@ import urllib.error
 import socket as _socket
 import shutil
 
-# Force IPv4 name resolution: Python's default IPv6-first getaddrinfo fails the
-# TLS handshake to Cloudflare in this environment (curl/Schannel works fine).
+# Dual-stack name resolution with per-IP liveness probe: in this environment
+# some Cloudflare IPv4 IPs are blocked while IPv6 (or another IPv4) may work.
 _gai = _socket.getaddrinfo
-def _force_ipv4(host, port, family=_socket.AF_UNSPEC, type=0, proto=0, flags=0):
-    return _gai(host, port, _socket.AF_INET, type, proto, flags)
-_socket.getaddrinfo = _force_ipv4
+def _resolve_robust(host, port):
+    candidates = []
+    for fam in (_socket.AF_INET, _socket.AF_INET6):
+        try:
+            for r in _gai(host, port, fam, _socket.SOCK_STREAM):
+                candidates.append(r[4][0])
+        except OSError:
+            pass
+    for ip in candidates:
+        fam = _socket.AF_INET if ':' not in ip else _socket.AF_INET6
+        s = _socket.socket(fam, _socket.SOCK_STREAM)
+        s.settimeout(15)
+        try:
+            s.connect((ip, port))
+            return ip, s
+        except OSError:
+            s.close()
+            continue
+    return None, None
+def _force_dualstack(host, port, family=_socket.AF_UNSPEC, type=0, proto=0, flags=0):
+    ip, s = _resolve_robust(host, port or 443)
+    if s is None:
+        # last resort: raw resolution (raises OSError if all fail)
+        return _gai(host, port, _socket.AF_INET, type, proto, flags)
+    fam = _socket.AF_INET if ':' not in ip else _socket.AF_INET6
+    return [(family, type, proto, '', (ip, port))]
+_socket.getaddrinfo = _force_dualstack
+# remember probed-good connections so the socket layer can reuse them
+_PROBED = {}
+_orig_create_connection = _socket.create_connection
+def create_connection(address, timeout=_socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None, **kwargs):
+    host, port = address
+    if host in _PROBED and port == 443:
+        s = _PROBED.pop(host)
+        if s is not None:
+            if timeout is not _socket._GLOBAL_DEFAULT_TIMEOUT:
+                s.settimeout(timeout)
+            return s
+    return _orig_create_connection(address, timeout, source_address, **kwargs)
+_socket.create_connection = create_connection
+_orig_resolve = _force_dualstack
+def _force_dualstack(host, port, family=_socket.AF_UNSPEC, type=0, proto=0, flags=0):
+    ip, s = _resolve_robust(host, port or 443)
+    if s is not None:
+        _PROBED[host] = s
+    if s is None:
+        return _gai(host, port, _socket.AF_INET, type, proto, flags)
+    fam = _socket.AF_INET if ':' not in ip else _socket.AF_INET6
+    return [(fam, type, proto, '', (ip, port))]
+_socket.getaddrinfo = _force_dualstack
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SITE_DIR = os.path.join(os.path.dirname(HERE), "site-dist")
