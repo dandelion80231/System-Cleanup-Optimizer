@@ -953,7 +953,7 @@ namespace CpqSystemTool
                             if (restored.Length > 0) restored.Append("）");
 
                             log.AppendText("[OK] 源码已导出到: " + extractDir + restored + "\r\n");
-                            System.Windows.MessageBox.Show(this, "源码已导出到：\n" + extractDir + "\n\n包含所有源文件（.cs/.xaml/.csproj，含 tools\cpq-shell 外壳源码；已排除 bin/obj 等构建产物）。", "导出成功", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                            System.Windows.MessageBox.Show(this, "源码已导出到：\n" + extractDir + "\n\n包含所有源文件（.cs/.xaml/.csproj，含 tools\\cpq-shell 外壳源码；已排除 bin/obj 等构建产物）。", "导出成功", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
 
 
 
