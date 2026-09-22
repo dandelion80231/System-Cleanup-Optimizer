@@ -38,8 +38,27 @@ namespace CpqSystemTool
             }
         }
 
-        /// <summary>统一数据根目录：exe 同目录 cpq-tool（唯一主数据文件夹跟随 exe）。</summary>
-        public static string DataRoot => Path.Combine(ExeDir, "cpq-tool");
+        /// <summary>统一数据根目录：默认 exe 同目录 cpq-tool（唯一主数据文件夹跟随 exe）。
+        /// 【v1.23 智能外壳】启动器注入环境变量 CPQ_DATA_ROOT（外壳目录\cpq-tool，即“数据跟外壳走”）时优先采用；
+        /// 未注入（双击主 exe 的传统形态）时维持 exe 目录\cpq-tool 不变。</summary>
+        public static string DataRoot
+        {
+            get
+            {
+                try
+                {
+                    string ov = Environment.GetEnvironmentVariable("CPQ_DATA_ROOT");
+                    if (!string.IsNullOrWhiteSpace(ov))
+                    {
+                        ov = Path.GetFullPath(ov);
+                        string parent = Path.GetDirectoryName(ov);
+                        if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent)) return ov;
+                    }
+                }
+                catch { /* 环境变量异常 → 回退默认 */ }
+                return Path.Combine(ExeDir, "cpq-tool");
+            }
+        }
 
         /// <summary>配置目录（数据根下 配置\；配置页「选择配置默认保存文件夹」可被用户改到别处）。</summary>
         public static string ConfigDir => Path.Combine(DataRoot, "配置");
@@ -183,7 +202,7 @@ namespace CpqSystemTool
 
         /// <summary>数据根下「文件夹说明.txt」：介绍各子文件夹用途 + 主文件夹须与 exe 同路径的核心规则。
         /// 版本机制：首行写 version=N；文件缺失或版本落后于当前 IntroVersion 时重新生成，同版本保留用户改动。</summary>
-        private const int IntroVersion = 9;
+        private const int IntroVersion = 10;
 
         private static void WriteFolderIntroIfNeeded()
         {
@@ -206,7 +225,7 @@ namespace CpqSystemTool
                     " CpqSystemTool 数据文件夹说明（cpq-tool）",
                     "==============================================",
                     "",
-                    "【重要规则 1】本文件夹必须与程序 exe 保持在同一目录下（紧挨着 exe）。",
+                    "【重要规则 1】本文件夹与「启动入口」同目录：智能外壳启动时在外壳旁边（数据跟外壳走）；直接运行主程序 exe 时在该 exe 旁边（数据跟 exe 走）。",
                     "程序按 exe 所在位置定位本文件夹。若把 exe 移到本机其他路径：",
                     "・exe 与本文件夹一起移动 → 一切照旧；",
                     "・只移动 exe → 程序会在启动时自动把数据从上一次使用的路径拉回（记录并锚定最后使用路径），",
