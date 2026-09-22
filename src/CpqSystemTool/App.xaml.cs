@@ -38,6 +38,22 @@ namespace CpqSystemTool
             if (!TryAcquireSingleInstance()) return;
             try { System.IO.File.WriteAllText(TracePath, "=== trace " + System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " ===\n"); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             Trace("OnStartup.start");
+            // 智能外壳：命令行参数 --cpq-data-root <目录> 注入数据根（必须在 MigrateLegacyDirs/锚点写入等读 DataRoot 的代码之前）。
+            // 注意：主程序 manifest=requireAdministrator，外壳启动必须 UseShellExecute=true（系统弹 UAC），
+            // 而 .NET Framework 该模式下禁止注入环境变量 → 改用命令行参数。
+            try
+            {
+                var args = e.Args;
+                int ai = Array.IndexOf(args, "--cpq-data-root");
+                if (ai >= 0 && ai + 1 < args.Length)
+                {
+                    string dp = Path.GetFullPath(args[ai + 1]);
+                    string dparent = Path.GetDirectoryName(dp);
+                    if (!string.IsNullOrEmpty(dparent) && Directory.Exists(dparent))
+                        AppPaths.DataRootOverride = dp;
+                }
+            }
+            catch { /* 参数异常 → 维持默认数据根 */ }
             // 首次启动自动迁移：旧 exe 目录\Config 与 cpq-tool 内容收拢进统一数据根 cpq-tool（幂等，不覆盖、不删旧文件）。
             // 必须早于下方 ODT 空壳清扫与主窗口创建，让新数据根先就位。
             try { AppPaths.MigrateLegacyDirs(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); }

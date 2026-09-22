@@ -39,12 +39,21 @@ namespace CpqSystemTool
         }
 
         /// <summary>统一数据根目录：默认 exe 同目录 cpq-tool（唯一主数据文件夹跟随 exe）。
-        /// 【v1.23 智能外壳】启动器注入环境变量 CPQ_DATA_ROOT（外壳目录\cpq-tool，即“数据跟外壳走”）时优先采用；
-        /// 未注入（双击主 exe 的传统形态）时维持 exe 目录\cpq-tool 不变。</summary>
+        /// 覆盖源（按优先级）：①命令行参数 --cpq-data-root（智能外壳注入，App.OnStartup 解析后存入 DataRootOverride；
+        /// .NET Framework 的 UseShellExecute=true 模式不支持注入环境变量，故用参数）；
+        /// ②环境变量 CPQ_DATA_ROOT（仅调试）；③exe 目录\cpq-tool（传统双击形态）。</summary>
+        public static string DataRootOverride { get; set; }
+
         public static string DataRoot
         {
             get
             {
+                if (!string.IsNullOrWhiteSpace(DataRootOverride))
+                {
+                    string p = Path.GetFullPath(DataRootOverride);
+                    string parent = Path.GetDirectoryName(p);
+                    if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent)) return p;
+                }
                 try
                 {
                     string ov = Environment.GetEnvironmentVariable("CPQ_DATA_ROOT");
