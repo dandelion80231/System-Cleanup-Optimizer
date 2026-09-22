@@ -24,7 +24,7 @@ namespace CpqShell
     {
         // —— 构建时钉死的常量（版本升级时同步改） ——
         public const string MainExeName = "cpq_main_v122.exe";
-        public const string MainExeSha256 = "acaccf0d909a0554bea536d0e690f9f398a2b00d340b54479e07c26d65bfb6ab"; // v1.23 修订 build（主程序内嵌源码包加入 tools/cpq-shell 外壳源码；MainExeName 保持 cpq_main_v122 不变）
+        public const string MainExeSha256 = MainExeSha.MainExeSha256; // 值在 MainExeSha.generated.cs（发版构建时置为拟嵌入主 exe 的 SHA；内嵌披露包归一为 64 个 0，见 tools/cpq-shell/README.md）
         public const string LoaderDllName = "WebView2Loader.dll";
         public const string LoaderSha256 = "74f16550da608ec233a3e54871ec72657dff34cdef068193c1a7b554b670a1a3";
 

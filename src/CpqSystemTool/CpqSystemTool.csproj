@@ -130,12 +130,17 @@
           Condition="Exists('$(_SrcPkgSrc)')" />
     <!-- 智能外壳源码（v1.23 修订）：tools\cpq-shell 一并入包，「导出源码」= 完整源码披露 -->
     <ItemGroup>
-      <_SrcPkgShellFiles Include="$(_SrcPkgShell)\**\*" Exclude="$(_SrcPkgShell)\bin\**;**\*.exe;**\*.dll;**\*.pdb" />
+      <_SrcPkgShellFiles Include="$(_SrcPkgShell)\**\*" Exclude="$(_SrcPkgShell)\bin\**;**\*.exe;**\*.dll;**\*.pdb;$(_SrcPkgShell)\MainExeSha.generated.cs;$(_SrcPkgShell)\*.zero.cs" />
     </ItemGroup>
     <Copy SourceFiles="@(_SrcPkgShellFiles)"
           DestinationFiles="@(_SrcPkgShellFiles->'$(_SrcPkgStage)tools\cpq-shell\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="false"
           Condition="Exists('$(_SrcPkgShell)')" />
+    <!-- SHA 生成文件归一化：披露包内放 MainExeSha.zero.cs（64 个 0 模板），以 MainExeSha.generated.cs 之名入包——
+         主程序构建与发版时置入的实际 SHA 解耦，且永不出现过期快照；发版流程以实值文件编译外壳（见 tools/cpq-shell/README.md） -->
+    <Copy SourceFiles="$(_SrcPkgRoot)\tools\cpq-shell\MainExeSha.zero.cs"
+          DestinationFiles="$(_SrcPkgStage)tools\cpq-shell\MainExeSha.generated.cs"
+          Condition="Exists('$(_SrcPkgRoot)\tools\cpq-shell\MainExeSha.zero.cs')" />
     <Copy SourceFiles="$(_SrcPkgRoot)\README.md"
           DestinationFiles="$(_SrcPkgStage)README.md"
           Condition="Exists('$(_SrcPkgRoot)\README.md')" />

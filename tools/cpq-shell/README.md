@@ -10,6 +10,21 @@
 | `Program.cs` | 外壳全部源码（约 500 行，WinForms，.NET Framework 4.8 / C# 5 语法，x64） |
 | `build_shell.bat` | 用系统 `csc`（`C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`）编译 + 嵌入 payload |
 
+| `MainExeSha.generated.cs` | **发版生成文件**：主 exe 的 SHA256 常量（编译前由发版流程置入实值；勿手改语义） |
+| `MainExeSha.zero.cs` | 披露包占位模板（64 个 0）：主程序内嵌源码包用它替换实值文件，见下 |
+
+## SHA 生成文件（MainExeSha256 的存放约定）
+
+主 exe 的 SHA256 是**发版时刻**才确定的值，因此单独放在 `MainExeSha.generated.cs`（发版生成文件），
+`Program.cs` 中的 `Consts.MainExeSha256` 直接引用它。这样：
+
+- **主程序构建**（`GenerateSourcePackage`）内嵌本目录源码时，用 `MainExeSha.zero.cs`（零值模板）
+  替换实值文件 —— 主 exe 的哈希与发版时置入的 SHA 解耦，内嵌源码包永远不是过期快照；
+- **外壳编译**（`build_shell.bat`）同时编译 `Program.cs` + 实值 `MainExeSha.generated.cs`，
+  发版流程在编译前把实值置为「拟嵌入主 exe 的 SHA256」。
+
+> 导出源码（用户侧）拿到的是零值占位版本；要重编外壳，把 `MainExeSha.generated.cs` 的常量
+> 改为对应主 exe 的实值即可（见「构建步骤」）。
 ## 构建步骤
 
 1. **主程序**（.NET 10 单文件）：
