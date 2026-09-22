@@ -13,5 +13,13 @@
     "sha256": "55a67d8476cde95a9cc43a95803b4f54446e7c9251ed22aa6421d4908174ae84",
     "key": "net-runtime/windowsdesktop-runtime-10.0.12-win-x64.exe",
     "note": "跨版本永久对象：.NET 10 WindowsDesktop 运行时镜像（微软官方签名 Valid），引导器设计 R2 运行时源"
+  },
+  {
+    "version": "v1.23",
+    "date": "2026-09-22",
+    "size": 10414592,
+    "sha256": "e74916d03a0b97f753efe3caf31bfabcf6e38323f54fcb68d0170fa65281bad4",
+    "key": "系统清理与优化工具_v1.23.exe",
+    "note": "智能外壳（内嵌 v1.23 主程序 + WebView2Loader）；运行时镜像跨版本共用 net-runtime/ 前缀条目"
   }
 ]
