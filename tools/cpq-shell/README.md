@@ -35,7 +35,7 @@
    ```
 
 2. **staging payload**：把 publish 目录的 `系统清理与优化工具.exe` 改名拷到
-   `C:\cpq-builds\shell-payload\cpq_main_v122.exe`（名字保持 `cpq_main_v122`，缓存文件名不变），
+   `D:\cpq-builds\shell-payload\cpq_main_v122.exe`（名字保持 `cpq_main_v122`，缓存文件名不变），
    同目录放 `WebView2Loader.dll`。
 
 3. **更新常量**（`Program.cs` → `Consts`）：
