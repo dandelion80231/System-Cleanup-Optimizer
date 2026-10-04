@@ -627,7 +627,18 @@ namespace CpqSystemTool
                 fbd.SelectedPath = AppPaths.EnsureDir(AppPaths.DriverBackupDir);
                 if (fbd.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
                 string dir = fbd.SelectedPath;
-                RunInBg(logf => DriverStore.Export(targets, dir, logf), "驱动备份完成");
+                // P1 类修复：驱动备份耗时且跨模块共享全局互斥（同清理/安全页口径）——
+                // 持锁期间主题切换的重建会被 RebuildCurrentPageForTheme 挂起，不打断进行中的显示
+                if (!OperationLock.TryEnter("驱动备份", out string busyBy))
+                {
+                    System.Windows.MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                RunInBg(logf =>
+                {
+                    try { DriverStore.Export(targets, dir, logf); }
+                    finally { OperationLock.Exit(); }
+                }, "驱动备份完成");
             }
         }
 
@@ -641,11 +652,20 @@ namespace CpqSystemTool
             };
             if (dlg.ShowDialog() != true) return;
             string inf = dlg.FileName;
+            if (!OperationLock.TryEnter("驱动清理", out string busyBy))
+            {
+                System.Windows.MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
             RunInBg(logf =>
             {
-                DriverStore.AddDriver(inf, logf);
-                // 添加后重新枚举当前引擎
-                Reenumerate(logf);
+                try
+                {
+                    DriverStore.AddDriver(inf, logf);
+                    // 添加后重新枚举当前引擎
+                    Reenumerate(logf);
+                }
+                finally { OperationLock.Exit(); }
             }, "驱动包已添加");
         }
 
@@ -654,9 +674,18 @@ namespace CpqSystemTool
         {
             var targets = _drivers.Where(x => x.Selected).ToList();
             if (targets.Count == 0) { System.Windows.MessageBox.Show("请先勾选要安装的驱动包。", "提示", MessageBoxButton.OK, MessageBoxImage.Information); return; }
+            if (!OperationLock.TryEnter("驱动清理", out string busyBy))
+            {
+                System.Windows.MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
             RunInBg(logf =>
             {
-                foreach (var d in targets) DriverStore.InstallDriver(d.OemName, logf);
+                try
+                {
+                    foreach (var d in targets) DriverStore.InstallDriver(d.OemName, logf);
+                }
+                finally { OperationLock.Exit(); }
             }, "驱动安装完成");
         }
 
@@ -722,11 +751,21 @@ namespace CpqSystemTool
             ComputeTargets(out int blocked, out int bootCrit, out int toDelete);
             if (!ConfirmDelete(force, toDelete, blocked, bootCrit)) return;
 
+            // 删除不可逆且耗时：持全局互斥；确认框已同意后仍要放行其它模块并发（清理/Office 等）
+            if (!OperationLock.TryEnter("驱动清理", out string busyBy))
+            {
+                System.Windows.MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
             RunInBg(logf =>
             {
-                DriverStore.Delete(targets, logf, force: force, includeBootCritical: _includeBootCritical);
-                // 删除后重新枚举以刷新状态
-                Reenumerate(logf);
+                try
+                {
+                    DriverStore.Delete(targets, logf, force: force, includeBootCritical: _includeBootCritical);
+                    // 删除后重新枚举以刷新状态
+                    Reenumerate(logf);
+                }
+                finally { OperationLock.Exit(); }
             }, force ? "强制删除完成" : "驱动删除完成");
         }
 
