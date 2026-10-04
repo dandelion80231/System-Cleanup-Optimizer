@@ -121,7 +121,7 @@ namespace CpqSystemTool
 
             // 全选/反选快捷操作
             var selectBar = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var chkAll = new CheckBox { Content = "全选当前页", Foreground = _textDim, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center };
+            var chkAll = new CheckBox { Content = "全选当前页", Foreground = _textDim, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, IsThreeState = true };
             selectBar.Children.Add(chkAll);
             inner.Children.Add(selectBar);
 
@@ -138,6 +138,20 @@ namespace CpqSystemTool
                 int c = allCheckBoxes.Count(x => x.IsChecked == true);
                 int total = allCheckBoxes.Count;
                 SetStatus(c > 0 ? $"已选中 {c}/{total} 项" : "就绪");
+            }
+
+            // P2-3：「全选当前页」三态同步——部分勾选=不确定(null/横杠)；全勾=true；全不勾=false。
+            // 勾选/反勾各行、点全选、快照恢复后均需调用，保证三态与真实勾选一致。
+            // 注意：WPF 三态 CheckBox 的「不确定」是 IsChecked=null（Indeterminate 是事件不是属性）；
+            // 点按不确定态时 WPF 先置 IsChecked=true 再触发 Click → 点击语义=全勾，与原二态一致
+            void SyncChkAll()
+            {
+                int c = allCheckBoxes.Count(x => x.IsChecked == true);
+                int total = allCheckBoxes.Count;
+                if (total == 0) return;
+                if (c == total) chkAll.IsChecked = true;
+                else if (c == 0) chkAll.IsChecked = false;
+                else chkAll.IsChecked = null;
             }
 
             foreach (var cat in categories)
@@ -198,8 +212,8 @@ namespace CpqSystemTool
                     row.Children.Add(textSp);
 
                     // 点击名称/描述等价于勾选
-                    nameTb.MouseLeftButtonUp += (s, e) => { chk.IsChecked = !chk.IsChecked; UpdateCleanupSelCount(); };
-                    descTb.MouseLeftButtonUp += (s, e) => { chk.IsChecked = !chk.IsChecked; UpdateCleanupSelCount(); };
+                    nameTb.MouseLeftButtonUp += (s, e) => { chk.IsChecked = !chk.IsChecked; UpdateCleanupSelCount(); SyncChkAll(); };
+                    descTb.MouseLeftButtonUp += (s, e) => { chk.IsChecked = !chk.IsChecked; UpdateCleanupSelCount(); SyncChkAll(); };
 
                     // 为每行套一个 Border，实现鼠标跟随背景填充
                     var rowBd = new Border
@@ -214,8 +228,8 @@ namespace CpqSystemTool
                     rowBd.MouseLeave += (s, e) => rowBd.Background = Brushes.Transparent;
                     grpSp.Children.Add(rowBd);
                     allCheckBoxes.Add(chk);
-                    chk.Checked += (s, e) => UpdateCleanupSelCount();
-                    chk.Unchecked += (s, e) => UpdateCleanupSelCount();
+                    chk.Checked += (s, e) => { UpdateCleanupSelCount(); SyncChkAll(); };
+                    chk.Unchecked += (s, e) => { UpdateCleanupSelCount(); SyncChkAll(); };
                 }
                 groupExpander.Content = grpSp;
                 inner.Children.Add(groupExpander);
@@ -224,9 +238,11 @@ namespace CpqSystemTool
             // 全选/反选联动（名称颜色由绑定自动同步，此处只需更新计数）
             chkAll.Click += (s, e) =>
             {
+                // 三态语义：不确定(横杠)点击=全勾；已勾点击=全不勾（WPF 三态 CheckBox 点按后 Indeterminate 自动清除）
                 bool val = chkAll.IsChecked == true;
                 foreach (var c in allCheckBoxes) c.IsChecked = val;
                 UpdateCleanupSelCount();
+                SyncChkAll();
             };
 
             // ★ 关键：inner（StackPanel）必须包在 ScrollViewer 里才能滚动！
@@ -344,6 +360,7 @@ namespace CpqSystemTool
                     c.IsChecked = (def != null && def.DefaultChecked);
                 }
                 UpdateCleanupSelCount();
+                SyncChkAll();   // 默认勾选是混合态 → 「全选当前页」应显示不确定(三态)
             }, 100);
             actionBar.Children.Add(btnSelectAll);
 
@@ -454,6 +471,7 @@ namespace CpqSystemTool
             if (!string.IsNullOrEmpty(_cleanupStateLog)) log.AppendText(_cleanupStateLog);
             _cleanupLiveChecks = allCheckBoxes;
             _cleanupLiveLog = log;
+            SyncChkAll();   // P2-3：恢复快照勾选后同步「全选当前页」三态（部分恢复=不确定）
 
             // ---- 页面级缓存：首次构建完成后缓存整页；再次进入复用并仅复位动态状态 ----
             // 仅在构建期间主题未变时写入缓存（避免把混入旧主题刷子的页面标记为可复用）
@@ -464,6 +482,7 @@ namespace CpqSystemTool
                 {
                     // P2-2：缓存命中 = 复用旧树，用户勾选/日志/分组展开/进度条保持原样，只重算勾选计数
                     UpdateCleanupSelCount();
+                    SyncChkAll();
                 });
             }
             return root;
