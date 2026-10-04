@@ -611,8 +611,42 @@ namespace CpqSystemTool
             // 驱动清理页已缓存，主题变更后清空缓存以用新主题色重建
             InvalidateDriverStoreCache();
             InvalidateActivationCache(); // Office 部署页同驱动清理：主题变更后重建
-            // 用保存的 key 重建当前页（_activeNavKey 在 Navigate 中更新）
-            Navigate(_activeNavKey);
+            // 用保存的 key 重建当前页（_activeNavKey 在 Navigate 中更新）；
+            // 耗时操作运行中时挂起（操作锁「转空闲」通知后重建），不打断进行中的日志/勾选显示
+            RebuildCurrentPageForTheme();
+        }
+
+        /// <summary>耗时操作运行中发生的主题变更挂起标志：待操作结束（OperationLock 转空闲）再重建当前页，
+        /// 避免打断进行中的日志/勾选显示；用户主动导航（页面已按新主题重建）时清除。</summary>
+        private bool _pendingThemeRebuild;
+
+        /// <summary>主题变更后重建当前页：耗时操作运行中则挂起（操作锁「转空闲」时重建），否则立即重建。</summary>
+        private void RebuildCurrentPageForTheme()
+        {
+            if (OperationLock.IsBusy)
+            {
+                _pendingThemeRebuild = true;   // 由 OperationLock.Idle 触发重建
+            }
+            else
+            {
+                Navigate(_activeNavKey);
+            }
+        }
+
+        /// <summary>操作锁「转空闲」回调：若挂起了主题重建，则用最新主题重建当前页。
+        /// Exit 可能在后台线程调用，统一路由到 UI 线程；容忍窗口已关闭。</summary>
+        private void OnOperationIdleForTheme()
+        {
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (!_pendingThemeRebuild) return;
+                    _pendingThemeRebuild = false;
+                    Navigate(_activeNavKey);
+                }));
+            }
+            catch { /* 窗口已关闭，忽略 */ }
         }
 
         private void ApplyTheme(bool dark)
@@ -678,7 +712,8 @@ namespace CpqSystemTool
                         UpdateSidebarTitleColors();
                         InvalidateDriverStoreCache(); // 主题变更后重建驱动清理页
                         InvalidateActivationCache(); // Office 部署页同驱动清理：主题变更后重建
-                        Navigate(_activeNavKey);
+                        // 同手动切换：耗时操作运行中挂起重建，避免隐式打断进行中的显示
+                        RebuildCurrentPageForTheme();
                     }
                 })); } catch { /* 窗口已关闭，忽略 */ }
             };

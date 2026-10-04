@@ -122,6 +122,8 @@ namespace CpqSystemTool
                     App.Trace("Loaded.afterShellColors");
                     // 监听 Windows 系统主题变化（自动跟随，除非用户手动切换过）
                     HookSystemThemeChange();
+                    // 主题变更若发生在耗时操作运行中：挂起重建，操作结束（锁转空闲）再重建当前页，不打断进行中的显示
+                    OperationLock.Idle += OnOperationIdleForTheme;
                     App.Trace("Loaded.end");
                 };
                 // 修复鼠标滚轮穿透：让 ContentArea ScrollViewer 捕获所有子控件的滚轮事件

@@ -38,9 +38,20 @@ namespace CpqSystemTool
                 _busy = true; _busyOperation = operation; _busySinceUtc = DateTime.UtcNow; busyBy = null; return true;
             }
         }
+        /// <summary>
+        /// 「转空闲」通知：Exit 释放忙碌状态（busy→idle 转变）时触发。
+        /// 供主题挂起重建使用：耗时操作运行中发生主题变化时，待操作结束再重建当前页，
+        /// 既不打断进行中的日志/勾选显示，也不留旧主题页面。
+        /// 订阅者需自行路由到 UI 线程（触发线程不保证是 UI 线程）。
+        /// </summary>
+        public static event Action Idle;
+
         public static void Exit()
         {
-            lock (Gate) { _busy = false; _busyOperation = null; _busySinceUtc = DateTime.MinValue; }
+            bool wasBusy;
+            lock (Gate) { wasBusy = _busy; _busy = false; _busyOperation = null; _busySinceUtc = DateTime.MinValue; }
+            // 在锁外触发：避免订阅者（挂起重建等）在事件处理中再进 TryEnter 造成死锁
+            if (wasBusy) Idle?.Invoke();
         }
 
         /// <summary>当前是否有耗时操作在运行。供后台轮询（如 TP 状态轮询）判断：

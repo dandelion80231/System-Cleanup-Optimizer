@@ -190,6 +190,8 @@ namespace CpqSystemTool
             var n = _nav.FirstOrDefault(x => x.Key == key);
             if (n == null) return;
             _activeNavKey = key;
+            // 主动导航（侧边栏/关于/挂起重建）已产出新主题页面：清除主题挂起标志，避免随后重复重建
+            _pendingThemeRebuild = false;
 
             // 复位最外侧滚动控制：驱动清理页会临时关闭 ContentArea 纵向滚动（改为 DataGrid/日志各自滚动），
             // 每次导航先恢复为 Auto，确保其它页面不被误关。
