@@ -264,11 +264,19 @@ namespace CpqSystemTool
                             }
                         }
 
+                        // [Q25 同口径] 激活（slmgr online）为耗时高危操作，与还原点/还原/版本转换同走全局互斥——
+                        // 此前唯独漏了此处：运行中切主题会立即重建本页打断显示，且可与其它系统工具并发
+                        if (!OperationLock.TryEnter("系统工具", out string busyBy))
+                        {
+                            MessageBox.Show("已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                            return;
+                        }
+
                         pb.Visibility = Visibility.Visible;
                         // 激活日志写入本页共享纯文本日志框 sharedLog（不再走彩色富日志）
                         RunInBg(sharedLog, l => Activation.Activate(methodId, l),
                             methodId == Activation.DiagnosticMethodId ? "诊断完成" : "激活完成",
-                            () => pb.Visibility = Visibility.Collapsed);
+                            () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; });
                     };
                     actCardsPanel.Children.Add(cardBorder);
                 }
