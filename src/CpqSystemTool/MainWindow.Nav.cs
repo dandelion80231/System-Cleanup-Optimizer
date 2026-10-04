@@ -27,7 +27,7 @@ namespace CpqSystemTool
             _nav = new List<NavItem>
             {
                 new NavItem { Key = "tweaks",    Title = "系统优化",   Icon = "🎛️", Build = BuildTweaks },
-                new NavItem { Key = "cleanup",   Title = "清理优化",   Icon = "🧹", Build = BuildCleanup },
+                new NavItem { Key = "cleanup",   Title = "清理优化",   Icon = "🧹", Build = BuildCleanup, Note = "（WinSxS 等个别项不可逆，请看清说明）" },
                 new NavItem { Key = "services",  Title = "服务优化",   Icon = "🛠", Build = BuildServices },
                 new NavItem { Key = "appx",      Title = "Appx 商店", Icon = "🛍️", Build = BuildAppx },
                 new NavItem { Key = "appxraw",   Title = "Appx 管理", Icon = "📦", Build = BuildAppxRaw },
@@ -128,7 +128,7 @@ namespace CpqSystemTool
 
             // 侧边栏头部标题（放 DockPanel 顶部，按钮区滚动时标题固定不动）
             var titleTb = new TextBlock { Text = "系统清理与优化", FontSize = 18, FontWeight = FontWeights.Bold, Foreground = _textMain, Margin = new Thickness(14, 14, 0, 2), Name = "SidebarTitle" };
-            var subtitleTb = new TextBlock { Text = "WPF 版 · 清理优化（WinSxS 等个别项不可逆，请看清说明）", FontSize = 11, Foreground = _accent, Opacity = 0.9, Margin = new Thickness(14, 0, 0, 8), Name = "SidebarSubtitle" };
+            var subtitleTb = new TextBlock { Text = "WPF 版 · 清理优化", FontSize = 11, Foreground = _accent, Opacity = 0.9, Margin = new Thickness(14, 0, 0, 8), Name = "SidebarSubtitle" };
             dock.Children.Add(titleTb);
             DockPanel.SetDock(titleTb, Dock.Top);
             dock.Children.Add(subtitleTb);
@@ -195,6 +195,16 @@ namespace CpqSystemTool
             // 每次导航先恢复为 Auto，确保其它页面不被误关。
             ContentArea.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
             PageTitle.Text = n.Title;
+            // 标题行小字提醒：仅定义了 Note 的页显示（当前只有「清理优化」），其余页隐藏，标题行观感不变
+            if (!string.IsNullOrEmpty(n.Note))
+            {
+                PageNote.Text = n.Note;
+                PageNote.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                PageNote.Visibility = Visibility.Collapsed;
+            }
             // 先清空旧内容再设新的，避免 WPF 视觉树残留导致页面重叠
             ContentArea.Content = null;
             ContentArea.UpdateLayout();

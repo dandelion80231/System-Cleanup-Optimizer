@@ -402,6 +402,7 @@ namespace CpqSystemTool
             StatusBar.Background = Brushes.Transparent;
             StatusBar.BorderBrush = _panelBorder;
             PageTitle.Foreground = _textMain;
+            PageNote.Foreground = _textDim;
             StatusText.Foreground = _textMain;
 
             // 统一滚动条滑块颜色（与当前主题一致，深/浅不同灰阶）

@@ -68,6 +68,8 @@ namespace CpqSystemTool
             public Func<UIElement> Build;
             /// <summary>true = 不在侧边栏列表渲染按钮，但仍可通过 Navigate(Key) 进入（如「关于」由底部品牌区进入）。</summary>
             public bool Hidden;
+            /// <summary>顶部标题行小字提醒（显示在 PageTitle 右侧，带括号；空 = 不显示）。当前仅「清理优化」使用。</summary>
+            public string Note;
         }
 
         private List<NavItem> _nav;

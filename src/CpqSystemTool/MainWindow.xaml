@@ -160,7 +160,11 @@
             </Grid.RowDefinitions>
             <Border Grid.Row="0" x:Name="TopBar" Background="#121821" BorderBrush="#1E2630" BorderThickness="0,0,0,1" Padding="22,14">
                 <Grid>
-                    <TextBlock x:Name="PageTitle" Text="系统优化" FontSize="22" FontWeight="Bold" Foreground="#E6EDF3" VerticalAlignment="Center" Margin="0"/>
+                    <!-- 标题行：PageTitle + 可选小字提醒 PageNote（仅定义了 Note 的页显示，如「清理优化」） -->
+                    <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center" Orientation="Horizontal">
+                        <TextBlock x:Name="PageTitle" Text="系统优化" FontSize="22" FontWeight="Bold" Foreground="#E6EDF3" VerticalAlignment="Center" Margin="0"/>
+                        <TextBlock x:Name="PageNote" FontSize="12" Foreground="#8B98A5" VerticalAlignment="Center" Margin="12,0,0,0" Visibility="Collapsed"/>
+                    </StackPanel>
                     <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal">
                         <!-- 彩色 emoji 按钮（Emoji.Wpf.TextBlock 原色渲染；Button.FontSize 不穿透到 TextBlock 内容，故显式设 16） -->
                         <Button x:Name="BgSettingsBtn" Width="36" Height="36" Cursor="Hand" ToolTip="自定义背景"
