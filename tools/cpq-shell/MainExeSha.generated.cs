@@ -1,4 +1,4 @@
-// Generated per release build — do not hand-edit the constant below.
+﻿// Generated per release build — do not hand-edit the constant below.
 //
 // Value = SHA256 of the main exe actually embedded in the shipping shell.
 // The release build sets it BEFORE compiling the shell (build_shell.bat compiles
@@ -12,6 +12,6 @@ namespace CpqShell
 {
     public static class MainExeSha
     {
-        public const string MainExeSha256 = "59138338a5399d0115911fd5b8fab8e5387254723a8ac4274fd65d753c0431e2";
+        public const string MainExeSha256 = "e4cbf6968d4a6cca9ce247eb0f4f0d13b66eed5b995912ee30b12c4f65a0894";
     }
 }
