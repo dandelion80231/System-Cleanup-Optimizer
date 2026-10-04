@@ -158,6 +158,13 @@ namespace CpqSystemTool
                     if (ans != System.Windows.MessageBoxResult.Yes) return;
                 }
                 pb.Visibility = Visibility.Visible;
+                // P1 类修复：批量卸载持全局互斥（与清理/驱动/Office 等耗时操作互斥；主题切换重建期间被挂起）
+                if (!OperationLock.TryEnter("Appx 卸载", out string busyBy))
+                {
+                    System.Windows.MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                    pb.Visibility = Visibility.Collapsed;
+                    return;
+                }
                 // ★ 单层 RunInBg：直接跑 Uninstall，不再 ThreadPool.QueueUserWorkItem 嵌套
                 RunInBg(log, l =>
                 {
@@ -170,7 +177,7 @@ namespace CpqSystemTool
                             if (fam != null) AppxManager.UninstallProvisioned(new List<string> { fam.PackageFamily }, s => l(s));
                         }
                     }
-                }, "卸载完成", () => { _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; LoadAndRender(rbCurrent.IsChecked == true, cardsPanel, countLbl, searchBox.Text, log, UpdateAppxSelCount); });
+                }, "卸载完成", () => { OperationLock.Exit(); _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; LoadAndRender(rbCurrent.IsChecked == true, cardsPanel, countLbl, searchBox.Text, log, UpdateAppxSelCount); });
             }, 110);
             toolBar.Children.Add(btnUninstall);
             Grid.SetColumn(toolBar, 2);
@@ -268,18 +275,10 @@ namespace CpqSystemTool
                 _appxCache.SetContentKey(string.Join("|", AppxManager.Catalog.Select(c => c.PackageFamily)));
                 _appxCache.SetRefresh(() =>
                 {
-                    // 复位动态状态（与新建页面行为一致）：
-                    // 清空搜索（TextChanged 触发后台重载）、复位全选/勾选/模式/选项；
-                    // 搜索本就为空时显式后台重载（保证每次进页后台全量刷新一次）
-                    if (searchBox.Text.Length > 0) searchBox.Text = "";
-                    else LoadAndRender(true, cardsPanel, countLbl, "", log, UpdateAppxSelCount);
-                    allSelected = false;
-                    btnToggleSel.Content = "□ 全选";
-                    rbCurrent.IsChecked = true;
-                    chkConfirm.IsChecked = true;
-                    // [Q34] 新建页 chkWithProvisioned 默认 false（构建时未设 IsChecked）；缓存刷新原强制 true，
-                    // 会静默附带更具破坏性的“同时卸载预装”。改为与新建页一致的 false。
-                    chkWithProvisioned.IsChecked = false;
+                    // P2-2 类：缓存命中 = 复用旧树，保留用户日志/搜索/勾选/模式，只重算选中计数。
+                    // 数据新鲜度由 contentKey（目录签名）+ 卸载后显式 Invalidate + 主题变更全量重建保证；
+                    // 原「清空搜索/复位勾选/后台重载」会打断进行中的用户会话（Q34 的 chkWithProvisioned 复位同样保留用户选择）
+                    UpdateAppxSelCount();
                 });
             }
 
@@ -424,6 +423,7 @@ namespace CpqSystemTool
             // 安装/卸载完成后【原地刷新本卡片】：重新查询状态并替换该卡片，保留页面与日志，不重建整页（避免日志丢失）
             Action refreshThisCard = () =>
             {
+                OperationLock.Exit();   // P1 类修复：单卡安装/卸载完成（成功/异常 done 均触发）释放全局互斥
                 // 安装/卸载完成 → 显式失效整页缓存（下次进页重建，避免复用 stale 状态）
                 _appxCache.Invalidate();
                 _appxRawCache.Invalidate();
@@ -461,7 +461,19 @@ namespace CpqSystemTool
                 {
                     var def = AppxManager.Catalog.Find(c => c.Label == displayName || c.PackageFamily == uninstallTarget);
                     if (def != null)
+                    {
+                        if (!OperationLock.TryEnter("Appx 安装", out string busyBy))
+                        {
+                            System.Windows.MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                            return;
+                        }
                         RunInBg(log, l => AppxManager.Install(def.StoreId, l), "安装完成: " + displayName, refreshThisCard);
+                    }
+                    return;
+                }
+                if (!OperationLock.TryEnter("Appx 卸载", out string busyBy2))
+                {
+                    System.Windows.MessageBox.Show("已有「" + busyBy2 + "」操作正在运行，请先完成再执行。", "操作冲突", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                     return;
                 }
                 RunInBg(log, l =>
@@ -615,9 +627,14 @@ namespace CpqSystemTool
                             var uninstBtn = Btn("卸载", false, () =>
                             {
                                 if (string.IsNullOrEmpty(it.FullName)) { log.AppendText("[!] 未安装的包无法卸载\r\n"); return; }
+                                if (!OperationLock.TryEnter("Appx 卸载", out string busyBy))
+                                {
+                                    System.Windows.MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                                    return;
+                                }
                                 pb.Visibility = Visibility.Visible;
                                 RunInBg(log, ll => AppxManager.Uninstall(new System.Collections.Generic.List<string> { it.FullName }, ll),
-                                    "已卸载: " + it.Name, () => { _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; RefreshList(); });
+                                    "已卸载: " + it.Name, () => { OperationLock.Exit(); _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; RefreshList(); });
                             }, 60);
                             uninstBtn.FontSize = 11;
                             Grid.SetColumn(uninstBtn, 3);
@@ -681,8 +698,13 @@ namespace CpqSystemTool
                 var sel = rowItems.Where(t => t.Item1.IsChecked == true && !string.IsNullOrEmpty(t.Item3.FullName))
                     .Select(t => t.Item3.FullName).ToList();
                 if (sel.Count == 0) { log.AppendText("[!] 请先勾选要卸载的应用\r\n"); return; }
+                if (!OperationLock.TryEnter("Appx 卸载", out string busyBy))
+                {
+                    System.Windows.MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                    return;
+                }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, l => AppxManager.Uninstall(sel, l), "卸载完成", () => { _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; RefreshList(true); });
+                RunInBg(log, l => AppxManager.Uninstall(sel, l), "卸载完成", () => { OperationLock.Exit(); _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; RefreshList(true); });
             }, 110);
             btnUninstallSel.HorizontalAlignment = HorizontalAlignment.Right;
             btnUninstallSel.VerticalAlignment = VerticalAlignment.Center;
@@ -744,12 +766,9 @@ namespace CpqSystemTool
                 _appxRawCache.Set(root, buildDark);
                 _appxRawCache.SetRefresh(() =>
                 {
-                    // 复位动态状态（与新建页面行为一致）：清空勾选、复位全选、清空日志、后台刷新列表
-                    foreach (var t in rowItems) t.Item1.IsChecked = false;
-                    rawAllSelected = false;
-                    btnToggleRaw.Content = "□ 全选";
-                    log.Clear();
-                    RefreshList(false);
+                    // P2-2 类：缓存命中 = 复用旧树，保留用户日志/勾选/隐藏开关，只重算选中计数。
+                    // 数据新鲜度由卸载后显式 Invalidate + 主题变更全量重建保证；「刷新列表」按钮仍可随时手动重读
+                    UpdateRawSelCount();
                 });
             }
 

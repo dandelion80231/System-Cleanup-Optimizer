@@ -384,6 +384,11 @@ namespace CpqSystemTool
                             var instBtnText = sw.Installed ? "修复安装" : "一键安装";
                             var instBtn = Btn(instBtnText, false, () =>
                             {
+                                if (!OperationLock.TryEnter("软件安装", out string busyBy))
+                                {
+                                    MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                                    return;
+                                }
                                 pb.Visibility = Visibility.Visible;
                                 string customDir = null;
                                 try
@@ -396,7 +401,7 @@ namespace CpqSystemTool
                                 // 无 SynchronizationContext，GetAwaiter().GetResult() 无死锁且异常同步传播（RunInBg 的 try/catch 可捕获，
                                 // 不用 async void lambda —— 其异常会逃逸到 ThreadPool 触发 UnhandledException 崩溃）。
                                 RunInBg(log, l => SoftwareInstall.InstallAsync(sw.Id, l, customDir).GetAwaiter().GetResult(),
-                                    (sw.Installed ? "修复完成: " : "安装完成: ") + sw.Name, () => { pb.Visibility = Visibility.Collapsed; RefreshAllRows(); });
+                                    (sw.Installed ? "修复完成: " : "安装完成: ") + sw.Name, () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(); });
                             }, 90);
                             instBtn.MinHeight = 26;
                             instBtn.Margin = new Thickness(2, 2, 2, 2);
@@ -410,10 +415,16 @@ namespace CpqSystemTool
                             // 卸载按钮
                             var uninstBtn = Btn("卸载", false, () =>
                             {
+                                if (!OperationLock.TryEnter("软件卸载", out string busyBy))
+                                {
+                                    MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                                    return;
+                                }
                                 pb.Visibility = Visibility.Visible;
                             RunInBg(log, l => SoftwareInstall.Uninstall(sw.Id, l),
                                 "卸载完成: " + sw.Name, () =>
                                 {
+                                    OperationLock.Exit();
                                     pb.Visibility = Visibility.Collapsed;
                                     // 卸载完成后自动全量刷新列表（保留日志可见），状态/按钮同步更新
                                     RefreshAllRows(() => log.AppendText("— 卸载流程结束，详情见上方日志 —\r\n"));
@@ -498,6 +509,11 @@ namespace CpqSystemTool
                             var dlg = new InstallPathDialog(this) { Owner = this };
                             if (dlg.ShowDialog() != true) return;  // 用户取消
                             if (!dlg.UseDefault) customDir = dlg.InstallPath;
+                            if (!OperationLock.TryEnter("软件安装", out string busyBy))
+                            {
+                                MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                                return;
+                            }
                             pb.Visibility = Visibility.Visible;
                             RunInBg(log, l =>
                             {
@@ -508,7 +524,7 @@ namespace CpqSystemTool
                                     SoftwareInstall.InstallAsync(sw.Id, l, customDir).GetAwaiter().GetResult();
                                 }
                             }, $"已安装 {selected.Count(s => !s.Installed)}/{selected.Count} 款",
-                            () => { pb.Visibility = Visibility.Collapsed; RefreshAllRows(); });
+                            () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(); });
                         };
 
                         // 卸载选中（btnUninstall 已在 DockPanel 中创建）
@@ -516,6 +532,11 @@ namespace CpqSystemTool
                         {
                             var selected = rowItems.Where(t => t.Item1.IsChecked == true).Select(t => t.Item3).ToList();
                             if (selected.Count == 0) { log.AppendText("[!] 请先勾选要卸载的软件\r\n"); return; }
+                            if (!OperationLock.TryEnter("软件卸载", out string busyBy))
+                            {
+                                MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                                return;
+                            }
                             pb.Visibility = Visibility.Visible;
                             RunInBg(log, l =>
                             {
@@ -527,6 +548,7 @@ namespace CpqSystemTool
                             }, $"已卸载 {selected.Count(s => s.Installed)}/{selected.Count} 款",
                             () =>
                             {
+                                OperationLock.Exit();
                                 pb.Visibility = Visibility.Collapsed;
                                 // 批量卸载完成后自动全量刷新列表（保留日志可见）
                                 RefreshAllRows(() => log.AppendText("— 批量卸载结束，详情见上方日志 —\r\n"));
@@ -564,9 +586,14 @@ namespace CpqSystemTool
                             if (direct != null)
                             {
                                 log.AppendText("[OK] 识别 StoreId: " + direct + "，直接安装\r\n");
+                                if (!OperationLock.TryEnter("软件安装", out string busyBy))
+                                {
+                                    MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                                    return;
+                                }
                                 pb.Visibility = Visibility.Visible;
-                            RunInBg(log, l => AppxManager.Install(direct, l), "安装启动",
-                                () => { pb.Visibility = Visibility.Collapsed; RefreshAllRows(() => log.AppendText("— 安装启动完成，详情见上方日志 —\r\n")); });
+                                RunInBg(log, l => AppxManager.Install(direct, l), "安装启动",
+                                    () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(() => log.AppendText("— 安装启动完成，详情见上方日志 —\r\n")); });
                                 return;
                             }
 
@@ -696,23 +723,10 @@ namespace CpqSystemTool
                             _softwareCache.SetContentKey(string.Join("|", rowItems.Select(t => t.Item3.Id)));
                             _softwareCache.SetRefresh(() =>
                             {
-                                // 复位动态状态（与旧版每次新建页面行为一致）：
-                                // 恢复本地列表（若处于搜索结果态）、清空日志/搜索/分类筛选、复位全选与勾选、后台刷新安装状态
-                                rowsPanel.Children.Clear();
-                                rowsPanel.Children.Add(hdrBorder);
-                                foreach (var t in rowItems)
-                                {
-                                    t.Item1.IsChecked = false;   // 触发 Unchecked 同步复位行背景
-                                    rowsPanel.Children.Add(t.Item2);
-                                }
-                                swAllSelected = false;
-                                btnAll.Content = "☑ 全选";
-                                btnBackToLocal.Visibility = Visibility.Collapsed;
-                                searchBox.Text = "";
-                                if (catList.SelectedIndex != 0) catList.SelectedIndex = 0;
-                                log.Clear();
+                                // P2-2 类：缓存命中 = 复用旧树，保留用户列表/勾选/搜索/分类筛选/日志，只刷新数据侧状态。
+                                // （安装状态后台重读由 RefreshAllRows 完成——其本身保留日志；安装路径经 RefreshPathBtn 重新同步）
                                 RefreshPathBtn();  // 安装路径可能已在其它页面修改，重新读取
-                                ApplyFilter();     // 刷新计数与可见行
+                                ApplyFilter();     // 刷新计数与可见行（基于用户当前的筛选/勾选状态）
                                 UpdateSelCount();
                                 RefreshAllRows();  // 后台全量刷新版本号/状态/按钮（保留日志）
                             });
@@ -935,11 +949,17 @@ namespace CpqSystemTool
             installBtn = Btn("⬇ 一键安装", true, () =>
             {
                 if (pb.Visibility == Visibility.Visible) return;  // 防双击
+                if (!OperationLock.TryEnter("软件安装", out string busyBy))
+                {
+                    MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
                 pb.Visibility = Visibility.Visible;
                 // 安装完成后【原地】禁用本行按钮并标记已安装，保留搜索结果与日志，
                 // 不重建整页（避免被踢回本地列表、丢失搜索上下文与日志）
                 Action done = () =>
                 {
+                    OperationLock.Exit();   // P1 类修复：一键安装结束（done 在成功/异常路径均触发）释放全局互斥
                     installBtn.IsEnabled = false;
                     installBtn.Content = "已安装";
                     pb.Visibility = Visibility.Collapsed;
