@@ -1063,12 +1063,8 @@ namespace CpqSystemTool
                 _securityCache.Set(root, buildDark);
                 _securityCache.SetRefresh(() =>
                 {
-                    // 复位动态状态（与每次新建页面行为一致）：
-                    // 清空日志、复位 Defender 按钮「最后点击」高亮与底部策略按钮高亮；
-                    // 后台重刷 Defender 状态缓存后就地重绘状态区/开关/一键按钮，另重刷防火墙与更新状态
-                    log.Clear();
-                    _lastDefAction = null;
-                    ApplyPolicyMode(null);
+                    // P2-2 类：缓存命中保留用户日志与「最后点击」高亮（切页/主题重建回来不打断显示）；
+                    // Defender/TP/防火墙/更新状态仍后台重读（外部可改，重进页必须重读）
                     pb.Visibility = Visibility.Visible;
                     var dispR = Dispatcher;
                     new Thread(() =>

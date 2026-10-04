@@ -315,14 +315,16 @@ namespace CpqSystemTool
                         StringComparer.Ordinal);
                     UpdateSelectedPanel();
                     int optCount = TweaksOptimized.Count;
+                        bool outputEmpty = string.IsNullOrEmpty(TweaksOutputLine?.Text); // P2-2 类：重进页不覆盖用户已产生的输出（操作日志）
+
                     if (optCount > 0)
                     {
-                        SetTweaksOutput($"已检测到 {optCount} 项处于优化状态。如需备份当前方案，可点击「导出」保存优化配置。");
+                        if (outputEmpty) SetTweaksOutput($"已检测到 {optCount} 项处于优化状态。如需备份当前方案，可点击「导出」保存优化配置。");
                         SetTweaksStatus($"已检测到 {optCount} 项处于优化状态，建议导出配置备份");
                     }
                     else
                     {
-                        SetTweaksOutput("当前没有检测到已优化项目。可点击「基本优化」或「深度优化」选择方案，然后点「开始优化」应用。");
+                        if (outputEmpty) SetTweaksOutput("当前没有检测到已优化项目。可点击「基本优化」或「深度优化」选择方案，然后点「开始优化」应用。");
                         SetTweaksStatus("当前没有已优化项目");
                     }
                 }), System.Windows.Threading.DispatcherPriority.Background); } catch { /* 窗口已关闭，忽略 */ }
@@ -387,22 +389,9 @@ namespace CpqSystemTool
                 _tweaksCache.Set(root, buildDark);
                 _tweaksCache.SetRefresh(() =>
                 {
-                    // 复位动态状态（与旧版每次新建页面行为一致）：
-                    // 勾选复位为默认（二态未勾选/三态系统默认）、文本配色复位、预设按钮高亮复位（仅「基本优化」保持高亮）、
-                    // 分组折叠复位为展开、输出/状态计数复位、Touched 集合清空、右侧已选列表复位，随后后台重读真实优化状态
-                    foreach (var kv in checkBoxes)
-                    {
-                        var t = Tweaks.All.FirstOrDefault(x => x.Id == kv.Key);
-                        kv.Value.IsChecked = t != null && t.IsThreeState ? (bool?)null : false;
-                    }
+                    // P2-2 类：缓存命中保留用户待应用状态（勾选/Touched/预设高亮/分组展开/输出日志）；实际优化状态仍后台重读
                     SyncAllTweakColors();
-                    foreach (var ex in groupExpanders) ex.IsExpanded = true;
-                    highlightPreset(btnBasic);
-                    TweaksOutputLine.Text = "";
-                    TweaksTouched = new HashSet<string>(StringComparer.Ordinal);
                     UpdateSelectedPanel();
-                    _tweaksStatusBase = "";
-                    RefreshTweaksStatus();
                     reloadTweaksStates();
                 });
             }

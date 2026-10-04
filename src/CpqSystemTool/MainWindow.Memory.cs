@@ -278,9 +278,8 @@ namespace CpqSystemTool
                 _memoryCache.Set(root, buildDark);
                 _memoryCache.SetRefresh(() =>
                 {
-                    // 复位动态状态（与旧版每次新建页面行为一致）：优化卡片收起、清空优化日志、进度条隐藏。
-                    exp.IsExpanded = false;
-                    optLog.Clear();
+                    // P2-2 类：缓存命中保留用户展开态与优化日志（切页/主题重建回来不打断显示）；
+                    // 内存数据随时变化，二次进页仍重新分析
                     pb.Visibility = Visibility.Collapsed;
                     // 重新触发原页面构建时的 AutoLoad 内存分析，保证二次进页内存数据最新。
                     DoMemoryAnalyze(pb, applyUi);
