@@ -826,6 +826,13 @@ namespace CpqSystemTool
                 return;
             }
 
+            // P1 类修复：全量卸载走 ODT（长耗时），持全局互斥；两个入口（强力卸载按钮 / 安装入口全不选分支）共用此处守卫
+            if (!OperationLock.TryEnter("Office 部署", out string busyBy))
+            {
+                MessageBox.Show(Window.GetWindow(this), "已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
             var t = new Thread(() =>
             {
                 try
@@ -907,6 +914,7 @@ namespace CpqSystemTool
                 finally
                 {
                     SetInstalling(false);
+                    OperationLock.Exit();   // P1 类修复：全量卸载结束释放全局互斥
                 }
             }) { IsBackground = true, Name = "OfficeFullRemoveWorker" };
             t.Start();
@@ -1000,6 +1008,14 @@ namespace CpqSystemTool
             // 提前在 UI 线程捕获安装位置（GetSelectedInstallLocation 读 LocationCombo，后台线程不可读）
             string uiCapturedInstallLocation = GetSelectedInstallLocation();
             string uiCapturedArchitecture = SelectedArchitecture;
+
+            // P1 类修复：ODT 安装为长耗时操作（10-30 分钟），持全局互斥——
+            // 持锁期间主题切换的重建被挂起（RebuildCurrentPageForTheme 检查 IsBusy），且与其它模块耗时操作互斥
+            if (!OperationLock.TryEnter("Office 部署", out string busyBy))
+            {
+                MessageBox.Show(Window.GetWindow(this), "已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
 
             var t = new Thread(() =>
             {
@@ -1305,6 +1321,7 @@ namespace CpqSystemTool
                     });
 
                     SetInstalling(false);
+                    OperationLock.Exit();   // P1 类修复：安装流程结束（成功/异常）释放全局互斥，触发挂起的主题重建
                 }
             }) { IsBackground = true, Name = "OfficeDeployWorker" };
             t.Start();
@@ -1617,6 +1634,13 @@ namespace CpqSystemTool
             int edIdx = editionIdx;
             string before = _installedChannel;
 
+            // P1 类修复：切通道走 ODT（后台数分钟），持全局互斥
+            if (!OperationLock.TryEnter("Office 部署", out string busyBy))
+            {
+                MessageBox.Show(Window.GetWindow(this), "已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
             IsIndeterminateProgress = true;
             _installStartTime = DateTime.Now;
             ElapsedVisibility = Visibility.Visible;
@@ -1685,7 +1709,7 @@ namespace CpqSystemTool
                     DetectCurrentChannel(); // 刷新状态区
                 }
                 catch (Exception ex) { AppendLog("  [!] 切换更新通道异常: " + ex.Message); SetStatus("❌ 切换异常"); }
-                finally { SetInstalling(false); }
+                finally { SetInstalling(false); OperationLock.Exit(); }   // P1 类修复：切通道结束（含异常/早退）释放全局互斥
             });
             t.Start();
         }
@@ -1792,6 +1816,13 @@ namespace CpqSystemTool
             if (r != MessageBoxResult.OK)
             {
                 AppendLog("  [已取消] 用户取消版本重新部署（" + OfficeInstall.Editions[target] + "）。");
+                return;
+            }
+
+            // P1 类修复：重新部署走 ODT（后台数分钟），持全局互斥
+            if (!OperationLock.TryEnter("Office 部署", out string busyBy))
+            {
+                MessageBox.Show(Window.GetWindow(this), "已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -1917,7 +1948,7 @@ namespace CpqSystemTool
                     catch { /* 刷新失败不影响主流程：台账已刷新，仅下拉显示滞后 */ }
                 }
                 catch (Exception ex) { AppendLog("  [!] 切换版本异常: " + ex.Message); AppendLog("  [堆栈] " + ex.StackTrace); SetStatus("❌ 切换异常"); }
-                finally { SetInstalling(false); }
+                finally { SetInstalling(false); OperationLock.Exit(); }   // P1 类修复：重部署结束（含异常/早退）释放全局互斥
             });
             t.Start();
         }
