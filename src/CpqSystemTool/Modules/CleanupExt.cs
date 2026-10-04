@@ -9,7 +9,7 @@ namespace CpqSystemTool
     /// 清理项扩围：在原有 Cleanup.cs 档位之上，补充 ZyperWin++ 风格的细粒度清理项
     /// （缩略图/D3D 着色器/终端缓存/预读取/WinSxS DISM 等），按勾选执行。
     /// 缓存类项（缩略图/D3D/终端/预读取）可重建；【fix-5】WinSxS DISM /ResetBase 组件清理
-    /// 不可逆、无法回退，可能影响系统更新与功能修复（如组件损坏后的修复），务必谨慎勾选。
+    /// 不可逆：执行后已有更新无法卸载/回退（未来更新仍可正常安装），原位升级修复（IPU）可能失败，务必谨慎勾选。
     /// </summary>
     public static class CleanupExt
     {
@@ -25,7 +25,7 @@ namespace CpqSystemTool
             new ExtraItem { Id = "d3d",      Name = "D3D着色器缓存", Desc = "DirectX 着色器缓存", Path = @"%LOCALAPPDATA%\D3DSCache" },
             new ExtraItem { Id = "term",     Name = "终端缓存",     Desc = "Windows Terminal 缓存",   Path = @"%LOCALAPPDATA%\Microsoft\Windows Terminal\Cache" },
             new ExtraItem { Id = "prefetch", Name = "预读取文件",   Desc = "Prefetch 预读取",     Path = @"%WINDIR%\Prefetch" },
-            new ExtraItem { Id = "winsxs",   Name = "WinSxS 冗余(DISM)",  Desc = "DISM /ResetBase 组件清理：不可逆、无法回退，可能影响系统更新与修复，谨慎勾选", Path = null },
+            new ExtraItem { Id = "winsxs",   Name = "WinSxS 冗余(DISM)",  Desc = "DISM /ResetBase 组件清理：不可逆。执行后已有更新无法卸载/回退（未来更新仍可正常安装）；原位升级修复（IPU）可能失败，谨慎勾选", Path = null },
         };
 
         // 统一记录"已忽略的异常"，避免重复样板。
