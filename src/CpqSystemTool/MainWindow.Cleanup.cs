@@ -79,6 +79,22 @@ namespace CpqSystemTool
         // 避免每次导航重建 ~35 项 CheckBox × 多事件闭包。清理执行（改变可清理大小）时缓存失效重建。
         private readonly PageCache<UIElement> _cleanupCache = new PageCache<UIElement>();
 
+        // ===== P2-2：切页/重建后保留用户勾选与日志 =====
+        // 离开清理页或操作完成（缓存失效将全量重建）前，快照当前勾选集合与日志文本；
+        // 全量重建时据此恢复。缓存命中（同主题切页回来）直接复用旧树，状态本就在，无需快照。
+        private HashSet<string> _cleanupStateChecked;
+        private string _cleanupStateLog = "";
+        private List<CheckBox> _cleanupLiveChecks;
+        private TextBox _cleanupLiveLog;
+
+        /// <summary>快照当前清理页的勾选集合与日志文本（live 引用由 BuildCleanup 登记；离开/完成前调用）。</summary>
+        private void CaptureCleanupState()
+        {
+            if (_cleanupLiveChecks != null)
+                _cleanupStateChecked = _cleanupLiveChecks.Where(c => c.IsChecked == true).Select(c => (string)c.Tag).ToHashSet();
+            _cleanupStateLog = _cleanupLiveLog?.Text ?? "";
+        }
+
         private UIElement BuildCleanup()
         {
             // 记录本次构建时主题：缓存仅在主题一致时命中（主题切换会重建当前页，避免复用旧主题刷子的页面）
@@ -135,7 +151,8 @@ namespace CpqSystemTool
                     var chk = new CheckBox
                     {
                         Tag = item.Id,
-                        IsChecked = item.DefaultChecked,
+                        // P2-2：重建时恢复上次的勾选（首次构建无快照 → 默认值）
+                        IsChecked = _cleanupStateChecked == null ? item.DefaultChecked : _cleanupStateChecked.Contains(item.Id),
                         Margin = new Thickness(0, 3, 0, 0),
                         Cursor = Cursors.Hand,
                         VerticalAlignment = VerticalAlignment.Top,
@@ -300,7 +317,7 @@ namespace CpqSystemTool
                     l(dirty > 0
                         ? "\r\n[OK] 清理完成！部分项被占用/有残留，建议重启电脑释放后再清一次\r\n"
                         : "\r\n[OK] 清理完成！全部处理完毕（未安装项已跳过），无需重启\r\n");
-                }, "清理完成", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; _cleanupCache.Invalidate(); });
+                }, "清理完成", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; CaptureCleanupState(); _cleanupCache.Invalidate(); });
             }, 100);
             actionBar.Children.Add(btnClean);
 
@@ -388,7 +405,7 @@ namespace CpqSystemTool
                         var toDel = dlg.Selected;
                         if (toDel.Count == 0) { log.AppendText("\r\n[i] 未勾选任何项，已取消删除。\r\n"); OperationLock.Exit(); return; }
                         pb.Visibility = Visibility.Visible;
-                        RunInBg(log, l2 => Cleanup.DeleteTier3(toDel, l2), "第三档删除完成", () => { pb.Visibility = Visibility.Collapsed; _cleanupCache.Invalidate(); OperationLock.Exit(); });
+                        RunInBg(log, l2 => Cleanup.DeleteTier3(toDel, l2), "第三档删除完成", () => { pb.Visibility = Visibility.Collapsed; CaptureCleanupState(); _cleanupCache.Invalidate(); OperationLock.Exit(); });
                     }
                     else
                     {
@@ -433,6 +450,11 @@ namespace CpqSystemTool
 
             UpdateCleanupSelCount();
 
+            // P2-2：恢复快照日志（全量重建，如主题切换/操作完成失效后首次进入）并登记 live 引用供快照
+            if (!string.IsNullOrEmpty(_cleanupStateLog)) log.AppendText(_cleanupStateLog);
+            _cleanupLiveChecks = allCheckBoxes;
+            _cleanupLiveLog = log;
+
             // ---- 页面级缓存：首次构建完成后缓存整页；再次进入复用并仅复位动态状态 ----
             // 仅在构建期间主题未变时写入缓存（避免把混入旧主题刷子的页面标记为可复用）
             if (buildDark == _isDarkMode)
@@ -440,19 +462,7 @@ namespace CpqSystemTool
                 _cleanupCache.Set(root, buildDark);
                 _cleanupCache.SetRefresh(() =>
                 {
-                    // 复位动态状态（与每次新建页面行为一致）：
-                    // 恢复默认勾选、复位「全选当前页」与分组展开、清空日志（含旧扫描结果→回到未扫描态）、
-                    // 进度条收起、按钮高亮回到「开始清理」、刷新勾选计数
-                    foreach (var c in allCheckBoxes)
-                    {
-                        var def = CleanupCatalog.FirstOrDefault(d => d.Id == (string)c.Tag);
-                        c.IsChecked = (def != null && def.DefaultChecked);
-                    }
-                    chkAll.IsChecked = false;
-                    foreach (var ex in expanders) ex.IsExpanded = true;
-                    log.Clear();
-                    pb.Visibility = Visibility.Collapsed;
-                    ApplyMode(btnClean);
+                    // P2-2：缓存命中 = 复用旧树，用户勾选/日志/分组展开/进度条保持原样，只重算勾选计数
                     UpdateCleanupSelCount();
                 });
             }

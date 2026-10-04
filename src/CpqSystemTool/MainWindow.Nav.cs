@@ -189,6 +189,8 @@ namespace CpqSystemTool
         {
             var n = _nav.FirstOrDefault(x => x.Key == key);
             if (n == null) return;
+            // P2-2：离开清理页前快照勾选与日志（随后全量重建时据此恢复；同主题切页走缓存命中直接复用旧树，不受影响）
+            if (string.Equals(_activeNavKey, "cleanup")) CaptureCleanupState();
             _activeNavKey = key;
             // 主动导航（侧边栏/关于/挂起重建）已产出新主题页面：清除主题挂起标志，避免随后重复重建
             _pendingThemeRebuild = false;
