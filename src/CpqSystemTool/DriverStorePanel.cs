@@ -598,6 +598,9 @@ namespace CpqSystemTool
         internal void Refresh()
         {
             if (_enumerating) return;
+            // N1：有耗时操作持锁时跳过刷新——本类 RunInBg 启动前 CancelBgWork 会取消正在跑的
+            // 受锁任务（备份/卸载）的 token，导致其日志/完成提示被静默抑制；忙时直接跳过
+            if (OperationLock.IsBusy) return;
             _enumerating = true;
             RunInBg(logf =>
             {
