@@ -127,8 +127,10 @@ namespace CpqSystemTool
             int btnRow = 0;
 
             // 侧边栏头部标题（放 DockPanel 顶部，按钮区滚动时标题固定不动）
-            var titleTb = new TextBlock { Text = "系统清理与优化", FontSize = 18, FontWeight = FontWeights.Bold, Foreground = _textMain, Margin = new Thickness(14, 14, 0, 2), Name = "SidebarTitle" };
-            var subtitleTb = new TextBlock { Text = "WPF 版 · 清理优化", FontSize = 11, Foreground = _accent, Opacity = 0.9, Margin = new Thickness(14, 0, 0, 8), Name = "SidebarSubtitle" };
+            // 对齐方式：与导航标签保持一致——导航按钮模板里的 ContentPresenter 是居中显示，
+            // 故标题/副标题也用居中（原先左对齐 + 左边距 14，与下方标签的视觉轴线不一致）。
+            var titleTb = new TextBlock { Text = "系统清理与优化", FontSize = 18, FontWeight = FontWeights.Bold, Foreground = _textMain, HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center, Margin = new Thickness(6, 14, 6, 2), Name = "SidebarTitle" };
+            var subtitleTb = new TextBlock { Text = "WPF 版 · 清理优化", FontSize = 11, Foreground = _accent, Opacity = 0.9, HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center, Margin = new Thickness(6, 0, 6, 8), Name = "SidebarSubtitle" };
             dock.Children.Add(titleTb);
             DockPanel.SetDock(titleTb, Dock.Top);
             dock.Children.Add(subtitleTb);
