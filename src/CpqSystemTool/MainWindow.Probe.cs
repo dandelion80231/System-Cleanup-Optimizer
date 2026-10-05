@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -289,7 +289,12 @@ namespace CpqSystemTool
                     return;
                 logf(s);
             };
-            return RunProbeProcess(workingDir, "powershell", "-NoProfile -ExecutionPolicy Bypass -EncodedCommand " + encoded, null, cleanLog, out _);
+            // 安全加固（与 Exec/Activation 同口径）：不用裸 "powershell" 交由 PATH/CWD 解析——
+            // 本方法的 WorkingDirectory 是 tools/probes，其中若存在同名 powershell.exe 会被优先执行（PATH 劫持）。
+            // 统一取 %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe；仅在极端缺失时退回裸名。
+            string psExe = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
+            if (!File.Exists(psExe)) psExe = "powershell";
+            return RunProbeProcess(workingDir, psExe, "-NoProfile -ExecutionPolicy Bypass -EncodedCommand " + encoded, null, cleanLog, out _);
         }
 
         /// <summary>

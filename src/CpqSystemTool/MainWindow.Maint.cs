@@ -220,9 +220,18 @@ namespace CpqSystemTool
             var nodeHeader = MakeMenuHeader("Node + Playwright + Chromium（检测中…）");
             var nodeInstall = MakeMenuItem("安装 / 修复", depsPopup, () =>
             {
-                RunInBg(logBox, logf =>
+                // 结果驱动：probes 缺失 / 脚本失败 / Playwright 未落地 都要在状态栏如实体现（原来恒显示「依赖安装结束」）
+                bool nodeProbesMissing = false, nodeInstallOk = false;
+                RunInBgWithStatus(logBox, logf =>
                 {
                     var probesDir = ResolveProbesDir();
+                    if (probesDir == null)
+                    {
+                        nodeProbesMissing = true;
+                        logf("[!] 未找到 probes 目录。请在程序所在目录（或逐级向上的某一级）放置 tools/probes 文件夹，");
+                        logf("    即确保存在 <程序目录>\\tools\\probes\\（内含 official_exe_finder.js 与 install_deps.ps1）。");
+                        return;
+                    }
                     var installPs = Path.Combine(probesDir, "install_deps.ps1");
                     if (!File.Exists(installPs))
                     {
@@ -234,7 +243,8 @@ namespace CpqSystemTool
                     // 否则会出现“安装失败却报成功”的误判（此前踩过的坑）。
                     bool ok = RunPowerShellScript(probesDir, installPs, logf);
                     var dep = IsNodeDepsReady(probesDir);
-                    if (ok && dep.Ready)
+                    nodeInstallOk = ok && dep.Ready;
+                    if (nodeInstallOk)
                         logf("[✓] Node 依赖安装完成（Node + Playwright 就绪）。");
                     else
                     {
@@ -243,7 +253,9 @@ namespace CpqSystemTool
                              "，Playwright=" + (dep.PlaywrightExists ? "就绪" : "缺失") + "）。");
                         logf("    请检查网络后重试，或手动在 probes 目录运行 install_deps.ps1。");
                     }
-                }, "依赖安装结束", null, "正在安装/修复依赖…");
+                }, () => nodeProbesMissing ? "未找到 probes 目录"
+                       : nodeInstallOk ? "依赖安装完成"
+                       : "依赖安装未完成（详见日志）", null, "正在安装/修复依赖…");
             });
             var nodeUninstall = MakeMenuItem("卸载本地依赖", depsPopup, () =>
             {

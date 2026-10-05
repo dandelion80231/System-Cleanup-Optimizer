@@ -167,32 +167,47 @@ namespace CpqSystemTool
             var wp = MakeBtnRow(
                 Btn("📥 导出配置...", true, () =>
                 {
-                    var defaultName = $"系统清理与优化配置_{DateTime.Now:yyyyMMdd_HHmmss}.json";
-                    var dlg = new SaveFileDialog { Filter = "JSON|*.json", FileName = defaultName, InitialDirectory = ConfigBackup.ConfigDir };
-                    if (dlg.ShowDialog() == true)
+                    // 同步处理器不兜底时，磁盘满/无写权限等异常会直达 Dispatcher（弹崩溃框只是被 App 拦下），
+                    // 与相邻「导出源码」按钮的 try/catch 口径对齐，改为日志内如实报错。
+                    try
                     {
-                        var cfg = CollectConfig();
-                        ConfigBackup.Save(dlg.FileName, cfg, s => log.AppendText(s + "\r\n"));
-                        InvalidateConfigCache(); // 已存配置列表变化 → 失效缓存，下次进页重建
+                        var defaultName = $"系统清理与优化配置_{DateTime.Now:yyyyMMdd_HHmmss}.json";
+                        var dlg = new SaveFileDialog { Filter = "JSON|*.json", FileName = defaultName, InitialDirectory = ConfigBackup.ConfigDir };
+                        if (dlg.ShowDialog() == true)
+                        {
+                            var cfg = CollectConfig();
+                            ConfigBackup.Save(dlg.FileName, cfg, s => log.AppendText(s + "\r\n"));
+                            InvalidateConfigCache(); // 已存配置列表变化 → 失效缓存，下次进页重建
+                        }
                     }
+                    catch (Exception ex) { log.AppendText("[!] 导出配置失败: " + ex.Message + "\r\n"); }
                 }),
                 Btn("📤 导入配置...", false, () =>
                 {
-                    var dlg = new OpenFileDialog { Filter = "JSON|*.json", InitialDirectory = ConfigBackup.ConfigDir };
-                    if (dlg.ShowDialog() == true)
+                    try
                     {
-                        var cfg = ConfigBackup.Load(dlg.FileName, s => log.AppendText(s + "\r\n"));
-                        ApplyConfig(cfg, log);
-                        InvalidateConfigCache(); // 已应用配置，优化项状态变化 → 失效缓存
+                        var dlg = new OpenFileDialog { Filter = "JSON|*.json", InitialDirectory = ConfigBackup.ConfigDir };
+                        if (dlg.ShowDialog() == true)
+                        {
+                            var cfg = ConfigBackup.Load(dlg.FileName, s => log.AppendText(s + "\r\n"));
+                            if (cfg == null) { log.AppendText("[!] 配置读取失败（文件为空或不是本工具的配置），未应用任何优化项\r\n"); return; }
+                            ApplyConfig(cfg, log);
+                            InvalidateConfigCache(); // 已应用配置，优化项状态变化 → 失效缓存
+                        }
                     }
+                    catch (Exception ex) { log.AppendText("[!] 导入配置失败: " + ex.Message + "\r\n"); }
                 }),
                 Btn("💾 自动保存当前配置", false, () =>
                 {
-                    if (!AppPaths.EnsureConfigDir()) ShowConfigDirWarningOnce();
-                    var cfg = CollectConfig();
-                    ConfigBackup.AutoSave(cfg, s => log.AppendText(s + "\r\n"));
-                    log.AppendText("[OK] 已保存到: " + Path.Combine(ConfigBackup.ConfigDir, "autosave.json") + "\r\n");
-                    InvalidateConfigCache(); // 已写备份文件，配置目录内容变化 → 失效缓存
+                    try
+                    {
+                        if (!AppPaths.EnsureConfigDir()) ShowConfigDirWarningOnce();
+                        var cfg = CollectConfig();
+                        ConfigBackup.AutoSave(cfg, s => log.AppendText(s + "\r\n"));
+                        log.AppendText("[OK] 已保存到: " + Path.Combine(ConfigBackup.ConfigDir, "autosave.json") + "\r\n");
+                        InvalidateConfigCache(); // 已写备份文件，配置目录内容变化 → 失效缓存
+                    }
+                    catch (Exception ex) { log.AppendText("[!] 自动保存失败: " + ex.Message + "\r\n"); }
                 }),
                 Btn("📋 列出已存配置", false, () =>
                 {
@@ -528,7 +543,8 @@ namespace CpqSystemTool
                                 log.AppendText("    重新打开本工具（或重启电脑）后自动生效。\r\n");
                             }
                             return;
-                        }                        log.AppendText("[FAIL] 图片加载失败：" + Path.GetFileName(dlg.FileName) + "\r\n");
+                        }
+                        log.AppendText("[FAIL] 图片加载失败：" + Path.GetFileName(dlg.FileName) + "\r\n");
                         string hint = ext == ".webp"
                             ? "\n\n当前是 webp 格式。系统未安装 WebP 解码器。\n\n最快方案：右键 webp → 画图 → 另存为 PNG/JPG。"
                             : "\n\n请确认图片文件有效（png/jpg/bmp/gif 或 webp）。";
@@ -756,7 +772,8 @@ namespace CpqSystemTool
                                 log.AppendText("    重新打开本工具（或重启电脑）后自动生效。\r\n");
                             }
                             return;
-                        }                        log.AppendText("[FAIL] 图片加载失败：" + Path.GetFileName(dlg.FileName) + "\r\n");
+                        }
+                        log.AppendText("[FAIL] 图片加载失败：" + Path.GetFileName(dlg.FileName) + "\r\n");
                         string hint = ext == ".webp"
                             ? "\n\n当前是 webp 格式。系统未安装 WebP 解码器。\n\n最快方案：右键 webp → 画图 → 另存为 PNG/JPG。"
                             : "\n\n请确认图片文件有效（png/jpg/bmp/gif 或 webp）。";
