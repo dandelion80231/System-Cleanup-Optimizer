@@ -680,8 +680,9 @@ namespace CpqSystemTool
                         SetStatus("请输入入口 URL 或厂商名");
                         return;
                     }
-                    fetchBtn.IsEnabled = false;
-                    fetchBtn.Content = "抓取中...";
+                    // UiBusy 统一样板：原标签「抓取直链」按捕获恢复；catch（启动失败路径）仍走独立恢复
+                    System.Action unbusy = null;
+                    unbusy = UiBusy.Mark(fetchBtn, "抓取中...");
                     bool skip = skipDlCheck.IsChecked == true;
 
                     bool searchLocated = false;
@@ -701,8 +702,7 @@ namespace CpqSystemTool
                     {
                         // 后台任务无论成功失败都会回到这里（RunInBg 的两条路径都会调 onDoneUi）,
                         // 先无条件恢复按钮，再做结果填充——避免结果填充报错时按钮卡在"抓取中..."。
-                        fetchBtn.IsEnabled = true;
-                        fetchBtn.Content = "抓取直链";
+                        unbusy();
                         try
                         {
                             recommendedTb.Text = _probeRecommendedUrl ?? "";

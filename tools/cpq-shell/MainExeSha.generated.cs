@@ -12,6 +12,6 @@ namespace CpqShell
 {
     public static class MainExeSha
     {
-        public const string MainExeSha256 = "73d8a59d6c7cf68369f492715ff2fa22dfbff965ef34f4042825c2d33b7460ac";
+        public const string MainExeSha256 = "67ffdf32084912f5eee31aaf67fe0b92f420dafef163bbb2e254d9eb176f808f";
     }
 }

@@ -165,8 +165,7 @@ namespace CpqSystemTool
                     pb.Visibility = Visibility.Collapsed;
                     return;
                 }
-                // 进行中态：状态栏实时显示（原逻辑完成才提示，过程中无反馈；pb 进度条仍在）
-                SetStatus("正在卸载 " + selected.Count + " 项" + (alsoProvisioned ? "（含预装）" : "") + "…");
+                // 进行中态统一走 RunInBg 的 progress 参数（P2：ad-hoc SetStatus 并入统一机制；pb 进度条仍在）
                 // ★ 单层 RunInBg：直接跑 Uninstall，不再 ThreadPool.QueueUserWorkItem 嵌套
                 RunInBg(log, l =>
                 {
@@ -179,7 +178,7 @@ namespace CpqSystemTool
                             if (fam != null) AppxManager.UninstallProvisioned(new List<string> { fam.PackageFamily }, s => l(s));
                         }
                     }
-                }, "卸载完成", () => { OperationLock.Exit(); _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; LoadAndRender(rbCurrent.IsChecked == true, cardsPanel, countLbl, searchBox.Text, log, UpdateAppxSelCount); });
+                }, "卸载完成", () => { OperationLock.Exit(); _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; LoadAndRender(rbCurrent.IsChecked == true, cardsPanel, countLbl, searchBox.Text, log, UpdateAppxSelCount); }, "正在卸载 " + selected.Count + " 项" + (alsoProvisioned ? "（含预装）" : "") + "…");
             }, 110);
             toolBar.Children.Add(btnUninstall);
             Grid.SetColumn(toolBar, 2);
@@ -486,11 +485,9 @@ namespace CpqSystemTool
                             System.Windows.MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                             return;
                         }
-                        // 进行中态：按钮置「安装中…+禁用」+ 状态栏实时显示（原逻辑完成才提示，过程中无反馈）
-                        uninstallBtn.Content = "安装中…";
-                        uninstallBtn.IsEnabled = false;
-                        SetStatus("正在安装: " + displayName + "…");
-                        RunInBg(log, l => AppxManager.Install(def.StoreId, l), "安装完成: " + displayName, refreshThisCard);
+                        // 进行中态：按钮（UiBusy 统一样板）+ 状态栏 progress 参数（P2：ad-hoc SetStatus 并入统一机制）；成功/异常经 onDoneUi 恢复按钮
+                        var unbusy = UiBusy.Mark(uninstallBtn, "安装中…");
+                        RunInBg(log, l => AppxManager.Install(def.StoreId, l), "安装完成: " + displayName, () => { unbusy(); refreshThisCard(); }, "正在安装 " + displayName + "…");
                     }
                     return;
                 }
@@ -499,15 +496,13 @@ namespace CpqSystemTool
                     System.Windows.MessageBox.Show("已有「" + busyBy2 + "」操作正在运行，请先完成再执行。", "操作冲突", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                     return;
                 }
-                // 进行中态：按钮置「卸载中…+禁用」+ 状态栏实时显示
-                uninstallBtn.Content = "卸载中…";
-                uninstallBtn.IsEnabled = false;
-                SetStatus("正在卸载: " + displayName + "…");
+                // 进行中态：按钮（UiBusy 统一样板）+ 状态栏 progress 参数（P2：ad-hoc SetStatus 并入统一机制）；成功/异常经 onDoneUi 恢复按钮
+                var unbusy2 = UiBusy.Mark(uninstallBtn, "卸载中…");
                 RunInBg(log, l =>
                 {
                     if (isProvisioned) AppxManager.UninstallProvisioned(new System.Collections.Generic.List<string> { uninstallTarget }, l);
                     else AppxManager.Uninstall(new System.Collections.Generic.List<string> { uninstallTarget }, l);
-                }, "卸载完成: " + displayName, refreshThisCard);
+                }, "卸载完成: " + displayName, () => { unbusy2(); refreshThisCard(); }, "正在卸载 " + displayName + "…");
             }, 50);
             if (!isInstalled) uninstallBtn.Background = new SolidColorBrush(Color.FromRgb(0xE6, 0x7E, 0x22));
             btnBar.Children.Add(uninstallBtn);
