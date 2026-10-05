@@ -199,6 +199,12 @@ namespace CpqSystemTool
             // 每次导航先恢复为 Auto，确保其它页面不被误关。
             ContentArea.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
             PageTitle.Text = n.Title;
+            // 底部状态栏是全局的：切页后上一页的完成提示（如「内存分析完成」）是过期信息，这里复位；
+            // 若有耗时操作在别的页进行中，显示其名称让用户知道程序没卡死（随后本页构建/刷新逻辑可再覆盖为页面自身状态）
+            var busyOp = OperationLock.BusyOperation;
+            StatusText.Foreground = _textDim;
+            StatusText.FontWeight = FontWeights.Normal;
+            SetStatus(busyOp != null ? "「" + busyOp + "」进行中…" : "就绪");
             // 标题行小字提醒：仅定义了 Note 的页显示（当前只有「清理优化」），其余页隐藏，标题行观感不变
             if (!string.IsNullOrEmpty(n.Note))
             {

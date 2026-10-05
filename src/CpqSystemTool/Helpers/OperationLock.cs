@@ -60,5 +60,11 @@ namespace CpqSystemTool
         {
             get { lock (Gate) { return _busy; } }
         }
+
+        /// <summary>当前持锁的操作名（空闲时 null）。供状态栏等调用方在跨页切走时显示「操作进行中」。</summary>
+        public static string BusyOperation
+        {
+            get { lock (Gate) { return _busy ? _busyOperation : null; } }
+        }
     }
 }
