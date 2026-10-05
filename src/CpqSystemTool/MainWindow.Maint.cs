@@ -662,6 +662,10 @@ namespace CpqSystemTool
             rowStyle.Triggers.Add(lowTrig);
             dg.RowStyle = rowStyle;
 
+            // 空态/少量数据时也保持至少「表头 + 3 行」的高度（原先无内容只剩一条细表头条，观感突兀）；
+            // 数据多于 3 行时按内容自行扩展，上限仍由 MaxHeight=360 约束。
+            ApplyMinRowsToDataGrid(dg, 3);
+
             probeInner.Children.Add(dg);
 
             // 日志区放到最下方，与其他页面「日志框在底部」的布局统一
@@ -784,6 +788,58 @@ namespace CpqSystemTool
         /// 供维护页与驱动管理页等需要透明网格的页面复用，避免样式代码散落重复。
         /// 列头样式：透明底、主题文字色 fg、边框色 border；单元格样式：透明底、前景 fg、透明边框。
         /// </summary>
+        /// <summary>
+        /// 让 DataGrid 在「无数据/数据不足 minRows 行」时仍保持至少「表头 + minRows 行」的高度，
+        /// 数据多于 minRows 行时按内容自行扩展（上限仍由调用方 MaxHeight 约束）。
+        /// 行高与表头高随 DPI/字体缩放变化，故在布局完成后按实际渲染高度回算，不硬编码像素。
+        /// </summary>
+        internal static void ApplyMinRowsToDataGrid(DataGrid dg, int minRows)
+        {
+            double lastRowH = -1, lastHeaderH = -1;
+            dg.LayoutUpdated += (s, e) =>
+            {
+                try
+                {
+                    double rowH = (!double.IsNaN(dg.RowHeight) && dg.RowHeight > 0) ? dg.RowHeight : 0;
+                    if (rowH <= 0)
+                    {
+                        var anyRow = FindVisualChild<DataGridRow>(dg);
+                        if (anyRow != null && anyRow.ActualHeight > 1) rowH = anyRow.ActualHeight;
+                    }
+                    if (rowH <= 0) rowH = 26;   // 空表兜底：本页模板列里的按钮行实测约 24-28px
+
+                    double headerH = (!double.IsNaN(dg.ColumnHeaderHeight) && dg.ColumnHeaderHeight > 0) ? dg.ColumnHeaderHeight : 0;
+                    if (headerH <= 0)
+                    {
+                        var hdr = FindVisualChild<DataGridColumnHeadersPresenter>(dg);
+                        if (hdr != null && hdr.ActualHeight > 1) headerH = hdr.ActualHeight;
+                    }
+                    if (headerH <= 0) headerH = 32;
+
+                    // 高度无变化就不重复赋值（LayoutUpdated 每次布局都会触发，避免无谓的 MinHeight 写入）
+                    if (Math.Abs(rowH - lastRowH) < 0.5 && Math.Abs(headerH - lastHeaderH) < 0.5) return;
+                    lastRowH = rowH; lastHeaderH = headerH;
+                    dg.MinHeight = headerH + minRows * rowH;
+                }
+                catch (Exception ex) { DebugLog.Ignore(ex); }
+            };
+        }
+
+        /// <summary>在视觉树中查找第一个指定类型的子元素（找不到返回 null）。</summary>
+        private static T FindVisualChild<T>(DependencyObject node) where T : DependencyObject
+        {
+            if (node == null) return null;
+            int count = VisualTreeHelper.GetChildrenCount(node);
+            for (int i = 0; i < count; i++)
+            {
+                var child = VisualTreeHelper.GetChild(node, i);
+                if (child is T hit) return hit;
+                var sub = FindVisualChild<T>(child);
+                if (sub != null) return sub;
+            }
+            return null;
+        }
+
         internal static (Style Header, Style Cell) MakeDataGridStyles(Brush fg, Brush border)
         {
             var h = new Style(typeof(DataGridColumnHeader));
