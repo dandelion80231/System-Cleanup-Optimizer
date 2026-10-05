@@ -172,7 +172,7 @@ namespace CpqSystemTool
                     _lastDefAction = "disable";
                     RebuildDefenderButtons(); // 立即刷新高亮，给点击反馈
                     pb.Visibility = Visibility.Visible;
-                    RunInBg(log, Defender.Disable, "已禁用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); });
+                    RunInBg(log, Defender.Disable, "已禁用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); }, "正在禁用 Defender…");
                 });
                 bDisable.HorizontalAlignment = HorizontalAlignment.Center;
                 defHostL.Children.Add(bDisable);
@@ -187,7 +187,7 @@ namespace CpqSystemTool
                     _lastDefAction = "restore";
                     RebuildDefenderButtons(); // 立即刷新高亮，给点击反馈
                     pb.Visibility = Visibility.Visible;
-                    RunInBg(log, Defender.Enable, "已启用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); });
+                    RunInBg(log, Defender.Enable, "已启用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); }, "正在启用 Defender…");
                 });
                 bEnable.HorizontalAlignment = HorizontalAlignment.Center;
                 defHostR.Children.Add(bEnable);
@@ -206,7 +206,7 @@ namespace CpqSystemTool
                     return;
                 }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, Defender.TemporaryDisable, "已临时禁用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); });
+                RunInBg(log, Defender.TemporaryDisable, "已临时禁用 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); }, "正在临时禁用 Defender…");
             });
             bTempDisable.HorizontalAlignment = HorizontalAlignment.Center;
             tempHostL.Children.Add(bTempDisable);
@@ -219,7 +219,7 @@ namespace CpqSystemTool
                     return;
                 }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, Defender.TemporaryEnable, "已临时恢复 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); });
+                RunInBg(log, Defender.TemporaryEnable, "已临时恢复 Defender", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; SyncDefToggles(); BuildDefenderStatus(); RebuildDefenderButtons(); RefreshTpStatus(); }, "正在临时恢复 Defender…");
             });
             bTempEnable.HorizontalAlignment = HorizontalAlignment.Center;
             tempHostR.Children.Add(bTempEnable);
@@ -292,7 +292,7 @@ namespace CpqSystemTool
                                 SyncDefToggles();         // 重新读 Get* 刷新 toggle（Set 失败时自动回滚）
                                 BuildDefenderStatus();    // 刷新"当前状态"行
                                 RebuildDefenderButtons(); // 刷新一键禁用/恢复按钮填充
-                            });
+                             }, (target ? "正在启用 " : "正在禁用 ") + label + "…");
                     };
                     return chk;
                 };
@@ -526,7 +526,7 @@ namespace CpqSystemTool
                     SyncDefToggles();
                     BuildDefenderStatus();
                     RebuildDefenderButtons();
-                });
+                }, "正在清理 Defender 策略…");
             };
             bDiag.Click += (s, e) =>
             {
@@ -541,7 +541,7 @@ namespace CpqSystemTool
                 {
                     OperationLock.Exit();
                     pb.Visibility = Visibility.Collapsed;
-                });
+                }, "正在诊断 Defender 运行时…");
             };
 
             // ===== 注册表快照回滚区（07 逻辑） =====
@@ -630,7 +630,7 @@ namespace CpqSystemTool
                 {
                     OperationLock.Exit();
                     pb.Visibility = Visibility.Collapsed;
-                });
+                }, "正在备份注册表快照…");
             };
 
             bRollback.Click += (s, e) =>
@@ -659,7 +659,7 @@ namespace CpqSystemTool
                     OperationLock.Exit();
                     pb.Visibility = Visibility.Collapsed;
                     Dispatcher.Invoke(() => RefreshSnapshotList());
-                });
+                }, "正在回滚注册表快照…");
             };
 
             // 默认不高亮底部动作按钮
@@ -904,7 +904,7 @@ namespace CpqSystemTool
                     return;
                 }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, PrivacyCore.AddSearchFirewallRule, "已添加阻止 SearchHost 规则", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; LoadFirewallData(); });
+                RunInBg(log, PrivacyCore.AddSearchFirewallRule, "已添加阻止 SearchHost 规则", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; LoadFirewallData(); }, "正在添加阻止 SearchHost 防火墙规则…");
             };
             bBlockTele.Click += (s, e) =>
             {
@@ -917,7 +917,7 @@ namespace CpqSystemTool
                     return;
                 }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, l => FirewallCore.AddBlockAddressRule("阻止Windows遥测域", TELEMETRY_HOSTS, l), "已添加阻止遥测域规则", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; LoadFirewallData(); });
+                RunInBg(log, l => FirewallCore.AddBlockAddressRule("阻止Windows遥测域", TELEMETRY_HOSTS, l), "已添加阻止遥测域规则", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; LoadFirewallData(); }, "正在添加阻止遥测域防火墙规则…");
             };
             bRemoveSearch.Click += (s, e) =>
             {
@@ -930,7 +930,7 @@ namespace CpqSystemTool
                     return;
                 }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, PrivacyCore.RemoveSearchFirewallRule, "已移除 SearchHost 规则", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; LoadFirewallData(); });
+                RunInBg(log, PrivacyCore.RemoveSearchFirewallRule, "已移除 SearchHost 规则", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; LoadFirewallData(); }, "正在移除 SearchHost 防火墙规则…");
             };
             bRemoveSel.Click += (s, e) =>
             {
@@ -951,7 +951,7 @@ namespace CpqSystemTool
                     return;
                 }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, l => FirewallCore.RemoveRule(sel.DisplayName, l), "已移除规则: " + sel.DisplayName, () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; LoadFirewallData(); });
+                RunInBg(log, l => FirewallCore.RemoveRule(sel.DisplayName, l), "已移除规则: " + sel.DisplayName, () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; LoadFirewallData(); }, "正在移除规则: " + sel.DisplayName + "…");
             };
 
             root.Children.Add(fwCard);
@@ -1028,7 +1028,7 @@ namespace CpqSystemTool
                     OperationLock.Exit();
                     pb.Visibility = Visibility.Collapsed;
                     if (navWhenDone) LoadUpdateState();
-                });
+                }, "安全更新: " + label + "…");
             }
 
             void RebuildUpdateButtons()

@@ -582,7 +582,7 @@ namespace CpqSystemTool
                         lastItems = items;
                         RenderRows();
                     }); } catch { /* 窗口已关闭，忽略 */ }
-                }, "列表已刷新", () => pb.Visibility = Visibility.Collapsed);
+                }, "列表已刷新", () => pb.Visibility = Visibility.Collapsed, "正在刷新列表…");
             }
 
             // 渲染裸列表行（尊重「隐藏系统框架组件」开关：框架/资源包被隐藏时不建行，计数标注隐藏数）
@@ -661,7 +661,7 @@ namespace CpqSystemTool
                                 }
                                 pb.Visibility = Visibility.Visible;
                                 RunInBg(log, ll => AppxManager.Uninstall(new System.Collections.Generic.List<string> { it.FullName }, ll),
-                                    "已卸载: " + it.Name, () => { OperationLock.Exit(); _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; RefreshList(); });
+                                    "已卸载: " + it.Name, () => { OperationLock.Exit(); _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; RefreshList(); }, "正在卸载 " + it.Name + "…");
                             }, 60);
                             uninstBtn.FontSize = 11;
                             Grid.SetColumn(uninstBtn, 3);
@@ -731,7 +731,7 @@ namespace CpqSystemTool
                     return;
                 }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, l => AppxManager.Uninstall(sel, l), "卸载完成", () => { OperationLock.Exit(); _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; RefreshList(true); });
+                RunInBg(log, l => AppxManager.Uninstall(sel, l), "卸载完成", () => { OperationLock.Exit(); _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; RefreshList(true); }, "正在卸载 " + sel.Count + " 个已选包…");
             }, 110);
             btnUninstallSel.HorizontalAlignment = HorizontalAlignment.Right;
             btnUninstallSel.VerticalAlignment = VerticalAlignment.Center;

@@ -404,8 +404,8 @@ namespace CpqSystemTool
             }), System.Windows.Threading.DispatcherPriority.ContextIdle);
         }
 
-        private void RunInBg(TextBox log, Action<Action<string>> work, string done = "完成", Action onDoneUi = null)
-            => RunInBgCore(log, work, () => done, onDoneUi);
+        private void RunInBg(TextBox log, Action<Action<string>> work, string done = "完成", Action onDoneUi = null, string progress = null)
+            => RunInBgCore(log, work, () => done, onDoneUi, progress);
 
         /// <summary>
         /// 与 RunInBg 相同，但状态栏文案由回调在任务结束后动态决定。
@@ -413,11 +413,19 @@ namespace CpqSystemTool
         /// （参见 MainWindow.Maint.cs 的「卸载本地依赖」与「清理探针缓存」）。
         /// 回调在 UI 线程上执行，可安全读取任务中统计的计数变量。
         /// </summary>
-        private void RunInBgWithStatus(TextBox log, Action<Action<string>> work, Func<string> done, Action onDoneUi = null)
-            => RunInBgCore(log, work, done, onDoneUi);
+        private void RunInBgWithStatus(TextBox log, Action<Action<string>> work, Func<string> done, Action onDoneUi = null, string progress = null)
+            => RunInBgCore(log, work, done, onDoneUi, progress);
 
-        private void RunInBgCore(TextBox log, Action<Action<string>> work, Func<string> done, Action onDoneUi = null)
+        private void RunInBgCore(TextBox log, Action<Action<string>> work, Func<string> done, Action onDoneUi = null, string progress = null)
         {
+            // 进行中态：任务启动即写状态栏（原来只有完成/异常才写，过程中状态栏停留旧页残留文案，
+            // 表现为「底部更新不及时/上下描述不同步」）。中性样式与选中计数助手保持一致。
+            if (!string.IsNullOrEmpty(progress))
+            {
+                StatusText.Foreground = _textDim;
+                StatusText.FontWeight = FontWeights.Normal;
+                SetStatus(progress);
+            }
             log?.Dispatcher.Invoke(() => { log.Visibility = Visibility.Visible; log.Clear(); });
             var disp = Dispatcher;
             // 窗口关闭后 Dispatcher 关停，BeginInvoke/Invoke 均抛 InvalidOperationException；

@@ -335,7 +335,7 @@ namespace CpqSystemTool
                     l(dirty > 0
                         ? "\r\n[OK] 清理完成！部分项被占用/有残留，建议重启电脑释放后再清一次\r\n"
                         : "\r\n[OK] 清理完成！全部处理完毕（未安装项已跳过），无需重启\r\n");
-                }, "清理完成", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; CaptureCleanupState(); _cleanupCache.Invalidate(); });
+                }, "清理完成", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; CaptureCleanupState(); _cleanupCache.Invalidate(); }, "正在清理 " + sel.Count + " 项…");
             }, 100);
             actionBar.Children.Add(btnClean);
 
@@ -349,7 +349,7 @@ namespace CpqSystemTool
                     return;
                 }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, Cleanup.RunScan, "扫描完成", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; });
+                RunInBg(log, Cleanup.RunScan, "扫描完成", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; }, "正在扫描项目大小…");
             }, 90);
             actionBar.Children.Add(btnScan);
 
@@ -424,13 +424,13 @@ namespace CpqSystemTool
                         var toDel = dlg.Selected;
                         if (toDel.Count == 0) { log.AppendText("\r\n[i] 未勾选任何项，已取消删除。\r\n"); OperationLock.Exit(); return; }
                         pb.Visibility = Visibility.Visible;
-                        RunInBg(log, l2 => Cleanup.DeleteTier3(toDel, l2), "第三档删除完成", () => { pb.Visibility = Visibility.Collapsed; CaptureCleanupState(); _cleanupCache.Invalidate(); OperationLock.Exit(); });
+                        RunInBg(log, l2 => Cleanup.DeleteTier3(toDel, l2), "第三档删除完成", () => { pb.Visibility = Visibility.Collapsed; CaptureCleanupState(); _cleanupCache.Invalidate(); OperationLock.Exit(); }, "正在删除 " + toDel.Count + " 项…");
                     }
                     else
                     {
                         OperationLock.Exit();  // 用户在确认框点了取消 → 释放锁
                     }
-                });
+                }, "正在扫描第三档项…");
             };
             var tier3Row = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(0, 0, 0, 8) };
             tier3Row.Children.Add(btnTier3);

@@ -254,7 +254,7 @@ namespace CpqSystemTool
                 {
                     string r = MemoryAnalyzer.OptimizePurgeStandby();
                     foreach (var line in r.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) l(line);
-                }, "已清空备用列表", reanalyze);
+                }, "已清空备用列表", reanalyze, "正在清空备用列表…");
             };
             btnEmpty.Click += (s, e) =>
             {
@@ -265,7 +265,7 @@ namespace CpqSystemTool
                 {
                     string r = MemoryAnalyzer.OptimizeEmptyWorkingSets();
                     foreach (var line in r.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) l(line);
-                }, "已尝试清空工作集", reanalyze);
+                }, "已尝试清空工作集", reanalyze, "正在清空工作集…");
             };
 
             // 初次分析（后台拉取，不阻塞 UI）
@@ -307,7 +307,7 @@ namespace CpqSystemTool
                 // 其余异常向外抛，由 RunInBgCore 统一记入 UI 日志（[!] 异常: …）而非静默丢进 DebugLog。
                 try { Dispatcher.Invoke(() => applyUi(overview, use, procs)); }
                 catch (System.InvalidOperationException) { /* Dispatcher 已关停（窗口已关闭），忽略 */ }
-            }, "内存分析完成", () => pb.Visibility = Visibility.Collapsed);
+            }, "内存分析完成", () => pb.Visibility = Visibility.Collapsed, "正在分析内存…");
         }
 
         // 占比条图例：颜色块 + 名称 + 大小 + 百分比。

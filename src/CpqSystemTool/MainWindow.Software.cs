@@ -401,7 +401,8 @@ namespace CpqSystemTool
                                 // 无 SynchronizationContext，GetAwaiter().GetResult() 无死锁且异常同步传播（RunInBg 的 try/catch 可捕获，
                                 // 不用 async void lambda —— 其异常会逃逸到 ThreadPool 触发 UnhandledException 崩溃）。
                                 RunInBg(log, l => SoftwareInstall.InstallAsync(sw.Id, l, customDir).GetAwaiter().GetResult(),
-                                    (sw.Installed ? "修复完成: " : "安装完成: ") + sw.Name, () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(); });
+                                    (sw.Installed ? "修复完成: " : "安装完成: ") + sw.Name, () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(); },
+                                    "正在" + (sw.Installed ? "修复" : "安装") + " " + sw.Name + "…");
                             }, 90);
                             instBtn.MinHeight = 26;
                             instBtn.Margin = new Thickness(2, 2, 2, 2);
@@ -428,7 +429,7 @@ namespace CpqSystemTool
                                     pb.Visibility = Visibility.Collapsed;
                                     // 卸载完成后自动全量刷新列表（保留日志可见），状态/按钮同步更新
                                     RefreshAllRows(() => log.AppendText("— 卸载流程结束，详情见上方日志 —\r\n"));
-                                });
+                                }, "正在卸载 " + sw.Name + "…");
                             }, 60);
                             uninstBtn.MinHeight = 26;
                             uninstBtn.Margin = new Thickness(2, 2, 2, 2);
@@ -524,7 +525,7 @@ namespace CpqSystemTool
                                     SoftwareInstall.InstallAsync(sw.Id, l, customDir).GetAwaiter().GetResult();
                                 }
                             }, $"已安装 {selected.Count(s => !s.Installed)}/{selected.Count} 款",
-                            () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(); });
+                            () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(); }, "正在安装选中的 " + selected.Count + " 款软件…");
                         };
 
                         // 卸载选中（btnUninstall 已在 DockPanel 中创建）
@@ -552,7 +553,7 @@ namespace CpqSystemTool
                                 pb.Visibility = Visibility.Collapsed;
                                 // 批量卸载完成后自动全量刷新列表（保留日志可见）
                                 RefreshAllRows(() => log.AppendText("— 批量卸载结束，详情见上方日志 —\r\n"));
-                            });
+                            }, "正在卸载选中的 " + selected.Count + " 款软件…");
                         };
 
                         // 操作按钮（固定）
@@ -593,7 +594,7 @@ namespace CpqSystemTool
                                 }
                                 pb.Visibility = Visibility.Visible;
                                 RunInBg(log, l => AppxManager.Install(direct, l), "安装启动",
-                                    () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(() => log.AppendText("— 安装启动完成，详情见上方日志 —\r\n")); });
+                                    () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(() => log.AppendText("— 安装启动完成，详情见上方日志 —\r\n")); }, "正在安装 " + direct + "…");
                                 return;
                             }
 
@@ -633,7 +634,7 @@ namespace CpqSystemTool
                                     rowsPanel.Children.Add(BuildSearchResultRow(r, pb, log, () => log.AppendText("— 安装启动完成，详情见上方日志 —\r\n")));
                                 }
                                 btnBackToLocal.Visibility = Visibility.Visible;  // 显示"返回本地列表"
-                            });
+                            }, "正在搜索 " + input + "…");
                         }, 200));
                         // 1) 刷新状态（原地刷新，保留日志）
                         actionBar.Children.Add(Btn("🔄 刷新状态", false, () =>
@@ -696,7 +697,7 @@ namespace CpqSystemTool
                         };
                         actionBar.Children.Add(btnPath);
                         // 3) 清理下载缓存
-                        actionBar.Children.Add(Btn("🗑 清理下载缓存", false, () => RunInBg(log, SoftwareInstall.CleanupDownloads, "清理完成"), 110));
+                        actionBar.Children.Add(Btn("🗑 清理下载缓存", false, () => RunInBg(log, SoftwareInstall.CleanupDownloads, "清理完成", null, "正在清理下载缓存…"), 110));
 
                         // 把 actionBar 嵌进 headerRow 的 col 1（右上角）
                         // 先把占位的 actionBarSlot 替换为真正的 actionBar
@@ -966,9 +967,9 @@ namespace CpqSystemTool
                     onDone?.Invoke();
                 };
                 if (r.Source == "winget")
-                    RunInBg(log, l => AppxManager.InstallWingetId(r.Id, l), "安装启动", done);
+                    RunInBg(log, l => AppxManager.InstallWingetId(r.Id, l), "安装启动", done, "正在安装 " + r.Name + "…");
                 else
-                    RunInBg(log, l => AppxManager.Install(r.Id, l), "安装启动", done);
+                    RunInBg(log, l => AppxManager.Install(r.Id, l), "安装启动", done, "正在安装 " + r.Name + "…");
             }, 110);
             installBtn.Margin = new Thickness(4, 0, 8, 0);
             installBtn.Padding = new Thickness(10, 2, 10, 2);  // 紧凑垂直

@@ -276,7 +276,8 @@ namespace CpqSystemTool
                         // 激活日志写入本页共享纯文本日志框 sharedLog（不再走彩色富日志）
                         RunInBg(sharedLog, l => Activation.Activate(methodId, l),
                             methodId == Activation.DiagnosticMethodId ? "诊断完成" : "激活完成",
-                            () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; });
+                            () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; },
+                            methodId == Activation.DiagnosticMethodId ? "正在诊断激活状态…" : "正在激活…");
                     };
                     actCardsPanel.Children.Add(cardBorder);
                 }
@@ -322,7 +323,7 @@ namespace CpqSystemTool
                         return;
                     }
                     pb.Visibility = Visibility.Visible;
-                    RunInBg(sharedLog, l => RestorePoint.Create("ZyperTool-" + DateTime.Now.ToString("MMdd-HHmm"), l), "还原点已创建", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; });
+                    RunInBg(sharedLog, l => RestorePoint.Create("ZyperTool-" + DateTime.Now.ToString("MMdd-HHmm"), l), "还原点已创建", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; }, "正在创建还原点…");
                 }, 130);
             var bRefreshRp = Btn("🔄 刷新列表", true, () =>
                 {
@@ -335,7 +336,7 @@ namespace CpqSystemTool
                             listBox.Items.Clear();
                             foreach (var r in list) listBox.Items.Add(r);
                         }); } catch { /* 窗口已关闭，忽略 */ }
-                    }, "列表已刷新", () => pb.Visibility = Visibility.Collapsed);
+                    }, "列表已刷新", () => pb.Visibility = Visibility.Collapsed, "正在刷新还原点列表…");
                 }, 110);
             var bRestoreSel = Btn("⏪ 还原选中", false, () =>
                 {
@@ -348,7 +349,7 @@ namespace CpqSystemTool
                         return;
                     }
                     pb.Visibility = Visibility.Visible;
-                    RunInBg(sharedLog, l => RestorePoint.Restore(sel.Seq, l), "已发起还原", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; });
+                    RunInBg(sharedLog, l => RestorePoint.Restore(sel.Seq, l), "已发起还原", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; }, "正在还原…");
                 }, 110);
             // 标题左对齐 + 三按钮星等分平分间距、占满剩余位置（MakeBtnRow 三列 star）
             var wp = MakeBtnRow(bCreateRp, bRefreshRp, bRestoreSel);
@@ -425,13 +426,13 @@ namespace CpqSystemTool
                     // [Q29] 备份激活(slmgr /dlv, 1-5s)原在 UI 线程跑子进程会阻塞窗口；移入后台任务、用 bg 日志 l
                     VersionSwitch.BackupActivation(l);
                     VersionSwitch.SwitchEdition(edition, key, l);
-                }, "版本转换结束", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; vsRestoreBtn.IsEnabled = true; });
+                }, "版本转换结束", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; vsRestoreBtn.IsEnabled = true; }, "正在转换版本（需重启）…");
             };
             vsRestoreBtn.Click += (s, e) =>
             {
                 if (!VersionSwitch.HasBackup()) { sharedLog.AppendText("[!] 没有可用的备份\r\n"); return; }
                 if (System.Windows.MessageBox.Show("确认从备份还原激活信息？\n\n将显示备份的时间和版本信息。", "还原激活信息", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-                RunInBg(sharedLog, VersionSwitch.RestoreActivation, "还原完成", null);
+                RunInBg(sharedLog, VersionSwitch.RestoreActivation, "还原完成", null, "正在还原激活信息…");
             };
 
             return root;

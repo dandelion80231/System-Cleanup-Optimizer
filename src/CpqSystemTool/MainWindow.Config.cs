@@ -1483,7 +1483,7 @@ namespace CpqSystemTool
 
 
 
-                            }, "WebP 扩展安装中", () => { pb.Visibility = Visibility.Collapsed; InvalidateConfigCache(); });
+                            }, "WebP 扩展安装中", () => { pb.Visibility = Visibility.Collapsed; InvalidateConfigCache(); }, "正在应用背景图（必要时自动安装 WebP 解码器）…");
 
 
 
@@ -2018,7 +2018,7 @@ namespace CpqSystemTool
 
 
 
-                            }, "WebP 扩展安装中", () => { pb.Visibility = Visibility.Collapsed; InvalidateConfigCache(); });
+                            }, "WebP 扩展安装中", () => { pb.Visibility = Visibility.Collapsed; InvalidateConfigCache(); }, "正在应用背景图（必要时自动安装 WebP 解码器）…");
 
 
 

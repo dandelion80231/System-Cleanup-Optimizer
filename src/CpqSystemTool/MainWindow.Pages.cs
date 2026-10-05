@@ -237,7 +237,8 @@ namespace CpqSystemTool
                                         pb.Visibility = Visibility.Visible;
                                         RunInBg(log, l2 => ServiceOptimizer.Apply(s, !curDis, l2),
                                             curDis ? "已恢复: " + s.Display : "已禁用: " + s.Display,
-                                            () => { _servicesCache.Invalidate(); pb.Visibility = Visibility.Collapsed; btn.Tag = !curDis; btn.Content = !curDis ? "恢复" : "禁用"; });
+                                            () => { _servicesCache.Invalidate(); pb.Visibility = Visibility.Collapsed; btn.Tag = !curDis; btn.Content = !curDis ? "恢复" : "禁用"; },
+                                            "正在" + (curDis ? "恢复" : "禁用") + "服务: " + s.Display + "…");
                                     };
                                 }
                                 btn.Tag = dis;
@@ -368,7 +369,7 @@ namespace CpqSystemTool
                     {
                         pb.Visibility = Visibility.Collapsed;
                         if (!supported) SetStatus("Edge " + displayNames[idx] + " 安装未完成：不支持的频道（详见日志）");
-                    });
+                    }, "正在安装 Edge " + displayNames[idx] + "…");
             }, 100);
             installBtn.Margin = new Thickness(0);
             Grid.SetColumn(installBtn, 0);
@@ -387,7 +388,7 @@ namespace CpqSystemTool
                     {
                         pb.Visibility = Visibility.Collapsed;
                         if (!attempted) SetStatus("Edge " + displayNames[idx] + " 卸载未执行：不支持的频道（详见日志）");
-                    });
+                    }, "正在卸载 Edge " + displayNames[idx] + "…");
             }, 100);
             uninstallBtn.Margin = new Thickness(0);
             Grid.SetColumn(uninstallBtn, 2);
@@ -408,7 +409,7 @@ namespace CpqSystemTool
             {
                 bool disable = sbChk.IsChecked == true;
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, l => EdgeCore.SetStartupBoost(!disable, l), disable ? "已禁用启动增强" : "已启用启动增强", () => pb.Visibility = Visibility.Collapsed);
+                RunInBg(log, l => EdgeCore.SetStartupBoost(!disable, l), disable ? "已禁用启动增强" : "已启用启动增强", () => pb.Visibility = Visibility.Collapsed, "正在应用启动增强变更…");
             };
             leftInner.Children.Add(sbChk);
 
@@ -429,7 +430,7 @@ namespace CpqSystemTool
                 RunInBg(log, l => {
                     EdgeCore.ApplyAllRecommendedFlags(l);
                     EdgeCore.ForceRestartEdge(l);
-                }, "⚡ Edge flags 一键优化完成 + 已重启 Edge", () => { RefreshEdgeFlagCombos(); pb.Visibility = Visibility.Collapsed; });
+                }, "⚡ Edge flags 一键优化完成 + 已重启 Edge", () => { RefreshEdgeFlagCombos(); pb.Visibility = Visibility.Collapsed; }, "正在优化 Edge flags…");
             }, 0);
             Grid.SetColumn(applyAllBtn, 0);
             flagBatchBar.Children.Add(applyAllBtn);
@@ -442,7 +443,7 @@ namespace CpqSystemTool
                 RunInBg(log, l => {
                     EdgeCore.ClearAllEdgeFlags(l);
                     EdgeCore.ForceRestartEdge(l);
-                }, "↩ Edge flags 已恢复默认 + 已重启 Edge", () => { RefreshEdgeFlagCombos(); pb.Visibility = Visibility.Collapsed; });
+                }, "↩ Edge flags 已恢复默认 + 已重启 Edge", () => { RefreshEdgeFlagCombos(); pb.Visibility = Visibility.Collapsed; }, "正在恢复 Edge flags…");
             }, 0);
             Grid.SetColumn(clearAllBtn, 2);
             flagBatchBar.Children.Add(clearAllBtn);
@@ -476,7 +477,7 @@ namespace CpqSystemTool
             {
                 pb.Visibility = Visibility.Visible;
                 // 改为 RunInBg 异步执行：下载+安装是网络/IO 操作，同步跑会卡住 UI 线程（进度条来不及渲染即 Collapsed）
-                RunInBg(log, EdgeCore.InstallWebView2, "WebView2 安装/升级完成", () => pb.Visibility = Visibility.Collapsed);
+                RunInBg(log, EdgeCore.InstallWebView2, "WebView2 安装/升级完成", () => pb.Visibility = Visibility.Collapsed, "正在安装/升级 WebView2…");
             }, 110);
             Grid.SetColumn(w1Btn, 1);
             w1Row.Children.Add(w1Btn);
@@ -492,7 +493,7 @@ namespace CpqSystemTool
             var w2Btn = Btn("🗑 卸载", false, () =>
             {
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, EdgeCore.UninstallWebView2, "WebView2 卸载完成", () => pb.Visibility = Visibility.Collapsed);
+                RunInBg(log, EdgeCore.UninstallWebView2, "WebView2 卸载完成", () => pb.Visibility = Visibility.Collapsed, "正在卸载 WebView2…");
             }, 110);
             Grid.SetColumn(w2Btn, 1);
             w2Row.Children.Add(w2Btn);
@@ -510,7 +511,7 @@ namespace CpqSystemTool
             var blockBtn = Btn("🚫 禁止自动更新", false, () =>
             {
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, EdgeCore.BlockEdgeUpdate, "已禁止自动更新", () => pb.Visibility = Visibility.Collapsed);
+                RunInBg(log, EdgeCore.BlockEdgeUpdate, "已禁止自动更新", () => pb.Visibility = Visibility.Collapsed, "正在禁止自动更新…");
             }, 100);
             blockBtn.Margin = new Thickness(0);
             Grid.SetColumn(blockBtn, 0);
@@ -518,7 +519,7 @@ namespace CpqSystemTool
             var restoreBtn = Btn("✅ 恢复自动更新", false, () =>
             {
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, EdgeCore.RestoreEdgeUpdate, "已恢复自动更新", () => pb.Visibility = Visibility.Collapsed);
+                RunInBg(log, EdgeCore.RestoreEdgeUpdate, "已恢复自动更新", () => pb.Visibility = Visibility.Collapsed, "正在恢复自动更新…");
             }, 100);
             restoreBtn.Margin = new Thickness(0);
             Grid.SetColumn(restoreBtn, 2);
@@ -765,7 +766,7 @@ namespace CpqSystemTool
                         ? (want ? "已禁用: " : "已启用: ")
                         : (want ? "已启用: " : "已禁用: ");
                     RunInBg(log, l => apply(l, want), verb + title,
-                        () => { pb.Visibility = Visibility.Collapsed; });
+                        () => { pb.Visibility = Visibility.Collapsed; }, "正在应用: " + title + "…");
                 };
                 item.Child = sp;
                 // 鼠标悬停高亮（与 AddRow + 常用软件列表统一风格）
@@ -805,22 +806,22 @@ namespace CpqSystemTool
             AddSvcBtn("停止并禁止Windows Search服务", () =>
             {
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, PrivacyCore.BlockWSearchService, "Windows Search 服务已禁用", () => { pb.Visibility = Visibility.Collapsed; });
+                RunInBg(log, PrivacyCore.BlockWSearchService, "Windows Search 服务已禁用", () => { pb.Visibility = Visibility.Collapsed; }, "正在禁止 Windows Search 服务…");
             }, 0, 210);
             AddSvcBtn("恢复并允许Windows Search服务", () =>
             {
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, PrivacyCore.AllowWSearchService, "Windows Search 服务已恢复", () => { pb.Visibility = Visibility.Collapsed; });
+                RunInBg(log, PrivacyCore.AllowWSearchService, "Windows Search 服务已恢复", () => { pb.Visibility = Visibility.Collapsed; }, "正在恢复 Windows Search 服务…");
             }, 1, 210);
             AddSvcBtn("添加防火墙规则(阻止SearchHost联网)", () =>
             {
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, PrivacyCore.AddSearchFirewallRule, "防火墙规则已添加", () => { pb.Visibility = Visibility.Collapsed; });
+                RunInBg(log, PrivacyCore.AddSearchFirewallRule, "防火墙规则已添加", () => { pb.Visibility = Visibility.Collapsed; }, "正在添加防火墙规则…");
             }, 2, 230);
             AddSvcBtn("移除防火墙规则", () =>
             {
                 pb.Visibility = Visibility.Visible;
-                RunInBg(log, PrivacyCore.RemoveSearchFirewallRule, "防火墙规则已移除", () => { pb.Visibility = Visibility.Collapsed; });
+                RunInBg(log, PrivacyCore.RemoveSearchFirewallRule, "防火墙规则已移除", () => { pb.Visibility = Visibility.Collapsed; }, "正在移除防火墙规则…");
             }, 3, 170);
             inner.Children.Add(serviceBar);
 
@@ -882,7 +883,7 @@ namespace CpqSystemTool
                 {
                     if (rb.IsChecked != true) return;
                     pb.Visibility = Visibility.Visible;
-                    RunInBg(log, l => PrivacyCore.SetStartLayout(rows, l), "已设置为 " + label, () => pb.Visibility = Visibility.Collapsed);
+                    RunInBg(log, l => PrivacyCore.SetStartLayout(rows, l), "已设置为 " + label, () => pb.Visibility = Visibility.Collapsed, "正在设置开始菜单为「" + label + "」…");
                 };
                 Grid.SetColumn(rb, col);
                 layoutBar.Children.Add(rb);
@@ -1003,7 +1004,7 @@ namespace CpqSystemTool
                         rightInfoBox.Clear(); rightInfoBox.AppendText(d.Right);
                         _lastSystemInfo = d.Left + "\r\n" + d.Right;
                     }); } catch { /* 窗口已关闭，忽略 */ }
-                }, "信息采集完成", () => pb.Visibility = Visibility.Collapsed);
+                }, "信息采集完成", () => pb.Visibility = Visibility.Collapsed, "正在采集系统信息…");
             }));
             btnBar.Margin = new Thickness(0, 0, 0, 10);
             DockPanel.SetDock(btnBar, Dock.Top);

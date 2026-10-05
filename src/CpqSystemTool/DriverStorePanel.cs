@@ -637,11 +637,13 @@ namespace CpqSystemTool
                     System.Windows.MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
+                // 进行中态：按钮「备份中…」+禁用，状态栏实时显示；完成/异常经 onDoneUi 恢复
+                _exportBtn.IsEnabled = false; _exportBtn.Content = "备份中…";
                 RunInBg(logf =>
                 {
                     try { DriverStore.Export(targets, dir, logf); }
                     finally { OperationLock.Exit(); }
-                }, "驱动备份完成");
+                }, "驱动备份完成", "正在备份 " + targets.Count + " 个驱动…", () => { _exportBtn.IsEnabled = true; _exportBtn.Content = "导出备份"; });
             }
         }
 
@@ -669,7 +671,7 @@ namespace CpqSystemTool
                     Reenumerate(logf);
                 }
                 finally { OperationLock.Exit(); }
-            }, "驱动包已添加");
+            }, "驱动包已添加", "正在添加驱动包…");
         }
 
         /// <summary>把勾选的驱动包安装到匹配的设备。</summary>
@@ -682,6 +684,8 @@ namespace CpqSystemTool
                 System.Windows.MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
+            // 进行中态：按钮「安装中…」+禁用，状态栏实时显示；完成/异常经 onDoneUi 恢复
+            _installBtn.IsEnabled = false; _installBtn.Content = "安装中…";
             RunInBg(logf =>
             {
                 try
@@ -689,7 +693,7 @@ namespace CpqSystemTool
                     foreach (var d in targets) DriverStore.InstallDriver(d.OemName, logf);
                 }
                 finally { OperationLock.Exit(); }
-            }, "驱动安装完成");
+            }, "驱动安装完成", "正在安装 " + targets.Count + " 个驱动…", () => { _installBtn.IsEnabled = true; _installBtn.Content = "安装选中"; });
         }
 
         private void DeleteSelected() => DeleteWithConfirm(false);
@@ -760,6 +764,10 @@ namespace CpqSystemTool
                 System.Windows.MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
+            // 进行中态：对应按钮「删除中…/强删中…」+禁用，状态栏实时显示；完成/异常经 onDoneUi 恢复
+            var delBtn = force ? _forceBtn : _delBtn;
+            var delLabel = force ? "强制删除" : "删除选中";
+            delBtn.IsEnabled = false; delBtn.Content = force ? "强删中…" : "删除中…";
             RunInBg(logf =>
             {
                 try
@@ -769,7 +777,7 @@ namespace CpqSystemTool
                     Reenumerate(logf);
                 }
                 finally { OperationLock.Exit(); }
-            }, force ? "强制删除完成" : "驱动删除完成");
+            }, force ? "强制删除完成" : "驱动删除完成", "正在" + (force ? "强制删除" : "删除") + " " + targets.Count + " 个驱动…", () => { delBtn.IsEnabled = true; delBtn.Content = delLabel; });
         }
 
         // ---- 后台任务编排 ----
@@ -789,10 +797,12 @@ namespace CpqSystemTool
             try { cts.Cancel(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
         }
 
-        private void RunInBg(Action<Action<string>> work, string done)
+        private void RunInBg(Action<Action<string>> work, string done, string progress = null, Action onDoneUi = null)
         {
             // 新任务开始前先取消上一个任务，避免旧任务结果覆盖新结果
             CancelBgWork();
+            // 进行中态：任务启动即写状态栏（原来只有完成/异常才写，过程无反馈；与 MainWindow.RunInBg 的 progress 参数同语义）
+            if (!string.IsNullOrEmpty(progress)) _owner?.SetStatus(progress);
             var cts = new CancellationTokenSource();
             _bgCts = cts;
             var token = cts.Token;
@@ -826,7 +836,7 @@ namespace CpqSystemTool
                 {
                     work(logf);
                     if (token.IsCancellationRequested) return;  // 已被新任务取代，不再回写状态
-                    safeUi(() => { _owner?.SetStatus(done); });
+                    safeUi(() => { _owner?.SetStatus(done); try { onDoneUi?.Invoke(); } catch { /* 恢复回调失败忽略 */ } });
                 }
                 catch (Exception ex)
                 {
@@ -835,6 +845,7 @@ namespace CpqSystemTool
                     {
                         logf("[!] 异常: " + ex.Message);
                         _owner?.SetStatus("执行出错");
+                        try { onDoneUi?.Invoke(); } catch { /* 恢复回调失败忽略 */ }
                     });
                 }
                 finally

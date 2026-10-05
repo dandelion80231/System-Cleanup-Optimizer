@@ -243,7 +243,7 @@ namespace CpqSystemTool
                              "，Playwright=" + (dep.PlaywrightExists ? "就绪" : "缺失") + "）。");
                         logf("    请检查网络后重试，或手动在 probes 目录运行 install_deps.ps1。");
                     }
-                }, "依赖安装结束", null);
+                }, "依赖安装结束", null, "正在安装/修复依赖…");
             });
             var nodeUninstall = MakeMenuItem("卸载本地依赖", depsPopup, () =>
             {
@@ -294,13 +294,13 @@ namespace CpqSystemTool
                 }, () => probesMissing ? "未找到 probes 目录"
                        : delFailed > 0 ? "卸载未完成：" + delFailed + " 项删除失败"
                        : delDeleted > 0 ? "卸载完成"
-                       : "无可卸载内容", null);
+                       : "无可卸载内容", null, "正在卸载本地依赖…");
             });
             var wvHeader = MakeMenuHeader("WebView2 Runtime（系统 Edge）（检测中…）");
             var wvInstall = MakeMenuItem("安装 / 升级 / 修复", depsPopup, () =>
             {
                 // RepairWebView2 会下载官方引导程序执行静默安装；若引导程序 no-op 则扫描磁盘并修复注册表指针。
-                RunInBg(logBox, EdgeCore.RepairWebView2, "WebView2 修复完成", null);
+                RunInBg(logBox, EdgeCore.RepairWebView2, "WebView2 修复完成", null, "正在修复 WebView2…");
             });
             var wvUninstall = MakeMenuItem("卸载", depsPopup, () =>
             {
@@ -309,7 +309,7 @@ namespace CpqSystemTool
                     "确定要继续卸载吗？卸载后可能导致依赖 WebView2 的程序无法运行。",
                     "卸载 WebView2 Runtime", MessageBoxButton.YesNo, MessageBoxImage.Warning);
                 if (confirm != MessageBoxResult.Yes) return;
-                RunInBg(logBox, EdgeCore.UninstallWebView2, "WebView2 卸载完成", null);
+                RunInBg(logBox, EdgeCore.UninstallWebView2, "WebView2 卸载完成", null, "正在卸载 WebView2…");
             });
             var wvClean = MakeMenuItem("清理探针缓存", depsPopup, () =>
             {
@@ -339,7 +339,7 @@ namespace CpqSystemTool
                 }, () => scanFailed ? "清理失败"
                        : cleanFailed > 0 ? "清理未完成：" + cleanFailed + " 项失败"
                        : cleaned > 0 ? "缓存清理完成"
-                       : "无缓存可清理", null);
+                       : "无缓存可清理", null, "正在清理探针缓存…");
             });
 
             menuPanel.Children.Add(nodeHeader);
@@ -717,7 +717,7 @@ namespace CpqSystemTool
                             DebugLog.Ignore(ex);
                             SetStatus("结果填充失败: " + ex.Message);
                         }
-                    });
+                    }, "正在抓取直链…");
                 }
                 catch (Exception ex)
                 {
