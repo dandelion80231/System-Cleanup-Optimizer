@@ -517,19 +517,20 @@ namespace CpqSystemTool
                 // 保持透明，不额外加填充；行/单元格/列头各自透明，网格线用主题边框色
                 Background = Brushes.Transparent,
                 Foreground = _textMain,
-                // 框线与本页输入框同色（本页 TextBox 的 BorderBrush 用的就是 _accent，见上方输入框/推荐直链框），
-                // 而不是无色浅灰的 _panelBorder —— 表格与同页输入控件保持统一视觉语言。
+                // 框线与本页输入框同色（本页 TextBox 的 BorderBrush 用的就是 _accent），
+                // 粗细规格见下方 dgFrame 注释（按三线表自绘，避免外框与网格线在边缘叠加成双线）。
                 BorderBrush = _accent,
-                BorderThickness = new Thickness(1),
-                Margin = new Thickness(0, 4, 0, 0),
+                BorderThickness = new Thickness(0),
+                Margin = new Thickness(0),
                 MaxHeight = 360,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
                 RowBackground = Brushes.Transparent,
                 AlternatingRowBackground = Brushes.Transparent,
                 HeadersVisibility = DataGridHeadersVisibility.Column,
-                // 保留正常表格框线：横向 + 纵向都画，且颜色与输入框一致
-                GridLinesVisibility = DataGridGridLinesVisibility.All,
+                // 不再用 DataGrid 自带网格线：它会与外框/列头边框在同一像素行上叠加，导致右、下边缘看起来是 2px。
+                // 改为由单元格自身边框绘制（见下方 cellStyle），线宽与颜色完全可控。
+                GridLinesVisibility = DataGridGridLinesVisibility.None,
                 HorizontalGridLinesBrush = _accent,
                 VerticalGridLinesBrush = _accent
             };
@@ -539,15 +540,21 @@ namespace CpqSystemTool
             // 导致本页网格与驱动管理页外观不一致；改为复用 MakeDataGridStyles 统一外观。
             // 边框色传 _accent：与本页输入框、上面的表格框线同色（驱动页仍用 _panelBorder 不变）。
             var dgStyles = MakeDataGridStyles(_textMain, _accent);
-            // 本页列头文字居中（用户要求）；在派生样式上追加 setter，不改共享样板，驱动页仍保持左对齐。
+            // 单元格线：右 1px（列间竖线）+ 下 1px（行间横线）；颜色 = _accent，粗细自绘可控
+            var dgCellStyle = new Style(typeof(DataGridCell), dgStyles.Cell);
+            dgCellStyle.Setters.Add(new Setter(Control.BorderBrushProperty, _accent));
+            dgCellStyle.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0, 0, 1, 1)));
+            // 本页列头：文字居中 + 右 1px（列间竖线）+ 下 2px（三线表的表头粗线）
             var dgHeaderStyle = new Style(typeof(DataGridColumnHeader), dgStyles.Header);
             dgHeaderStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
-            // 补列头下边框：GridLinesVisibility 只负责「数据行之间」的横线与列间竖线，
-            // 表头下方那条线由列头自身边框提供，而主题默认模板只给了右侧边框 → 表头与首行之间会缺一条线。
-            // 显式给「右 + 下」边框（颜色随 BorderBrush = _accent），与整表框线连成完整网格。
-            dgHeaderStyle.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0, 0, 1, 1)));
+            dgHeaderStyle.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0, 0, 1, 2)));
+            // 末列不要右边框：它的右侧就是外框，否则两线相邻叠成 2px（用户反馈的「右侧偏粗」根因）
+            var lastCellStyle = new Style(typeof(DataGridCell), dgCellStyle);
+            lastCellStyle.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0, 0, 0, 1)));
+            var lastHeaderStyle = new Style(typeof(DataGridColumnHeader), dgHeaderStyle);
+            lastHeaderStyle.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0, 0, 0, 2)));
             dg.ColumnHeaderStyle = dgHeaderStyle;
-            dg.CellStyle = dgStyles.Cell;
+            dg.CellStyle = dgCellStyle;
             dg.Columns.Add(new DataGridTextColumn { Header = "来源", Binding = new Binding("Source"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
             dg.Columns.Add(new DataGridTextColumn { Header = "URL", Binding = new Binding("Url"), Width = new DataGridLength(3, DataGridLengthUnitType.Star) });
             dg.Columns.Add(new DataGridTextColumn { Header = "策略", Binding = new Binding("Strategy"), Width = new DataGridLength(90) });
@@ -664,6 +671,9 @@ namespace CpqSystemTool
                 }
             }));
             addCol.CellTemplate = new DataTemplate { VisualTree = addFactory };
+            // 末列用「无右边框」样式：右边缘交给外层 dgFrame，避免两线相邻显示成 2px
+            addCol.CellStyle = lastCellStyle;
+            addCol.HeaderStyle = lastHeaderStyle;
             dg.Columns.Add(addCol);
 
             // 推荐行高亮（用 RowStyle + DataTrigger，避免仅依赖颜色表意）
@@ -683,7 +693,17 @@ namespace CpqSystemTool
             ApplyMinRowsToDataGrid(dg, ProbeGridMinRows);
             ApplyProbeRows(dg, null);   // 初始即铺 3 行占位空行，表格骨架（含框线）开箱可见
 
-            probeInner.Children.Add(dg);
+            // 表格外框（三线表规格）：顶部 2px、左右 1px、底部 1px —— 与末行单元格的下边框 1px 相加
+            // 正好是 2px，于是「表格顶线 / 表头下粗线 / 表格底线」三条为粗线（2px），
+            // 其余内部横线与列间竖线均为 1px（由单元格/列头样式绘制），边缘不再出现叠加双线。
+            var dgFrame = new Border
+            {
+                BorderBrush = _accent,
+                BorderThickness = new Thickness(1, 2, 1, 1),
+                Margin = new Thickness(0, 4, 0, 0),
+                Child = dg
+            };
+            probeInner.Children.Add(dgFrame);
 
             // 日志区放到最下方，与其他页面「日志框在底部」的布局统一
             probeInner.Children.Add(new TextBlock
