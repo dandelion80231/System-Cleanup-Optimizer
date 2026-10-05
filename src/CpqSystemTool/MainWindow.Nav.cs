@@ -102,9 +102,11 @@ namespace CpqSystemTool
                 Background = Brushes.Transparent,
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(6, 2, 6, 2),
-                // 居中：宽度随内容自适应（原左对齐 + 右外边距 8，与标题/标签的居中枢线不一致）
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(6, 0, 6, 6),
+                // 高亮区域占满整行：横向范围与导航行高亮一致
+                // （导航行 = 按钮区栅格 Margin(14,*,12,*) + 按钮自身 Margin(2,*,2,*) → 左 16 / 右 14）；
+                // 「内容居中」由内部 footer 的 HorizontalAlignment=Center 负责，两者不冲突。
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Margin = new Thickness(16, 0, 14, 6),
                 Cursor = Cursors.Hand
             };
             _aboutEntry.MouseEnter += (s, e) =>
