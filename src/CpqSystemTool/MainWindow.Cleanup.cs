@@ -238,7 +238,9 @@ namespace CpqSystemTool
             // 全选/反选联动（名称颜色由绑定自动同步，此处只需更新计数）
             chkAll.Click += (s, e) =>
             {
-                // 三态语义：不确定(横杠)点击=全勾；已勾点击=全不勾（WPF 三态 CheckBox 点按后 Indeterminate 自动清除）
+                // 三态点击语义（WPF 三态周期：未勾→勾→横杠→未勾）：
+                // 未勾点击=全勾；勾点击=WPF 先置横杠(null)再触发 Click → 读 IsChecked==true 为 false → 全不勾，
+                // 随后 SyncChkAll 把横杠归位为「未勾」；横杠点击=全不勾。各路径 UI 与真实勾选一致
                 bool val = chkAll.IsChecked == true;
                 foreach (var c in allCheckBoxes) c.IsChecked = val;
                 UpdateCleanupSelCount();
