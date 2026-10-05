@@ -19,13 +19,20 @@ namespace CpqSystemTool
             public string Strategy { get; set; }      // 命中策略
             public string Arch { get; set; }          // 架构：x64 / x86 / arm64 / ?
             public bool Verified { get; set; }        // 是否验证为真 exe
-            public string VerifiedText => Verified ? "✅ 真exe" : "⚠️ 未验证";
-            public string RecMark => IsRecommended ? "★" : "";
+            /// <summary>占位行（表格空态补齐到 3 行用）：不显示任何文案、行内按钮禁用，仅用于撑出带框线的表格骨架。</summary>
+            public bool IsPlaceholder { get; set; }
+            /// <summary>是否有可用直链（模板列的复制/加入按钮据此启用，占位行为 false）。</summary>
+            public bool HasUrl => !string.IsNullOrEmpty(Url);
+            public string VerifiedText => IsPlaceholder ? "" : (Verified ? "✅ 真exe" : "⚠️ 未验证");
+            public string RecMark => IsPlaceholder ? "" : (IsRecommended ? "★" : "");
             public string StatusText { get; set; }    // HTTP 状态 / SKIP / TIMEOUT / ERR
             public string ContentType { get; set; }   // Content-Type
             public bool IsRecommended { get; set; }   // 是否推荐直链（高亮）
             public bool LowTrust { get; set; }        // 搜索来源且非官方域名：需人工核对（仿冒风险）
-            public string TrustText => LowTrust ? "⚠ 需核对" : "官方";
+            public string TrustText => IsPlaceholder ? "" : (LowTrust ? "⚠ 需核对" : "官方");
+
+            /// <summary>构造一行占位（空）行。</summary>
+            public static ProbeCandidateRow Placeholder() => new ProbeCandidateRow { IsPlaceholder = true };
         }
 
         // 运行时缓存：后台线程写入，UI 线程（onDoneUi）读取

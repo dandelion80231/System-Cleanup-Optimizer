@@ -526,8 +526,10 @@ namespace CpqSystemTool
                 RowBackground = Brushes.Transparent,
                 AlternatingRowBackground = Brushes.Transparent,
                 HeadersVisibility = DataGridHeadersVisibility.Column,
-                GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
-                HorizontalGridLinesBrush = _panelBorder
+                // 保留正常表格框线：横向 + 纵向都画（原先只有横向线，列之间没有分隔线，空表时更像一条空白条）
+                GridLinesVisibility = DataGridGridLinesVisibility.All,
+                HorizontalGridLinesBrush = _panelBorder,
+                VerticalGridLinesBrush = _panelBorder
             };
             // 列头透明底 + 主题文字色，避免默认系统色在深色模式下发灰/发白。
             // 去重：原先此处内联造样式，与同文件 MakeDataGridStyles 重复且少 2 个属性
@@ -553,6 +555,8 @@ namespace CpqSystemTool
             factory.SetValue(Button.WidthProperty, 46.0);
             factory.SetValue(Button.FontSizeProperty, 11.0);
             factory.SetValue(Button.CursorProperty, Cursors.Hand);
+            // 占位空行（空态补齐行）没有直链 → 按钮禁用，避免点了弹「该行无可用直链」
+            factory.SetBinding(UIElement.IsEnabledProperty, new Binding("HasUrl"));
             // 修复：async void 处理器里未被捕获的异常会直接抛到 Dispatcher，net48 下触发进程级崩溃。
             // 故把全部异步逻辑包进 try/catch，失败只落状态栏提示，绝不逃逸。
             factory.AddHandler(Button.ClickEvent, new RoutedEventHandler(async (s, ev) =>
@@ -602,6 +606,8 @@ namespace CpqSystemTool
             addFactory.SetValue(Button.FontSizeProperty, 11.0);
             addFactory.SetValue(Button.PaddingProperty, new Thickness(6, 3, 6, 3));
             addFactory.SetValue(Button.CursorProperty, Cursors.Hand);
+            // 同「复制」列：占位空行禁用（无直链不可加入常用）
+            addFactory.SetBinding(UIElement.IsEnabledProperty, new Binding("HasUrl"));
             addFactory.SetValue(Button.BackgroundProperty, _btnSecondaryBg);
             addFactory.SetValue(Button.ForegroundProperty, _btnSecondaryFg);
             addFactory.SetValue(Button.BorderThicknessProperty, new Thickness(1));
@@ -664,7 +670,8 @@ namespace CpqSystemTool
 
             // 空态/少量数据时也保持至少「表头 + 3 行」的高度（原先无内容只剩一条细表头条，观感突兀）；
             // 数据多于 3 行时按内容自行扩展，上限仍由 MaxHeight=360 约束。
-            ApplyMinRowsToDataGrid(dg, 3);
+            ApplyMinRowsToDataGrid(dg, ProbeGridMinRows);
+            ApplyProbeRows(dg, null);   // 初始即铺 3 行占位空行，表格骨架（含框线）开箱可见
 
             probeInner.Children.Add(dg);
 
@@ -725,8 +732,7 @@ namespace CpqSystemTool
                         {
                             recommendedTb.Text = _probeRecommendedUrl ?? "";
                             copyRecBtn.IsEnabled = !string.IsNullOrEmpty(_probeRecommendedUrl);
-                            dg.ItemsSource = null;
-                            dg.ItemsSource = _probeRows;
+                            ApplyProbeRows(dg, _probeRows);
                             searchWarnTb.Visibility = searchLocated ? Visibility.Visible : Visibility.Collapsed;
                             SetStatus("抓取完成：共 " + (_probeRows?.Count ?? 0) + " 个候选" + (string.IsNullOrEmpty(_probeRecommendedUrl) ? "" : "，已推荐直链"));
                         }
@@ -788,6 +794,24 @@ namespace CpqSystemTool
         /// 供维护页与驱动管理页等需要透明网格的页面复用，避免样式代码散落重复。
         /// 列头样式：透明底、主题文字色 fg、边框色 border；单元格样式：透明底、前景 fg、透明边框。
         /// </summary>
+        /// <summary>候选直链表的空态保底行数：不足时用占位空行补齐，保证表格骨架（含框线）完整。</summary>
+        private const int ProbeGridMinRows = 3;
+
+        /// <summary>把抓取结果填入候选直链表：少于 ProbeGridMinRows 行时用占位空行补齐。
+        /// 占位行不显示任何文案、行内按钮禁用（见 ProbeCandidateRow.IsPlaceholder / HasUrl），
+        /// 目的只是让「无结果/结果很少」时也呈现完整表格（原先只剩一条细表头条，观感突兀）。</summary>
+        internal static void ApplyProbeRows(DataGrid dg, IEnumerable<ProbeCandidateRow> rows)
+        {
+            try
+            {
+                var list = rows == null ? new List<ProbeCandidateRow>() : new List<ProbeCandidateRow>(rows);
+                for (int i = list.Count; i < ProbeGridMinRows; i++) list.Add(ProbeCandidateRow.Placeholder());
+                dg.ItemsSource = null;   // 先置空再赋值：强制重建行容器，避免复用旧行导致高度/列宽残留
+                dg.ItemsSource = list;
+            }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
+        }
+
         /// <summary>
         /// 让 DataGrid 在「无数据/数据不足 minRows 行」时仍保持至少「表头 + minRows 行」的高度，
         /// 数据多于 minRows 行时按内容自行扩展（上限仍由调用方 MaxHeight 约束）。
