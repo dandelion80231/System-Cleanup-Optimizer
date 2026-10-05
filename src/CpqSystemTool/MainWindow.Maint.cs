@@ -542,6 +542,10 @@ namespace CpqSystemTool
             // 本页列头文字居中（用户要求）；在派生样式上追加 setter，不改共享样板，驱动页仍保持左对齐。
             var dgHeaderStyle = new Style(typeof(DataGridColumnHeader), dgStyles.Header);
             dgHeaderStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
+            // 补列头下边框：GridLinesVisibility 只负责「数据行之间」的横线与列间竖线，
+            // 表头下方那条线由列头自身边框提供，而主题默认模板只给了右侧边框 → 表头与首行之间会缺一条线。
+            // 显式给「右 + 下」边框（颜色随 BorderBrush = _accent），与整表框线连成完整网格。
+            dgHeaderStyle.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0, 0, 1, 1)));
             dg.ColumnHeaderStyle = dgHeaderStyle;
             dg.CellStyle = dgStyles.Cell;
             dg.Columns.Add(new DataGridTextColumn { Header = "来源", Binding = new Binding("Source"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
