@@ -517,7 +517,9 @@ namespace CpqSystemTool
                 // 保持透明，不额外加填充；行/单元格/列头各自透明，网格线用主题边框色
                 Background = Brushes.Transparent,
                 Foreground = _textMain,
-                BorderBrush = _panelBorder,
+                // 框线与本页输入框同色（本页 TextBox 的 BorderBrush 用的就是 _accent，见上方输入框/推荐直链框），
+                // 而不是无色浅灰的 _panelBorder —— 表格与同页输入控件保持统一视觉语言。
+                BorderBrush = _accent,
                 BorderThickness = new Thickness(1),
                 Margin = new Thickness(0, 4, 0, 0),
                 MaxHeight = 360,
@@ -526,17 +528,21 @@ namespace CpqSystemTool
                 RowBackground = Brushes.Transparent,
                 AlternatingRowBackground = Brushes.Transparent,
                 HeadersVisibility = DataGridHeadersVisibility.Column,
-                // 保留正常表格框线：横向 + 纵向都画（原先只有横向线，列之间没有分隔线，空表时更像一条空白条）
+                // 保留正常表格框线：横向 + 纵向都画，且颜色与输入框一致
                 GridLinesVisibility = DataGridGridLinesVisibility.All,
-                HorizontalGridLinesBrush = _panelBorder,
-                VerticalGridLinesBrush = _panelBorder
+                HorizontalGridLinesBrush = _accent,
+                VerticalGridLinesBrush = _accent
             };
             // 列头透明底 + 主题文字色，避免默认系统色在深色模式下发灰/发白。
             // 去重：原先此处内联造样式，与同文件 MakeDataGridStyles 重复且少 2 个属性
             // （列头缺 HorizontalContentAlignment/Padding、单元格缺 Padding），
             // 导致本页网格与驱动管理页外观不一致；改为复用 MakeDataGridStyles 统一外观。
-            var dgStyles = MakeDataGridStyles(_textMain, _panelBorder);
-            dg.ColumnHeaderStyle = dgStyles.Header;
+            // 边框色传 _accent：与本页输入框、上面的表格框线同色（驱动页仍用 _panelBorder 不变）。
+            var dgStyles = MakeDataGridStyles(_textMain, _accent);
+            // 本页列头文字居中（用户要求）；在派生样式上追加 setter，不改共享样板，驱动页仍保持左对齐。
+            var dgHeaderStyle = new Style(typeof(DataGridColumnHeader), dgStyles.Header);
+            dgHeaderStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
+            dg.ColumnHeaderStyle = dgHeaderStyle;
             dg.CellStyle = dgStyles.Cell;
             dg.Columns.Add(new DataGridTextColumn { Header = "来源", Binding = new Binding("Source"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
             dg.Columns.Add(new DataGridTextColumn { Header = "URL", Binding = new Binding("Url"), Width = new DataGridLength(3, DataGridLengthUnitType.Star) });
