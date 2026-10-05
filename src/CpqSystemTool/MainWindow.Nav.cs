@@ -50,11 +50,13 @@ namespace CpqSystemTool
             var dock = new DockPanel();
 
             // ---- 底部 footer：图标 + 版本号（先 Dock=Bottom 再 add，最后元素填满剩余）----
+            // 与标题/导航标签同轴居中：外层 Border 用 HorizontalAlignment=Center，
+            // 其宽度随「图标 + 关于 Vx.xx」内容自适应，hover 高亮块也正好贴合内容。
             var footer = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Margin = new Thickness(2, 6, 0, 6),
-                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(2, 6, 2, 6),
+                HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Bottom
             };
             try
@@ -100,7 +102,9 @@ namespace CpqSystemTool
                 Background = Brushes.Transparent,
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(6, 2, 6, 2),
-                Margin = new Thickness(6, 0, 8, 6),
+                // 居中：宽度随内容自适应（原左对齐 + 右外边距 8，与标题/标签的居中枢线不一致）
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(6, 0, 6, 6),
                 Cursor = Cursors.Hand
             };
             _aboutEntry.MouseEnter += (s, e) =>
