@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -400,8 +400,11 @@ namespace CpqSystemTool
                                 // InstallAsync 为真异步（内部下载/解析不再阻塞）；此处后台线程同步等待其完成：
                                 // 无 SynchronizationContext，GetAwaiter().GetResult() 无死锁且异常同步传播（RunInBg 的 try/catch 可捕获，
                                 // 不用 async void lambda —— 其异常会逃逸到 ThreadPool 触发 UnhandledException 崩溃）。
-                                RunInBg(log, l => SoftwareInstall.InstallAsync(sw.Id, l, customDir).GetAwaiter().GetResult(),
-                                    (sw.Installed ? "修复完成: " : "安装完成: ") + sw.Name, () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(); },
+                                // 动态 done：InstallAsync 返回真实结果，失败（下载/校验/安装器失败）不再谎报「安装完成」
+                                bool swInstOk = false;
+                                RunInBgWithStatus(log, l => { swInstOk = SoftwareInstall.InstallAsync(sw.Id, l, customDir).GetAwaiter().GetResult(); },
+                                    () => (swInstOk ? (sw.Installed ? "修复完成: " : "安装完成: ") : (sw.Installed ? "修复失败: " : "安装失败: ")) + sw.Name + (swInstOk ? "" : "（详见日志）"),
+                                    () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(); },
                                     "正在" + (sw.Installed ? "修复" : "安装") + " " + sw.Name + "…");
                             }, 90);
                             instBtn.MinHeight = 26;
@@ -422,8 +425,10 @@ namespace CpqSystemTool
                                     return;
                                 }
                                 pb.Visibility = Visibility.Visible;
-                            RunInBg(log, l => SoftwareInstall.Uninstall(sw.Id, l),
-                                "卸载完成: " + sw.Name, () =>
+                            // 动态 done：Uninstall 返回真实结果（卸载器失败/未找到卸载项时不再谎报「卸载完成」）
+                            bool swUninstOk = false;
+                            RunInBgWithStatus(log, l => { swUninstOk = SoftwareInstall.Uninstall(sw.Id, l); },
+                                () => (swUninstOk ? "卸载完成: " : "卸载失败: ") + sw.Name + (swUninstOk ? "" : "（详见日志）"), () =>
                                 {
                                     OperationLock.Exit();
                                     pb.Visibility = Visibility.Collapsed;
@@ -516,16 +521,20 @@ namespace CpqSystemTool
                                 return;
                             }
                             pb.Visibility = Visibility.Visible;
-                            RunInBg(log, l =>
+                            // 动态 done：done 文案按【真实成功数】统计（原来按「意图数」= 勾选时未安装的个数，
+                            // 部分/全部安装失败也显示「已安装 N/M 款」→ 假成功）
+                            int batchInstOk = 0, batchInstTry = 0;
+                            RunInBgWithStatus(log, l =>
                             {
                                 foreach (var sw in selected)
                                 {
                                     if (sw.Installed) { l("  [SKIP] " + sw.Name + " 已安装"); continue; }
+                                    batchInstTry++;
                                     // 后台线程同步等待异步安装（无 SyncContext 无死锁；异常同步传播到 RunInBg 兜底）
-                                    SoftwareInstall.InstallAsync(sw.Id, l, customDir).GetAwaiter().GetResult();
+                                    if (SoftwareInstall.InstallAsync(sw.Id, l, customDir).GetAwaiter().GetResult()) batchInstOk++;
                                 }
-                            }, $"已安装 {selected.Count(s => !s.Installed)}/{selected.Count} 款",
-                            () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(); }, "正在安装选中的 " + selected.Count + " 款软件…");
+                            }, () => "已安装 " + batchInstOk + "/" + batchInstTry + " 款" + (batchInstOk < batchInstTry ? "（失败项详见日志）" : ""),
+                                () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(); }, "正在安装选中的 " + selected.Count + " 款软件…");
                         };
 
                         // 卸载选中（btnUninstall 已在 DockPanel 中创建）
@@ -539,15 +548,17 @@ namespace CpqSystemTool
                                 return;
                             }
                             pb.Visibility = Visibility.Visible;
-                            RunInBg(log, l =>
+                            // 动态 done：按【真实成功数】统计（原来按勾选时已安装个数，卸载失败也显示「已卸载 N/M 款」）
+                            int batchUninstOk = 0, batchUninstTry = 0;
+                            RunInBgWithStatus(log, l =>
                             {
                                 foreach (var sw in selected)
                                 {
                                     if (!sw.Installed) { l("  [SKIP] " + sw.Name + " 未安装"); continue; }
-                                    SoftwareInstall.Uninstall(sw.Id, l);
+                                    batchUninstTry++;
+                                    if (SoftwareInstall.Uninstall(sw.Id, l)) batchUninstOk++;
                                 }
-                            }, $"已卸载 {selected.Count(s => s.Installed)}/{selected.Count} 款",
-                            () =>
+                            }, () => "已卸载 " + batchUninstOk + "/" + batchUninstTry + " 款" + (batchUninstOk < batchUninstTry ? "（失败项详见日志）" : ""), () =>
                             {
                                 OperationLock.Exit();
                                 pb.Visibility = Visibility.Collapsed;
@@ -593,8 +604,12 @@ namespace CpqSystemTool
                                     return;
                                 }
                                 pb.Visibility = Visibility.Visible;
-                                RunInBg(log, l => AppxManager.Install(direct, l), "安装启动",
-                                    () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(() => log.AppendText("— 安装启动完成，详情见上方日志 —\r\n")); }, "正在安装 " + direct + "…");
+                                // 动态 done：Install 返回真实结果（三级通道全失败时不再只报「安装启动」）
+                                bool storeDirectOk = false;
+                                RunInBgWithStatus(log, l => { storeDirectOk = AppxManager.Install(direct, l); },
+                                    () => storeDirectOk ? "安装启动" : "安装失败（详见日志）",
+                                    () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; RefreshAllRows(() => log.AppendText("— 安装启动完成，详情见上方日志 —\r\n")); },
+                                    "正在安装 " + direct + "…");
                                 return;
                             }
 
@@ -958,18 +973,28 @@ namespace CpqSystemTool
                 pb.Visibility = Visibility.Visible;
                 // 安装完成后【原地】禁用本行按钮并标记已安装，保留搜索结果与日志，
                 // 不重建整页（避免被踢回本地列表、丢失搜索上下文与日志）
+                // ★ 修复：原 done 无条件把行标成「已安装」并禁用按钮——安装失败的行也变成「已安装」且无法重试。
+                //   现按真实结果分支：成功才标记+禁用；失败保持「安装」可点，便于重试。
+                bool rowInstOk = false;
                 Action done = () =>
                 {
                     OperationLock.Exit();   // P1 类修复：一键安装结束（done 在成功/异常路径均触发）释放全局互斥
-                    installBtn.IsEnabled = false;
-                    installBtn.Content = "已安装";
+                    if (rowInstOk)
+                    {
+                        installBtn.IsEnabled = false;
+                        installBtn.Content = "已安装";
+                    }
+                    else installBtn.Content = "安装";
                     pb.Visibility = Visibility.Collapsed;
                     onDone?.Invoke();
                 };
-                if (r.Source == "winget")
-                    RunInBg(log, l => AppxManager.InstallWingetId(r.Id, l), "安装启动", done, "正在安装 " + r.Name + "…");
-                else
-                    RunInBg(log, l => AppxManager.Install(r.Id, l), "安装启动", done, "正在安装 " + r.Name + "…");
+                // 动态 done + 结果捕获：winget 通道与 AppxManager.Install 通道均返回真实成败
+                RunInBgWithStatus(log, l =>
+                {
+                    rowInstOk = r.Source == "winget"
+                        ? AppxManager.InstallWingetId(r.Id, l)
+                        : AppxManager.Install(r.Id, l);
+                }, () => rowInstOk ? "安装完成: " + r.Name : "安装失败: " + r.Name + "（详见日志）", done, "正在安装 " + r.Name + "…");
             }, 110);
             installBtn.Margin = new Thickness(4, 0, 8, 0);
             installBtn.Padding = new Thickness(10, 2, 10, 2);  // 紧凑垂直

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Microsoft.Win32;
 
@@ -25,19 +25,20 @@ namespace CpqSystemTool
             }
         }
 
-        /// <summary>创建系统还原点。</summary>
-        public static void Create(string desc, Action<string> log)
+        /// <summary>创建系统还原点。返回是否创建成功（供调用方做诚实的完成文案）。</summary>
+        public static bool Create(string desc, Action<string> log)
         {
             log("创建系统还原点：" + desc);
             string script = "Checkpoint-Computer -Description " + Exec.QuotePS(desc) + " -RestorePointType 'MODIFY_SETTINGS'";
             int r = Exec.RunPowerShell(script, log);
-            if (r == 0) { log("  [OK] 还原点已创建（可在「系统还原」中查看/还原）"); return; }
+            if (r == 0) { log("  [OK] 还原点已创建（可在「系统还原」中查看/还原）"); return true; }
             // VSS（卷影复制）服务未运行时 Checkpoint-Computer 直接失败：先尝试启动服务再重试一次。
             // 服务处于「禁用」状态时 Start-Service 会失败（-EA SilentlyContinue 静默），重试同样失败 → 走下方针对性提示。
             log("  [*] 首次创建失败，尝试启动 VSS 服务后重试...");
             r = Exec.RunPowerShell("Start-Service vss -EA SilentlyContinue; " + script, log);
-            if (r == 0) { log("  [OK] 还原点已创建（启动 VSS 服务后成功）"); return; }
+            if (r == 0) { log("  [OK] 还原点已创建（启动 VSS 服务后成功）"); return true; }
             log("  [!] 创建失败：VSS 服务无法自动启动（可能处于「禁用」状态）。可打开 services.msc，将「卷影复制(VSS)」设为手动并启动后重试；若系统保护未开启，请在「系统属性→系统保护」中启用。");
+            return false;
         }
 
         /// <summary>列出已有还原点。</summary>
@@ -63,21 +64,25 @@ namespace CpqSystemTool
             return list;
         }
 
-        /// <summary>还原到指定序号（需重启生效）。</summary>
-        public static void Restore(int seq, Action<string> log)
+        /// <summary>还原到指定序号（需重启生效）。返回是否成功发起了还原请求。
+        /// 修复：Get-ComputerRestorePoint 无 -SequenceNumber 参数（参数表仅 RestorePoint/LastStatus），
+        /// 原实现按不存在的参数查询恒为空 → 提前 return「未找到」，Restore-Computer 从未被发起。
+        /// 改为对完整列表 Where-Object 过滤（与 List 的解析口径一致）。</summary>
+        public static bool Restore(int seq, Action<string> log)
         {
             log("请求系统还原到序号 " + seq + "（完成后需重启电脑）");
             // 先确认该序号的还原点存在，避免无效序号静默 no-op 却谎报成功
-            string check = Exec.RunPowerShellGet("Get-ComputerRestorePoint -SequenceNumber " + seq.ToString() + " -EA 0 | Measure-Object | Select-Object -ExpandProperty Count", null);
+            string check = Exec.RunPowerShellGet("(Get-ComputerRestorePoint -EA 0 | Where-Object { $_.SequenceNumber -eq " + seq + " }).Count", null);
             if (check?.Trim() != "1")
             {
                 log("  [!] 未找到序号 " + seq + " 对应的系统还原点（可能已被清理或序号有误）");
-                return;
+                return false;
             }
-            string script = "Get-ComputerRestorePoint -SequenceNumber " + seq.ToString() + " -EA 0 | Restore-Computer";
+            string script = "Get-ComputerRestorePoint -EA 0 | Where-Object { $_.SequenceNumber -eq " + seq + " } | Restore-Computer";
             int r = Exec.RunPowerShell(script, log);
-            if (r == 0) log("  [OK] 已发起还原，请重启电脑以生效");
-            else log("  [!] 还原请求失败（退出码 " + r + "）");
+            if (r == 0) { log("  [OK] 已发起还原，请重启电脑以生效"); return true; }
+            log("  [!] 还原请求失败（退出码 " + r + "）");
+            return false;
         }
 
     }

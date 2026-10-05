@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -686,14 +686,19 @@ namespace CpqSystemTool
             }
             // 进行中态：按钮「安装中…」+禁用（UiBusy 统一样板），状态栏实时显示；完成/异常经 onDoneUi(unbusy) 恢复
             var unbusy = UiBusy.Mark(_installBtn, "安装中…");
+            // 动态 done：InstallDriver 返回真实结果，按失败数报告（原来无论成败都报「驱动安装完成」）
+            int instFail = 0;
             RunInBg(logf =>
             {
                 try
                 {
-                    foreach (var d in targets) DriverStore.InstallDriver(d.OemName, logf);
+                    foreach (var d in targets) if (!DriverStore.InstallDriver(d.OemName, logf)) instFail++;
                 }
                 finally { OperationLock.Exit(); }
-            }, "驱动安装完成", "正在安装 " + targets.Count + " 个驱动…", unbusy);
+            }, () => instFail == 0
+                    ? "驱动安装完成"
+                    : "驱动安装完成（" + instFail + "/" + targets.Count + " 个失败，详见日志）",
+                "正在安装 " + targets.Count + " 个驱动…", unbusy);
         }
 
         private void DeleteSelected() => DeleteWithConfirm(false);
@@ -797,6 +802,10 @@ namespace CpqSystemTool
         }
 
         private void RunInBg(Action<Action<string>> work, string done, string progress = null, Action onDoneUi = null)
+            => RunInBg(work, () => done, progress, onDoneUi);
+
+        /// <summary>动态完成文案重载：done 在任务结束时（UI 线程侧）求值，便于按真实结果生成诚实文案。</summary>
+        private void RunInBg(Action<Action<string>> work, Func<string> done, string progress = null, Action onDoneUi = null)
         {
             // 新任务开始前先取消上一个任务，避免旧任务结果覆盖新结果
             CancelBgWork();
@@ -835,7 +844,7 @@ namespace CpqSystemTool
                 {
                     work(logf);
                     if (token.IsCancellationRequested) return;  // 已被新任务取代，不再回写状态
-                    safeUi(() => { _owner?.SetStatus(done); try { onDoneUi?.Invoke(); } catch { /* 恢复回调失败忽略 */ } });
+                    safeUi(() => { _owner?.SetStatus(done()); try { onDoneUi?.Invoke(); } catch { /* 恢复回调失败忽略 */ } });
                 }
                 catch (Exception ex)
                 {

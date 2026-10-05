@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text;
 using Microsoft.Win32;
@@ -47,9 +47,11 @@ namespace CpqSystemTool
             "PerpetualVL2021", "Current", "PerpetualVL2019", "Current", "Current", "PerpetualVL2016", "PerpetualVL2016", "PerpetualVL2016"
         };
 
-        public static void Install(int editionIndex, Action<string> log)
+        /// <summary>安装指定版本 Office（旧入口，当前 UI 已走 OfficeDeployControl；保留供兼容/测试）。
+        /// 返回是否安装成功；1641/3010 属「已完成但需重启」成功类码，不再误报失败。</summary>
+        public static bool Install(int editionIndex, Action<string> log)
         {
-            if (editionIndex < 0 || editionIndex >= ProductIds.Length) { log("  [!] 无效的版本选择"); return; }
+            if (editionIndex < 0 || editionIndex >= ProductIds.Length) { log("  [!] 无效的版本选择"); return false; }
             string arch = Environment.Is64BitOperatingSystem ? "64" : "32";
             string xml = BuildConfig(ProductIds[editionIndex], Channels[editionIndex], arch, false);
             string dir = Path.Combine(Path.GetTempPath(), "ZyperOffice");
@@ -59,7 +61,7 @@ namespace CpqSystemTool
             log("配置已生成：" + xmlPath);
 
             string setup = EnsureSetupExe(dir, log);
-            if (string.IsNullOrEmpty(setup)) return;
+            if (string.IsNullOrEmpty(setup)) return false;
 
             log("开始安装 Office（需联网，可能耗时数分钟，请耐心等待）...");
             // ODT setup.exe 无 /quiet 顶层开关（微软仅支持 /download /configure /customize /help），
@@ -69,9 +71,16 @@ namespace CpqSystemTool
             // 后在桌面建日志/数据文件夹。
             int rc = Exec.RunCmd(new[] { setup, "/configure", xmlPath }, log, workingDirectory: Path.GetDirectoryName(setup));
             // [Q4] 此前丢弃 ODT 退出码，安装失败也打印“安装结束”，易误判为成功。现明确报告非零退出码。
-            log(rc == 0
-                ? "  [OK] ODT 安装流程正常退出（退出码 0）"
-                : "  [!] ODT 安装退出码 " + rc + "（非 0：多为网络/版本密钥问题，请查看上方输出确认）");
+            // 1641/3010 = 安装已完成并请求重启（成功类），不再按失败处理。
+            if (rc == 0 || rc == 1641 || rc == 3010)
+            {
+                log(rc == 0
+                    ? "  [OK] ODT 安装流程正常退出（退出码 0）"
+                    : "  [OK] ODT 安装已完成并请求重启（退出码 " + rc + "），重启后收尾");
+                return true;
+            }
+            log("  [!] ODT 安装退出码 " + rc + "（非 0：多为网络/密钥/权限问题，请查看上方输出确认）");
+            return false;
         }
 
         /// <summary>

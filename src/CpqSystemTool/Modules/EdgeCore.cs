@@ -656,19 +656,20 @@ namespace CpqSystemTool
         }
 
         // === 安装 Edge ===
-        public static void InstallEdge(string channel, Action<string> log)
+        /// <summary>安装指定频道 Edge。返回是否安装成功（不支持频道/下载失败/安装器非 0 均为 false）。</summary>
+        public static bool InstallEdge(string channel, Action<string> log)
         {
             var info = FindChannel(channel);
             if (info == null)
             {
                 log("不支持的频道: " + (string.IsNullOrEmpty(channel) ? "(空)" : channel)
                     + "（可选: " + KnownChannelList() + "）");
-                return;
+                return false;
             }
             if (string.IsNullOrEmpty(info.InstallUrl))
             {
                 log("不支持的频道: " + info.DisplayName + " 没有可用的官方静默安装包，请前往微软 Insider 官网手动安装。");
-                return;
+                return false;
             }
             string url = info.InstallUrl;
             string setup = Environment.GetEnvironmentVariable("TEMP") + "\\MicrosoftEdgeSetup.exe";
@@ -678,22 +679,30 @@ namespace CpqSystemTool
             if (dlrc != 0 || !File.Exists(setup))
             {
                 log("  [!] Edge " + channel + " 下载失败（退出码 " + dlrc + "），已跳过安装。请检查网络后重试。");
-                return;
+                return false;
             }
             log("正在安装...");
             // 不要写成 cmd /c "\"路径\"" ——Exec.QuoteCmd 会把内层 " 翻倍成 ""，
             // TEMP 含空格（如 C:\Users\张 三\AppData\Local\Temp）时 cmd 解析失败、安装静默 no-op。
             // 直接把 exe 作为 args[0]（ProcessStartInfo.FileName，无需引号），参数各自独立传。
             int inrc = Exec.RunCmd(new[] { setup, "/silent", "/install" }, log);
-            log(inrc == 0 ? "Edge " + channel + " 安装完成" : "  [!] Edge " + channel + " 安装退出码 " + inrc + "（非 0，可能失败，见上方输出）");
+            if (inrc == 0)
+            {
+                log("Edge " + channel + " 安装完成");
+                return true;
+            }
+            log("  [!] Edge " + channel + " 安装退出码 " + inrc + "（非 0，可能失败，见上方输出）");
+            return false;
         }
 
         // === 卸载 Edge ===
         /// <summary>卸载指定频道的 Edge。返回是否"确实执行了卸载动作"：
         /// 频道未知或该频道不支持自动卸载时返回 false —— 调用方（UI）必须据此决定是否报"卸载完成"，
-        /// 不能像原实现那样无条件弹成功（选 Canary/SxS 时 EdgeCore 只打一行日志就返回，UI 却报卸载完成）。</summary>
-        public static bool UninstallEdge(string channel, bool forceClean, Action<string> log)
+        /// 不能像原实现那样无条件弹成功（选 Canary/SxS 时 EdgeCore 只打一行日志就返回，UI 却报卸载完成）。
+        /// <param name="succeeded">实际执行了卸载动作时的真实成败（未执行时为 false），供 UI 生成诚实文案。</param></summary>
+        public static bool UninstallEdge(string channel, bool forceClean, Action<string> log, out bool succeeded)
         {
+            succeeded = false;
             var info = FindChannel(channel);
             if (info == null)
             {
@@ -783,6 +792,7 @@ namespace CpqSystemTool
             {
                 log("未找到卸载信息，使用强制卸载");
                 ForceCleanupEdge(displayName, log);
+                succeeded = true;   // 强制清理已执行（残留清理属 best-effort）
                 return true;
             }
 
@@ -798,6 +808,7 @@ namespace CpqSystemTool
             {
                 log("[!] 卸载命令无法解析，改用强制清理");
                 ForceCleanupEdge(displayName, log);
+                succeeded = true;
                 return true;
             }
             int rc = Exec.RunCmd(argv, log);
@@ -810,6 +821,8 @@ namespace CpqSystemTool
                 ForceCleanupEdge(displayName, log);
             }
 
+            // 真实成败：退出码 0 → 成功；非 0 时若走了强制清理，视为「已尽力清理但卸载器报错」
+            succeeded = rc == 0 || forceClean;
             log(rc == 0 ? "Edge " + channel + " 卸载完成" : "Edge " + channel + " 卸载命令已执行（退出码 " + rc + "，详见上方输出）");
             return true;
         }

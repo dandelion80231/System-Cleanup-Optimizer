@@ -1,4 +1,4 @@
-﻿// Office 安装位置重定向（junction）
+// Office 安装位置重定向（junction）
 // 原理：Microsoft ODT / Click-to-Run 没有"自定义安装路径"参数，Office 永远写死到
 // %ProgramFiles%\Microsoft Office（64位）或 %ProgramFiles(x86)%\Microsoft Office（32位）。
 // 本模块通过目录 junction（mklink /J）在写死路径挂一个指向用户目标盘的 junction，
@@ -318,11 +318,14 @@ namespace CpqSystemTool
                     if (p == null)
                     { log?.Invoke("  [!] 无法提权启动进程: " + exePath); return -1; }
 
-                    // 等待子进程退出（ODT 安装可能耗时较长，给 15 分钟超时，与 Exec.PROCESS_TIMEOUT_MS 对齐）
-                    const int TIMEOUT_MS = 900000;
+                    // 等待子进程退出。ODT 装 Office 正常 10-30 分钟（慢网更久），原写死 15 分钟会在
+                    // 「非管理员 + 装到其他盘」的提权路径中途强杀，留下半安装态。放宽到 60 分钟，
+                    // 与非提权路径（OfficeDeploy 的 ODT 等待）保持一致。
+                    const int TIMEOUT_MS = 3600000;
                     if (!p.WaitForExit(TIMEOUT_MS))
                     {
-                        log?.Invoke("  [!] 提权子进程超时（" + (TIMEOUT_MS / 1000) + " 秒），强制终止");
+                        log?.Invoke("  [!] 提权子进程超时（" + (TIMEOUT_MS / 60000) + " 分钟），强制终止；"
+                            + "若安装被中断可能处于半安装态，建议重新执行一次安装以修复");
                         try { p.Kill(); } catch { }
                         return -1;
                     }

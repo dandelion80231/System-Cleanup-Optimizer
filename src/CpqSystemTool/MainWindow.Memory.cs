@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
@@ -250,22 +250,28 @@ namespace CpqSystemTool
                 // fix-CD：此前点击直接执行（仅默认收起的风险文案）。增加确认，说明清缓存本质与缺页延迟影响。
                 if (MessageBox.Show("确定要清空备用列表（Standby）吗？\n\n• 本质是把备用缓存转为即时空闲内存，效果为临时\n• Windows 再次访问文件时将产生缺页延迟（重新从磁盘读取）\n\n是否继续？", "确认操作", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
                     return;
-                RunInBg(optLog, l =>
+                // 动态 done：按引擎返回文本的 [OK]/[!] 标记判定真实结果（非管理员/提权失败/NtSetSystemInformation 非 0 时不再谎报「已清空」）
+                bool purgeOk = false;
+                RunInBgWithStatus(optLog, l =>
                 {
                     string r = MemoryAnalyzer.OptimizePurgeStandby();
+                    purgeOk = r.Contains("[OK]");
                     foreach (var line in r.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) l(line);
-                }, "已清空备用列表", reanalyze, "正在清空备用列表…");
+                }, () => purgeOk ? "已清空备用列表" : "备用列表清空失败（详见日志）", reanalyze, "正在清空备用列表…");
             };
             btnEmpty.Click += (s, e) =>
             {
                 // fix-CD：此前点击直接执行（仅默认收起的风险文案）。增加确认，说明清缓存本质与缺页延迟影响。
                 if (MessageBox.Show("确定要清空所有进程工作集吗？\n\n• 本质是让进程内存回写磁盘，效果为临时\n• 进程再次访问内存时将产生缺页延迟（重新从磁盘读取）\n• 可能短暂影响正在运行的程序性能\n\n是否继续？", "确认操作", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
                     return;
-                RunInBg(optLog, l =>
+                // 动态 done：同上，按引擎 [OK]/[!] 判定（枚举进程失败/非管理员时不再报「已尝试」）
+                bool wsOk = false;
+                RunInBgWithStatus(optLog, l =>
                 {
                     string r = MemoryAnalyzer.OptimizeEmptyWorkingSets();
+                    wsOk = r.Contains("[OK]");
                     foreach (var line in r.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) l(line);
-                }, "已尝试清空工作集", reanalyze, "正在清空工作集…");
+                }, () => wsOk ? "已尝试清空工作集" : "清空工作集失败（详见日志）", reanalyze, "正在清空工作集…");
             };
 
             // 初次分析（后台拉取，不阻塞 UI）

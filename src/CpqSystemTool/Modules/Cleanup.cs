@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
@@ -323,8 +323,13 @@ namespace CpqSystemTool
                     "$nf=Join-Path $_.FullName 'Network'; if(Test-Path $nf){ " +
                     "@('Cookies','Cookies-journal') | ForEach-Object { $f=Join-Path $nf $_; if(Test-Path $f){ Remove-Item $f -Force -EA 0 } }; " +
                     "Get-ChildItem $nf -Filter 'Cookies-*' -Force -EA 0 | Remove-Item -Force -EA 0 } }";
-                Exec.RunPowerShell(script, log);
-                log(name + " Cookies  [OK] (PS fallback)");
+                // 兜底脚本内部全用 -EA 0（失败静默），故不能只看退出码就报 [OK]：按 stderr 与退出码如实判定。
+                var (ecPs, soPs, sePs) = Exec.RunPowerShellGetFull(script, log);
+                if (ecPs == 0 && string.IsNullOrWhiteSpace(sePs))
+                    log(name + " Cookies  [OK] (PS fallback)");
+                else
+                    log(name + " Cookies  [FAIL] PS 兜底亦失败（被占用/权限不足）"
+                        + (string.IsNullOrWhiteSpace(sePs) ? "（退出码 " + ecPs + "）" : "：" + sePs.Trim()));
                 return true;
             }
         }
@@ -335,8 +340,10 @@ namespace CpqSystemTool
             log("NVIDIA 缓存清理");
             log("停止 NVIDIA 服务...");
             foreach (var svc in new[] { "NVDisplay.ContainerLocalSystem", "NVIDIA Display Container" })
-                Exec.RunCmd(new[] { "net", "stop", svc, "/y" }, log);
-            log("  [OK]");
+            {
+                int rcStop = Exec.RunCmd(new[] { "net", "stop", svc, "/y" }, log);
+                if (rcStop != 0) log("  [!] 服务 " + svc + " 停止失败（退出码 " + rcStop + "，服务未运行或需管理员）");
+            }
             // 服务停止后，6 项缓存清理互相独立 → 并行加速（受 InnerPar 限流，不挤占主线程）。
             var nvidiaCaches = new Action[]
             {
@@ -352,7 +359,12 @@ namespace CpqSystemTool
             // 可能导致显卡功能异常直至重启系统。与上方 net stop 对称，用 net start 恢复。
             log("重启 NVIDIA 服务...");
             foreach (var svc in new[] { "NVDisplay.ContainerLocalSystem", "NVIDIA Display Container" })
-                Exec.RunCmd(new[] { "net", "start", svc }, log);
+            {
+                int rcStart = Exec.RunCmd(new[] { "net", "start", svc }, log);
+                if (rcStart != 0)
+                    log("  [!] 服务 " + svc + " 启动失败（退出码 " + rcStart + "），请在 services.msc 手动启动，"
+                        + "否则 NVIDIA 显示容器/驱动服务保持停止，可能导致显卡功能异常");
+            }
         }
 
         internal static void NetCache(Action<string> log)
@@ -365,7 +377,13 @@ namespace CpqSystemTool
                 @"%SystemRoot%\Microsoft.NET\Framework\v4.0.30319\ngen.exe" })
             {
                 string p = Exec.ExpandEnv(ng);
-                if (File.Exists(p)) { Exec.RunCmd(new[] { p, "executequeueditems" }, log); res = "  [OK]"; done = true; break; }
+                if (File.Exists(p))
+                {
+                    int rcNgen = Exec.RunCmd(new[] { p, "executequeueditems" }, log);
+                    res = rcNgen == 0 ? "  [OK]" : "  [FAIL] ngen 退出码 " + rcNgen + "（可能权限不足）";
+                    done = true;
+                    break;
+                }
             }
             if (!done) res = "  [SKIP] ngen not found";
             log(".NET 程序集缓存(Native Image)" + res);
@@ -487,9 +505,23 @@ namespace CpqSystemTool
             int remain = -1;
             try
             {
-                // Q14：回收站验证改用「系统盘」的 $Recycle.bin（原先硬编码 C:\$Recycle.bin，系统盘非 C: 时失真）。
-                string rbDir = Path.GetPathRoot(Environment.SystemDirectory) + @"$Recycle.bin";
-                if (Directory.Exists(rbDir)) remain = Directory.GetFiles(rbDir, "*", SearchOption.AllDirectories).Length; else remain = 0;
+                // Q14：回收站验证按「所有固定盘」的 $Recycle.bin 汇总（原来只看系统盘：D:/E: 等盘的
+                // 回收站残留不会被发现，仍可能报 [OK]）。Clear-RecycleBin 不带 -DriveLetter 时清全盘。
+                long total = 0;
+                bool anyChecked = false;
+                foreach (var drv in DriveInfo.GetDrives())
+                {
+                    try
+                    {
+                        if (drv.DriveType != DriveType.Fixed || !drv.IsReady) continue;
+                        string rbDir = drv.RootDirectory.FullName + @"$Recycle.bin";
+                        if (!Directory.Exists(rbDir)) { anyChecked = true; continue; }
+                        total += Directory.GetFiles(rbDir, "*", SearchOption.AllDirectories).Length;
+                        anyChecked = true;
+                    }
+                    catch (Exception drvEx) { DebugLog.Ignore(drvEx); }   // 单盘枚举失败不影响其它盘
+                }
+                remain = anyChecked ? (int)Math.Min(total, int.MaxValue) : -1;
             }
             catch { remain = -1; }
             string res = remain > 0 ? "[PARTIAL] 回收站清理不完全（受保护/锁定项，余 " + remain + " 个文件）"
@@ -564,6 +596,10 @@ namespace CpqSystemTool
             void Add(string p)
             {
                 if (!seen.Add(p.ToLowerInvariant())) return;
+                // [护栏] 与「大且旧」候选同口径：路径任一祖先/自名命中保留名（Program Files/Windows/ProgramData/
+                // Microsoft/Google/各硬件厂商目录等）一律不入册——否则 Program Files 下的 __pycache__、ProgramData
+                // 下的 http-cache 等会被列进第三档并被勾选删除（第一档 CleanWholeDriveCaches 会拦，行为不一致）。
+                if (InKeepPath(p)) return;
                 if (!Directory.Exists(p)) return;
                 double mb = DirSizeCapped(p, 300000) / 1024.0 / 1024.0;
                 if (mb < Tier3DevMinMB) return;
@@ -1058,13 +1094,31 @@ namespace CpqSystemTool
         internal static void DeleteTier3(List<Tier3Candidate> items, Action<string> log)
         {
             log("=== 第三档·删除（仅删除你已逐项确认的项）===");
-            int n = 0;
+            int n = 0, guard = 0, fail = 0;
             foreach (var it in items)
             {
-                try { CleanPath("第三档·" + Path.GetFileName(it.Path), it.Path, log); n++; }
-                catch (Exception ex) { log("  [!] " + it.Path + " 删除失败: " + ex.Message); }
+                try
+                {
+                    // [护栏] 删除前逐项复验受保护路径：扫描侧过滤不足时兜底，
+                    // 与第一档 CleanWholeDriveCaches 的 IsProtectedPathForTier 拦截口径对齐（防误删用户/系统数据）。
+                    if (IsProtectedPath(it.Path))
+                    {
+                        guard++;
+                        log("  [SKIP] 受保护路径，跳过删除: " + it.Path);
+                        continue;
+                    }
+                    CleanPath("第三档·" + Path.GetFileName(it.Path), it.Path, log);
+                    // 删后实测校验：CleanPath 内部吞异常（catch 分支不抛出），必须按路径是否仍存在判成败，
+                    // 否则「被占用/[PS-ERR]」也会被计为成功（原实现 n++ 统计的是尝试数）。
+                    if (Directory.Exists(it.Path) || File.Exists(it.Path)) fail++;
+                    else n++;
+                }
+                catch (Exception ex) { fail++; log("  [!] " + it.Path + " 删除失败: " + ex.Message); }
             }
-            log("\r\n[OK] 第三档已处理 " + n + " 项");
+            if (fail == 0 && guard == 0)
+                log("\r\n[OK] 第三档已删除 " + n + " 项");
+            else
+                log("\r\n[PARTIAL] 第三档：成功 " + n + " 项，残留/失败 " + fail + " 项" + (guard > 0 ? "，跳过受保护 " + guard + " 项" : ""));
         }
 
         // ---- 清理编排 ----

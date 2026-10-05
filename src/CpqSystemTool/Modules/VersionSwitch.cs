@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.ServiceProcess;
@@ -313,15 +313,15 @@ namespace CpqSystemTool
             catch (Exception ex) { log("   [!] 备份失败：" + ex.Message); }
         }
 
-        /// <summary>从备份还原激活信息（"还原"按钮调用）</summary>
-        public static void RestoreActivation(Action<string> log)
+        /// <summary>从备份还原激活信息（"还原"按钮调用）。返回是否完成了还原（备份缺失/不完整/slmgr 失败为 false，调用方据此诚实报文案）。</summary>
+        public static bool RestoreActivation(Action<string> log)
         {
             log("=== 还原激活信息 ===");
             try
             {
                 using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(REG_KEY_BACKUP))
                 {
-                    if (k == null) { log("   [!] 没有找到备份记录（" + REG_KEY_BACKUP + "）"); return; }
+                    if (k == null) { log("   [!] 没有找到备份记录（" + REG_KEY_BACKUP + "）"); return false; }
                     string savedAt = k.GetValue("SavedAt") as string;
                     string edition = k.GetValue("Edition") as string;
                     string last5 = k.GetValue("Last5Key") as string;
@@ -331,7 +331,7 @@ namespace CpqSystemTool
                     if (string.IsNullOrEmpty(edition))
                     {
                         log("   [!] 备份内容不完整，无法还原。请手动用 MAS 重新激活。");
-                        return;
+                        return false;
                     }
                     log("   [*] 备份的密钥后 5 位：" + (last5 ?? "(无)"));
                     if (!string.IsNullOrEmpty(fullKey))
@@ -351,18 +351,20 @@ namespace CpqSystemTool
                                 log(rcIpk == 0
                                     ? "   [OK] 许可存储已重装，完整密钥已重新注入。"
                                     : "   [!] slmgr /ipk 返回码 " + rcIpk + "，请手动以管理员重新激活。");
+                                log("   [*] 或可用本工具 MAS 的 HWID 方式激活（家庭版无 HWID，需 KMS）。");
+                                return rcIpk == 0;
                             }
-                            else
-                                log("   [OK] 许可存储已重装。若仍提示未激活，请用备份密钥后 5 位（" + (last5 ?? "无") + "）以 slmgr /ipk <完整密钥> 重新激活。");
+                            log("   [OK] 许可存储已重装。若仍提示未激活，请用备份密钥后 5 位（" + (last5 ?? "无") + "）以 slmgr /ipk <完整密钥> 重新激活。");
+                            log("   [*] 或可用本工具 MAS 的 HWID 方式激活（家庭版无 HWID，需 KMS）。");
+                            return true;
                         }
-                        else
-                            log("   [!] slmgr /rilc 返回码 " + rcR + "，重装未完成，请手动以管理员运行 slmgr.vbs /rilc。");
+                        log("   [!] slmgr /rilc 返回码 " + rcR + "，重装未完成，请手动以管理员运行 slmgr.vbs /rilc。");
+                        return false;
                     }
-                    catch (Exception exR) { log("   [!] 重装许可存储失败：" + exR.Message); }
-                    log("   [*] 或可用本工具 MAS 的 HWID 方式激活（家庭版无 HWID，需 KMS）。");
+                    catch (Exception exR) { log("   [!] 重装许可存储失败：" + exR.Message); return false; }
                 }
             }
-            catch (Exception ex) { log("   [!] 还原失败：" + ex.Message); }
+            catch (Exception ex) { log("   [!] 还原失败：" + ex.Message); return false; }
         }
 
         /// <summary>检查是否有可用的备份</summary>

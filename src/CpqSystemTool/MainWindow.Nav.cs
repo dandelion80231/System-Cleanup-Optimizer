@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -15,7 +15,7 @@ namespace CpqSystemTool
     public partial class MainWindow
     {
         // 软件版本号：左下角显示（同 BuildAbout 关于页更新日志）。
-        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.21.0 ↔ v1.21），两处保持一致。
+        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.23.0 ↔ v1.23），两处保持一致。
         private const string APP_VERSION = "v1.23";
 
         // 导航按钮最小高度：16 个按钮平分视口高度（Star 行），窗口变矮或高 DPI 下高度会小于文字行高，
@@ -37,7 +37,7 @@ namespace CpqSystemTool
                 new NavItem { Key = "privacy",   Title = "隐私设置",   Icon = "🔒", Build = BuildPrivacy },
                 new NavItem { Key = "systools",  Title = "系统工具",   Icon = "🧰", Build = BuildSystemTools },
                 new NavItem { Key = "memory",    Title = "内存工具",   Icon = "🧠", Build = BuildMemory },
-                new NavItem { Key = "activation",Title = "office部署", Icon = "🔑", Build = BuildActivation },
+                new NavItem { Key = "activation",Title = "Office 部署", Icon = "🔑", Build = BuildActivation },
                 new NavItem { Key = "sysinfo",   Title = "系统信息",   Icon = "📊", Build = BuildSystemInfo },
                 new NavItem { Key = "maint",     Title = "维护工具",   Icon = "🧰", Build = BuildMaintenanceTools },
                 new NavItem { Key = "driverstore", Title = "驱动清理", Icon = "\uD83E\uDDE9", Build = BuildDriverStore },
@@ -230,7 +230,9 @@ namespace CpqSystemTool
             {
                 ContentArea.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 // 每次进入都后台刷新驱动列表（进入即用已加载数据，同时后台拉取最新）
-                _driverStorePanel?.Refresh();
+                // Refresh 内部要碰 PnP/DISM 与 DataGrid，失败不应让切页中断（其余页同口径）
+                try { _driverStorePanel?.Refresh(); }
+                catch (Exception ex) { DebugLog.Ignore(ex); SetStatus("驱动页刷新失败: " + ex.Message); }
             }
 
             ContentArea.ScrollToTop();

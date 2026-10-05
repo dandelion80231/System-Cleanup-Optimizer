@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
@@ -41,19 +41,28 @@ namespace CpqSystemTool
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Activation.IsWindowsActivated 失败: " + ex.Message); return false; }
         }
 
-        public static void ActivateWindows(Action<string> log)
+        /// <summary>激活 Windows（slmgr /ipk→/skms→/ato 三步）。返回是否三步全部成功（末步 /ato 非 0 即失败，调用方据此诚实报完成/未完成）。</summary>
+        public static bool ActivateWindows(Action<string> log)
         {
             log("=== 激活 Windows ===");
             log("1) 安装产品密钥（通用批量授权密钥）...");
             // 绕过 PowerShell：用 cscript.exe 直接启动 slmgr.vbs（与 CheckWindowsActivation 一致）。
             // 注意：cmd 的 >nul 重定向在 PowerShell 里会创建名为 nul 的文件而非抑制输出，故此处改用 cscript + 绝对路径。
             string slmgr = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "system32\\slmgr.vbs");
-            Exec.RunCmd(new[] { "cscript.exe", "/nologo", slmgr, "/ipk", "W269N-WFGWX-YVC9B-4J6C9-T83GX" }, log);
+            int rc1 = Exec.RunCmd(new[] { "cscript.exe", "/nologo", slmgr, "/ipk", "W269N-WFGWX-YVC9B-4J6C9-T83GX" }, log);
+            if (rc1 != 0) { log("  [!] 密钥注入失败（cscript 退出码 " + rc1 + "），终止激活"); return false; }
             log("2) 设置 KMS 服务器...");
-            Exec.RunCmd(new[] { "cscript.exe", "/nologo", slmgr, "/skms", "kms.03k.org" }, log);
+            int rc2 = Exec.RunCmd(new[] { "cscript.exe", "/nologo", slmgr, "/skms", "kms.03k.org" }, log);
+            if (rc2 != 0) { log("  [!] 设置 KMS 失败（cscript 退出码 " + rc2 + "），终止激活"); return false; }
             log("3) 执行激活...");
-            Exec.RunCmd(new[] { "cscript.exe", "/nologo", slmgr, "/ato" }, log);
+            int rc3 = Exec.RunCmd(new[] { "cscript.exe", "/nologo", slmgr, "/ato" }, log);
+            if (rc3 != 0)
+            {
+                log("  [!] 激活命令退出码 " + rc3 + "（可能网络不通/KMS 被拦，可稍后刷新检查状态）");
+                return false;
+            }
             log("激活命令已发送，请稍后刷新检查状态。如果失败，可能需要更换 KMS 地址。");
+            return true;
         }
 
         public static void CheckWindowsActivation(Action<string> log)
@@ -286,24 +295,42 @@ namespace CpqSystemTool
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Activation.IsOfficeActivated 失败: " + ex.Message); return false; }
         }
 
-        public static void ActivateOffice(Action<string> log)
+        /// <summary>激活 Office（OSPP /inpkey→/sethst→/act）。返回是否三步全部成功。
+        /// 修复：原实现只找 %PF%(x)\Microsoft Office\Office16\OSPP.VBS 两个固定路径，
+        /// 而 Office 365/C2R 装在 ...Microsoft Office\root\Office16\（多一层 root），365 用户全部报「未找到 Office 安装」。
+        /// 现按 4 个候选（PF/PF86 × 直接/root）依次查找，与 CheckOfficeActivation 的多路径口径对齐。</summary>
+        public static bool ActivateOffice(Action<string> log)
         {
             log("=== 激活 Office ===");
             string d = Environment.ExpandEnvironmentVariables(@"%ProgramFiles%\Microsoft Office\Office16");
             string d2 = Environment.ExpandEnvironmentVariables(@"%ProgramFiles(x86)%\Microsoft Office\Office16");
+            // C2R / Office 365：安装根多一层 root（Microsoft Office\root\Office16\OSPP.VBS）
+            string d3 = Environment.ExpandEnvironmentVariables(@"%ProgramFiles%\Microsoft Office\root\Office16");
+            string d4 = Environment.ExpandEnvironmentVariables(@"%ProgramFiles(x86)%\Microsoft Office\root\Office16");
             string ospp = null;
-            if (System.IO.File.Exists(System.IO.Path.Combine(d, "OSPP.VBS"))) ospp = System.IO.Path.Combine(d, "OSPP.VBS");
-            else if (System.IO.File.Exists(System.IO.Path.Combine(d2, "OSPP.VBS"))) ospp = System.IO.Path.Combine(d2, "OSPP.VBS");
+            foreach (var dir in new[] { d, d2, d3, d4 })
+            {
+                string cand = System.IO.Path.Combine(dir, "OSPP.VBS");
+                if (System.IO.File.Exists(cand)) { ospp = cand; break; }
+            }
 
-            if (ospp == null) { log("未找到 Office 安装"); return; }
+            if (ospp == null) { log("未找到 Office 安装（已查 4 个常见 OSPP.VBS 位置，含 C2R root 布局）"); return false; }
 
             log("1) 安装 KMS 密钥...");
-            Exec.RunCmd(new[] { "cscript.exe", "/nologo", ospp, "/inpkey:XQNVK-8JYDB-WJ9W3-YJ8YR-WFG99" }, log);
+            int rc1 = Exec.RunCmd(new[] { "cscript.exe", "/nologo", ospp, "/inpkey:XQNVK-8JYDB-WJ9W3-YJ8YR-WFG99" }, log);
+            if (rc1 != 0) { log("  [!] 密钥注入失败（cscript 退出码 " + rc1 + "），终止激活"); return false; }
             log("2) 设置 KMS 服务器...");
-            Exec.RunCmd(new[] { "cscript.exe", "/nologo", ospp, "/sethst:kms.03k.org" }, log);
+            int rc2 = Exec.RunCmd(new[] { "cscript.exe", "/nologo", ospp, "/sethst:kms.03k.org" }, log);
+            if (rc2 != 0) { log("  [!] 设置 KMS 失败（cscript 退出码 " + rc2 + "），终止激活"); return false; }
             log("3) 激活...");
-            Exec.RunCmd(new[] { "cscript.exe", "/nologo", ospp, "/act" }, log);
+            int rc3 = Exec.RunCmd(new[] { "cscript.exe", "/nologo", ospp, "/act" }, log);
+            if (rc3 != 0)
+            {
+                log("  [!] 激活命令退出码 " + rc3 + "（可能网络不通/KMS 被拦，可稍后刷新检查状态）");
+                return false;
+            }
             log("Office 激活命令已发送");
+            return true;
         }
 
         public static void CheckOfficeActivation(Action<string> log)
@@ -623,12 +650,12 @@ namespace CpqSystemTool
         private const string MasScriptSha256 = "1e64a2bc2132d274e99dc802a79aaea2bddc38b27d5ca93c41dc35636d7a2545";
 
         /// <summary>联网下载并执行官方 MAS 脚本完成对应方式激活，结束后自动刷新状态。</summary>
-        public static void ActivateWithMAS(string methodId, Action<string> log)
+        public static bool ActivateWithMAS(string methodId, Action<string> log)
         {
             if (!MasSwitches.TryGetValue(methodId ?? "", out var sw))
             {
                 log("未知激活方法: " + methodId);
-                return;
+                return false;
             }
             log("=== 启动 Microsoft Activation Scripts (" + methodId + ") ===");
             log("将联网下载并执行官方 MAS 脚本（来源 massgrave.dev，采用 GNU GPL v3 许可）。");
@@ -636,6 +663,7 @@ namespace CpqSystemTool
                 + "执行前请确认网络环境可信。脚本下载后先做 SHA256 校验（钉死哈希 " + MasScriptSha256.Substring(0, 16) + "…），"
                 + "哈希不一致将中止执行。");
             log("若弹出用户账户控制，请允许；过程中请按脚本窗口提示操作。");
+            bool masOk = true;
 
             // 预置 TLS1.2 兼容老系统；下载脚本到临时文件 → 本地 SHA256 校验（fix-10 钉死哈希）→ 一致才用 ScriptBlock 执行
             // -Command 内用 ScriptBlock 包装以正确传递开关参数
@@ -668,15 +696,21 @@ namespace CpqSystemTool
                 };
                 using (var p = Process.Start(psi))
                 {
-                    if (p == null) { log("  [!] 无法启动 PowerShell（可能被安全软件拦截）"); return; }
+                    if (p == null) { log("  [!] 无法启动 PowerShell（可能被安全软件拦截）"); return false; }
                     // 交互式提权脚本：给足 30 分钟超时（用户可能手动操作），超时则终止避免 UI 挂起
                     if (!p.WaitForExit(MAS_TIMEOUT_MS))
                     {
                         try { p.Kill(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
                         log("  [!] MAS 脚本执行超时（30 分钟），已终止。");
-                        return;
+                        return false;
                     }
-                    log("MAS 脚本已退出（退出码 " + p.ExitCode + "）。");
+                    if (p.ExitCode != 0)
+                    {
+                        masOk = false;
+                        log("  [!] MAS 脚本退出码 " + p.ExitCode + "（非 0，可能激活失败，详见上方输出）");
+                    }
+                    else
+                        log("MAS 脚本已退出（退出码 0）。");
                 }
 
                 // M365 横幅抑制：OHook 激活 Office 365 后，部分版本会弹
@@ -689,11 +723,12 @@ namespace CpqSystemTool
             {
                 log("  [!] 启动 MAS 失败: " + ex.Message);
                 log("  可能原因：无网络访问 / 被 ISP 或安全软件拦截。可点「诊断」查看当前状态。");
-                return;
+                return false;
             }
 
             log("正在刷新激活状态...");
             CheckStatus(log);
+            return masOk;
         }
 
         /// <summary>
@@ -723,13 +758,15 @@ namespace CpqSystemTool
             }
         }
 
-        public static void Activate(string methodId, Action<string> log)
+        /// <summary>按方法分发激活。返回真实结果供调用方做诚实文案（诊断恒为 true：诊断流无成败语义）。</summary>
+        public static bool Activate(string methodId, Action<string> log)
         {
-            if (methodId == DiagnosticMethodId) CheckStatus(log);
-            else if (IsMasMethod(methodId)) ActivateWithMAS(methodId, log);
-            else if (methodId == "windows" || methodId == "win") ActivateWindows(log);
-            else if (methodId == "office") ActivateOffice(log);
-            else log("未知激活方法: " + methodId);
+            if (methodId == DiagnosticMethodId) { CheckStatus(log); return true; }
+            if (IsMasMethod(methodId)) return ActivateWithMAS(methodId, log);
+            if (methodId == "windows" || methodId == "win") return ActivateWindows(log);
+            if (methodId == "office") return ActivateOffice(log);
+            log("未知激活方法: " + methodId);
+            return false;
         }
         public static void CheckStatus(Action<string> log)
         {

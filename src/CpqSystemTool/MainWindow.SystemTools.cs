@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -274,8 +274,10 @@ namespace CpqSystemTool
 
                         pb.Visibility = Visibility.Visible;
                         // 激活日志写入本页共享纯文本日志框 sharedLog（不再走彩色富日志）
-                        RunInBg(sharedLog, l => Activation.Activate(methodId, l),
-                            methodId == Activation.DiagnosticMethodId ? "诊断完成" : "激活完成",
+                        // 动态 done：激活引擎返回真实结果，失败不再谎报「激活完成」
+                        bool actOk = false;
+                        RunInBgWithStatus(sharedLog, l => { actOk = Activation.Activate(methodId, l); },
+                            () => methodId == Activation.DiagnosticMethodId ? "诊断完成" : (actOk ? "激活完成" : "激活未完成（详见日志）"),
                             () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; },
                             methodId == Activation.DiagnosticMethodId ? "正在诊断激活状态…" : "正在激活…");
                     };
@@ -323,7 +325,11 @@ namespace CpqSystemTool
                         return;
                     }
                     pb.Visibility = Visibility.Visible;
-                    RunInBg(sharedLog, l => RestorePoint.Create("ZyperTool-" + DateTime.Now.ToString("MMdd-HHmm"), l), "还原点已创建", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; }, "正在创建还原点…");
+                    // 动态 done：Create 返回真实结果，失败不再谎报「还原点已创建」
+                    bool rpOk = false;
+                    RunInBgWithStatus(sharedLog, l => { rpOk = RestorePoint.Create("ZyperTool-" + DateTime.Now.ToString("MMdd-HHmm"), l); },
+                        () => rpOk ? "还原点已创建" : "还原点创建失败（详见日志）",
+                        () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; }, "正在创建还原点…");
                 }, 130);
             var bRefreshRp = Btn("🔄 刷新列表", true, () =>
                 {
@@ -349,7 +355,11 @@ namespace CpqSystemTool
                         return;
                     }
                     pb.Visibility = Visibility.Visible;
-                    RunInBg(sharedLog, l => RestorePoint.Restore(sel.Seq, l), "已发起还原", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; }, "正在还原…");
+                    // 动态 done：Restore 返回真实结果，未发起（序号不存在/命令失败）不再谎报「已发起还原」
+                    bool rsOk = false;
+                    RunInBgWithStatus(sharedLog, l => { rsOk = RestorePoint.Restore(sel.Seq, l); },
+                        () => rsOk ? "已发起还原" : "还原未发起（详见日志）",
+                        () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; }, "正在还原…");
                 }, 110);
             // 标题左对齐 + 三按钮星等分平分间距、占满剩余位置（MakeBtnRow 三列 star）
             var wp = MakeBtnRow(bCreateRp, bRefreshRp, bRestoreSel);
@@ -421,18 +431,25 @@ namespace CpqSystemTool
                     return;
                 }
                 pb.Visibility = Visibility.Visible;
-                RunInBg(sharedLog, l =>
+                // 动态 done：SwitchEdition 返回真实结果，失败（缺密钥/证书/0x803fa067 等）不再统一报「结束」
+                bool vsOk = false;
+                RunInBgWithStatus(sharedLog, l =>
                 {
                     // [Q29] 备份激活(slmgr /dlv, 1-5s)原在 UI 线程跑子进程会阻塞窗口；移入后台任务、用 bg 日志 l
                     VersionSwitch.BackupActivation(l);
-                    VersionSwitch.SwitchEdition(edition, key, l);
-                }, "版本转换结束", () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; vsRestoreBtn.IsEnabled = true; }, "正在转换版本（需重启）…");
+                    vsOk = VersionSwitch.SwitchEdition(edition, key, l);
+                }, () => vsOk ? "版本转换已发起，重启后生效" : "版本转换未完成（详见日志）",
+                    () => { OperationLock.Exit(); pb.Visibility = Visibility.Collapsed; vsRestoreBtn.IsEnabled = true; }, "正在转换版本（需重启）…");
             };
             vsRestoreBtn.Click += (s, e) =>
             {
                 if (!VersionSwitch.HasBackup()) { sharedLog.AppendText("[!] 没有可用的备份\r\n"); return; }
                 if (System.Windows.MessageBox.Show("确认从备份还原激活信息？\n\n将显示备份的时间和版本信息。", "还原激活信息", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-                RunInBg(sharedLog, VersionSwitch.RestoreActivation, "还原完成", null, "正在还原激活信息…");
+                // 动态 done：RestoreActivation 返回真实结果，失败（备份不完整/slmgr 非 0）不再谎报「还原完成」
+                bool actRestoreOk = false;
+                RunInBgWithStatus(sharedLog, l => { actRestoreOk = VersionSwitch.RestoreActivation(l); },
+                    () => actRestoreOk ? "还原完成" : "还原未完成（需手动激活，详见日志）",
+                    null, "正在还原激活信息…");
             };
 
             return root;

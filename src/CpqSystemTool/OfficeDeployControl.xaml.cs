@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -581,8 +581,9 @@ namespace CpqSystemTool
             return new List<string>();
         }
 
-        /// <summary>本机是否检测到已安装的 Click-to-Run Office（读注册表 Configuration 键的 ProductReleaseIds）。</summary>
-        /// 用于区分「全不选」的两种语义：本机装了 Office 时全不选=全卸；新系统没装时全不选=无操作。
+        /// <summary>本机是否检测到已安装的 Office。除 C2R 台账（ProductReleaseIds）外，还兜底探测
+        /// 经典 MSI 版落点（Office16 目录 / InstallRoot 注册表），否则纯 MSI 机器会被判「未装」→
+        /// 「强力卸载」直接取消（与页面自身的磁盘兜底探测自相矛盾）。</summary>
         private static bool IsOfficeInstalled()
         {
             var configPaths = new[]
@@ -603,6 +604,27 @@ namespace CpqSystemTool
                         return true;
                 }
             }
+            // O7 兜底：经典 MSI 版（无 C2R 台账）——按页面同口径探测 32/64 位 × root/Office16 四个落点
+            try
+            {
+                var roots = new[]
+                {
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Microsoft Office\root\Office16"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Microsoft Office\Office16"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Microsoft Office\root\Office16"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Microsoft Office\Office16"),
+                };
+                foreach (var root in roots)
+                {
+                    if (!Directory.Exists(root)) continue;
+                    if (File.Exists(Path.Combine(root, "WINWORD.EXE"))
+                        || File.Exists(Path.Combine(root, "EXCEL.EXE"))
+                        || File.Exists(Path.Combine(root, "OUTLOOK.EXE"))
+                        || File.Exists(Path.Combine(root, "POWERPNT.EXE")))
+                        return true;
+                }
+            }
+            catch (Exception ex) { DebugLog.Ignore(ex); }
             return false;
         }
 
@@ -1109,6 +1131,8 @@ namespace CpqSystemTool
                     });
                     if (setup == null)
                     {
+                        // O10：失败早退时进度条之前停在下载中途百分比（如 43%），复位为 0 避免界面像「卡住」
+                        SetProgress(0);
                         SetStatus("❌ ODT setup.exe 下载失败，请检查网络或手动放置到缓存目录");
                         return;
                     }
@@ -1174,14 +1198,34 @@ namespace CpqSystemTool
                     int rc;
                     if (elevateOdt)
                     {
-                        // 提权执行：args[0]=setup.exe 完整路径（RunElevated 以 FileName 启动），junction 在提权子进程内完成
+                        // 提权执行：args[0]=setup.exe 完整路径（RunElevated 以 FileName 启动）。
+                        // ⚠ O3 修复：本调用的实参只有 {setup,/configure,xml} —— 提权子进程内并没有「挂 junction」这一步，
+                        //   父进程 EnsureJunction 失败（非管理员写不了系统盘根）时 Office 实际装回系统盘默认位置。
+                        //   因此返回后必须复核 junction 是否真的建成，未建成时如实报告落盘位置，不再宣称「已装到目标盘」。
                         rc = OfficeInstallLocation.RunElevated(
                             new[] { setup, "/configure", xml },
                             Path.GetDirectoryName(setup) ?? OdtSetup.GetOdtDir(),
                             AppendLog);
-                        AppendLog(rc == 0
-                            ? "  [完成] 提权执行 ODT 成功，Office 安装至 junction 目标 " + targetRoot
-                            : "  [!] 提权执行 ODT 退出码 " + rc + "，详见日志");
+
+                        bool junctionNow = false;
+                        try
+                        {
+                            junctionNow = OfficeInstallLocation.IsJunction(
+                                OfficeInstallLocation.GetOfficeRootPath(uiCapturedArchitecture));
+                        }
+                        catch (Exception jEx) { DebugLog.Ignore(jEx); }
+
+                        if (IsOdtSuccessCode(rc))
+                        {
+                            AppendLog("  [完成] 提权执行 ODT 成功（" + DescribeOdtRc(rc) + "）");
+                            AppendLog(junctionNow
+                                ? "         Office 安装位置已重定向到 junction 目标 " + targetRoot
+                                : "  [!] 注意：junction 未建成（提权子进程不含挂载步骤），Office 实际装在系统盘默认位置，未落盘到 " + targetRoot);
+                        }
+                        else
+                        {
+                            AppendLog("  [!] 提权执行 ODT " + DescribeOdtRc(rc) + "，详见日志");
+                        }
                     }
                     else
                     {
@@ -1222,16 +1266,22 @@ namespace CpqSystemTool
                         _elapsedTimer.Stop();
                         IsIndeterminateProgress = false;
                     });
-                    SetProgress(100);
+                    // O4：进度条只在成功类退出码下满格（1641/3010 也算成功，需重启）
+                    SetProgress(IsOdtSuccessCode(rc) ? 100 : 0);
                     if (rc == -2)
                     {
                         // RunConfig 用 -2 标记「ODT 打印了 usage，配置无效、根本没执行」——与 0/N 的失败区分开，
                         // 避免用户只看到 -2 不知所谓。详细日志已由 RunConfig 写入上方。
                         SetStatus("❌ ODT 未真正执行（打印了 usage 帮助），config.xml 可能无效，详见上方日志");
                     }
+                    else if (rc == 1641 || rc == 3010)
+                    {
+                        // O1：成功类码——安装已完成但需重启收尾，不再误报「❌ ODT 命令失败」
+                        SetStatus("✅ " + DescribeOdtRc(rc) + "，详见上方校验日志");
+                    }
                     else if (rc != 0)
                     {
-                        SetStatus("❌ ODT 命令失败（退出码 " + rc + "），详见上方日志");
+                        SetStatus("❌ ODT " + DescribeOdtRc(rc) + "，详见上方日志");
                     }
                     else if (outcome == OdtSetup.VerifyOutcome.Failure)
                     {
@@ -1692,10 +1742,16 @@ namespace CpqSystemTool
                         _elapsedTimer.Stop();
                         IsIndeterminateProgress = false;
                     });
-                    SetProgress(100);
+                    SetProgress(IsOdtSuccessCode(rc) ? 100 : 0);
 
                     if (rc == -2) { AppendLog("  [!] ODT 打印 usage（配置无效、未真正执行），详见日志。"); SetStatus("❌ ODT 未真正执行（config 无效）"); }
-                    else if (rc != 0) { AppendLog("  [!] ODT 退出码 " + rc + "，切换可能未成功，详见日志。"); SetStatus("❌ ODT 退出码 " + rc); }
+                    else if (rc == 1641 || rc == 3010)
+                    {
+                        // O1：成功类码（已完成需重启）不再误报失败
+                        AppendLog("  [完成] ODT " + DescribeOdtRc(rc) + "（通道切换结果见上方校验日志）");
+                        SetStatus("✅ " + DescribeOdtRc(rc));
+                    }
+                    else if (rc != 0) { AppendLog("  [!] ODT " + DescribeOdtRc(rc) + "，切换可能未成功，详见日志。"); SetStatus("❌ ODT " + DescribeOdtRc(rc)); }
                     else if (!string.IsNullOrEmpty(after) && !string.Equals(after, before, StringComparison.OrdinalIgnoreCase))
                     {
                         AppendLog("  [完成] 更新通道已切换：" + before + " → " + after);
@@ -1874,11 +1930,24 @@ namespace CpqSystemTool
                     }
                     catch { /* 读台账异常不影响切换：退化为全量安装 */ }
 
+                    // O2 修复：MatchInstalled 仅对「目标产品 = 本机已装产品」成立（同产品换通道/修复重部署）。
+                    // 跨大版本/跨产品切换（如 O365ProPlusRetail → PerpetualVL2021）时，目标通道并不存在
+                    // 「当前已装构建」，ODT 会报版本找不到或空转 → 重部署实际没换版本，UI 却仍可能报「已重新部署」。
+                    // 故跨产品时留空 Version（BuildElement 会省略空属性），由 ODT 取目标通道自身当前构建。
+                    string installedSuitePid = null;
+                    try { if (TryGetInstalledSuite(out var isp, out _)) installedSuitePid = isp; }
+                    catch (Exception ispEx) { DebugLog.Ignore(ispEx); }
+                    bool sameProduct = !string.IsNullOrEmpty(installedSuitePid)
+                        && string.Equals(installedSuitePid, pid, StringComparison.OrdinalIgnoreCase);
+                    if (!sameProduct)
+                        AppendLog("  [版本对齐] 目标产品 " + pid + " 与本机已装 " + (installedSuitePid ?? "(未知)")
+                            + " 不同 → 不使用 MatchInstalled，改由 ODT 取目标通道当前构建");
+
                     var args = new OfficeInstallArguments
                     {
                         Architecture = uiCapturedArchitecture,
                         Channel = ch,
-                        Version = "MatchInstalled",
+                        Version = sameProduct ? "MatchInstalled" : null,
                         ForceAppShutdown = true,
                         AcceptEula = true,
                         DisplayFull = false
@@ -1908,17 +1977,17 @@ namespace CpqSystemTool
                         _elapsedTimer.Stop();
                         IsIndeterminateProgress = false;
                     });
-                    SetProgress(100);
+                    SetProgress(IsOdtSuccessCode(rc) ? 100 : 0);
 
-                    if (rc == 0)
+                    if (IsOdtSuccessCode(rc))
                     {
-                        AppendLog("  [完成] 已重新部署至 " + edName + "，请查看日志确认结果。");
-                        SetStatus("✅ 已重新部署至 " + edName);
+                        AppendLog("  [完成] 已重新部署至 " + edName + "（" + DescribeOdtRc(rc) + "），请查看日志确认结果。");
+                        SetStatus("✅ 已重新部署至 " + edName + (rc == 1641 || rc == 3010 ? "（需重启收尾）" : ""));
                     }
                     else
                     {
-                        AppendLog("  [!] ODT 退出码 " + rc + "，重新部署可能未成功，详见日志。");
-                        SetStatus("❌ 重新部署 ODT 退出码 " + rc);
+                        AppendLog("  [!] ODT " + DescribeOdtRc(rc) + "，重新部署可能未成功，详见日志。");
+                        SetStatus("❌ 重新部署 ODT " + DescribeOdtRc(rc));
                     }
                     // C2R 台账写入是引擎异步落盘的，ODT 返回瞬间可能还没写完。
                     // 轮询最多 3 次（每次间隔 2 秒，总计约 6 秒）等台账变化后再刷新 UI，
@@ -1991,6 +2060,39 @@ namespace CpqSystemTool
         /// 状态栏显示「已写入 N MB」（高水位、只升不降，防 temp→root 拷贝期双计/清理期回落），
         /// 每 200MB 打一条日志；轮询默认 3s，单次扫描过慢时自动放宽到 5/10s（防大 Office/HDD 上与下载抢 I/O）。
         /// 通道切换/减组件等场景差量 ≤ 0，状态显示「配置变更中」。ODT 结束后恢复进度条到 100。返回 ODT 退出码。</summary>
+        // ===================== ODT 退出码语义映射（O1）=====================
+        /// <summary>
+        /// ODT（setup.exe）退出码是否属「成功」类。1641/3010 是标准「已完成但需重启」码，
+        /// 旧实现一律按 rc != 0 报 ❌ 失败，把成功安装误报成失败（本簇核心缺陷）。
+        /// </summary>
+        private static bool IsOdtSuccessCode(int rc) => rc == 0 || rc == 1641 || rc == 3010;
+
+        /// <summary>把 ODT/Windows Installer 退出码翻成可读中文，供 4 个 ODT 调用点统一使用。</summary>
+        private static string DescribeOdtRc(int rc)
+        {
+            switch (rc)
+            {
+                case 0: return "成功";
+                case 1641: return "成功（安装已完成并已请求重启，重启后收尾）";
+                case 3010: return "成功（安装已完成，需重启才能生效）";
+                case -2: return "未真正执行（config.xml 可能无效，ODT 只打印了 usage）";
+                case 1653: return "失败：权限不足（需以管理员运行；企业环境可能被组策略/安全软件拦截）";
+                case 1601: return "失败：Windows Installer 服务不可用";
+                case 1603: return "失败：致命错误（常见于 Office 残留未清干净、磁盘空间不足）";
+                case 1607: return "失败：安装服务注册失败（多被杀软/安全策略拦截）";
+                case 1618: return "失败：已有另一个安装正在进行，请稍后重试";
+                case 17002: return "失败：缺少必要运行组件（如 WebView2 / VCLibs）";
+                case 17006: return "失败：安装源不可用或存在冲突版本需先卸载";
+                case 1001: case 1003: case 1004: case 1005: case 1008: case 1010:
+                case 1012: case 1014: case 1015: case 1017: case 1018: case 1019:
+                case 1022: case 1023: case 1033: case 1036: case 1041: case 1042:
+                case 1044: case 1046: case 1048: case 1050: case 1052: case 1053:
+                case 1055: case 1058:
+                    return "失败：配置/版本/语言参数不合法或不被该通道支持（详见日志）";
+                default: return "失败（退出码 " + rc + "）";
+            }
+        }
+
         private int WaitOdtWithProgress(string setup, string xml, Action<string> log, bool expectDownload)
         {
             int rc = 0;
@@ -2100,7 +2202,9 @@ namespace CpqSystemTool
             // ODT 结束后等待轮询线程自然退出（下一轮 3s 内检测到 IsAlive=false）
             pollThread.Join(5000);
             RunOnUi(() => { IsIndeterminateProgress = false; });
-            SetProgress(100);
+            // O4：只有成功类退出码（0/1641/3010）才把进度条推到 100；失败/-2 空转时归零，
+            // 避免「进度条满格」被误读为安装完成。
+            SetProgress(IsOdtSuccessCode(rc) ? 100 : 0);
             return rc;
         }
 

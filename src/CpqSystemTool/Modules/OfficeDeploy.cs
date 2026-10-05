@@ -1,4 +1,4 @@
-﻿// Office 部署工具（ODT）配置构建与获取 —— 由 office-config-prototype / office-ui-prototype 移植。
+// Office 部署工具（ODT）配置构建与获取 —— 由 office-config-prototype / office-ui-prototype 移植。
 // 思路来源：Office Tool Plus 公开历史版本的配置构建方式（仅学思路，代码自研）。
 // 本模块提供组件目录（10 个组件）、安装参数模型、config.xml 生成与校验，以及 ODT
 // setup.exe 的下载中心解析下载（复用 cpq Downloader / Exec，与 OfficeInstall.cs 同一执行风格）。
@@ -485,7 +485,15 @@ namespace CpqSystemTool
                 using var proc = Process.Start(psi);
                 string so = proc.StandardOutput.ReadToEnd();
                 string se = proc.StandardError.ReadToEnd();
-                proc.WaitForExit(30000);
+                // O9：先看 WaitForExit 的返回值再读 ExitCode——超时后进程仍存活时读 ExitCode 会抛
+                // InvalidOperationException（被外层 catch 吞成「解压 ODT 外壳失败」，实为 expand 没跑完），
+                // 且存活的 expand.exe 会残留。超时时终止进程树并单独报「expand 超时」。
+                if (!proc.WaitForExit(30000))
+                {
+                    log("  [!] expand.exe 解压超时（30 秒），已终止；可稍后重试或手动解压 ODT 外壳");
+                    try { proc.Kill(true); } catch (Exception kEx) { DebugLog.Ignore(kEx); }
+                    return null;
+                }
                 if (proc.ExitCode != 0) { log("  [!] expand.exe 失败: " + se); return null; }
 
                 // 4. 找解出的 setup.exe
@@ -758,7 +766,10 @@ namespace CpqSystemTool
                             {
                                 foreach (var pid in s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                                     if (pid.Length > 0) result.Add(pid.Trim());
-                                break;
+                                // 【O6 修复】不再首条命中即 break：4 条候选路径（ClickToRun / 16.0 / WOW6432Node…）
+                                // 可能各自残留不同年代的 ProductReleaseIds，只取第一条会让多版本共存/陈旧台账机器
+                                // 拿到过期 pid 列表，进而误判 OdtWillDownload（下载措辞）与卸载后校验（独立产品「仍已安装」）。
+                                // 改为与 ReadExcludedApps 同口径：取 4 路径并集。
                             }
                         }
                     }

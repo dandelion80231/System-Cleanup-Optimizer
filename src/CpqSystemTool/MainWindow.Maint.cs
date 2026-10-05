@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
@@ -686,7 +686,8 @@ namespace CpqSystemTool
                     bool skip = skipDlCheck.IsChecked == true;
 
                     bool searchLocated = false;
-                    RunInBg(logBox, logf =>
+                    bool fetchOk = true;   // M1：抓取异常时 done 文案不再谎报「抓取完成」
+                    RunInBgWithStatus(logBox, logf =>
                     {
                         try
                         {
@@ -696,9 +697,10 @@ namespace CpqSystemTool
                         }
                         catch (Exception ex)
                         {
+                            fetchOk = false;
                             logf("[!] 运行异常: " + ex.Message);
                         }
-                    }, "抓取完成", () =>
+                    }, () => fetchOk ? "抓取完成" : "抓取失败（详见日志）", () =>
                     {
                         // 后台任务无论成功失败都会回到这里（RunInBg 的两条路径都会调 onDoneUi）,
                         // 先无条件恢复按钮，再做结果填充——避免结果填充报错时按钮卡在"抓取中..."。

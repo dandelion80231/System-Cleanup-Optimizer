@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -39,8 +39,17 @@ namespace CpqSystemTool
                 if (it.Id == "winsxs")
                 {
                     log("清理 WinSxS 冗余（DISM，可能需要数分钟）...");
-                    Exec.RunCmd(new[] { "dism", "/Online", "/Cleanup-Image", "/StartComponentCleanup", "/ResetBase" }, log);
-                    didWork = true;
+                    int rcDism = Exec.RunCmd(new[] { "dism", "/Online", "/Cleanup-Image", "/StartComponentCleanup", "/ResetBase" }, log);
+                    if (rcDism == 0)
+                    {
+                        log("  [OK] WinSxS 组件清理完成（DISM /ResetBase，不可逆）");
+                        didWork = true;
+                    }
+                    else
+                    {
+                        // /ResetBase 不可逆：失败必须如实上报，不得置 didWork 让末行报「[OK] 额外清理完成」
+                        log("  [FAIL] DISM 退出码 " + rcDism + "（多为权限不足/需管理员），/ResetBase 未完成");
+                    }
                     continue;
                 }
                 string expanded = Environment.ExpandEnvironmentVariables(it.Path);

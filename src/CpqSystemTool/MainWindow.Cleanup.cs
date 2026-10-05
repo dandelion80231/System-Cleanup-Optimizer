@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -322,7 +322,7 @@ namespace CpqSystemTool
                     // 只有 被占用/残留/报错（[PARTIAL]、[!]、部分残留、锁定）才提示重启
                     int dirty = 0;
                     System.Action<string> l0 = l;
-                    l = s => { l0(s); if (s.Contains("[PARTIAL]") || s.Contains("[FAIL]") || s.Contains("[!]") || s.Contains("部分残留") || s.Contains("锁定") || s.Contains("被占用")) System.Threading.Interlocked.Increment(ref dirty); };
+                    l = s => { l0(s); if (s.Contains("[PARTIAL]") || s.Contains("[FAIL]") || s.Contains("[!]") || s.Contains("[PS-ERR]") || s.Contains("[?]") || s.Contains("部分残留") || s.Contains("锁定") || s.Contains("被占用")) System.Threading.Interlocked.Increment(ref dirty); };
                     var catPar = new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Math.Min(4, Environment.ProcessorCount)) };
                     var groups = CleanupCatalog.Where(d => sel.Contains(d.Id)).GroupBy(d => d.Category).ToList();
                     System.Threading.Tasks.Parallel.ForEach(groups, catPar, group =>

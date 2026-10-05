@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -272,7 +272,7 @@ namespace CpqSystemTool
             {
                 int n = _boxes.Count(x => x.IsChecked == true);
                 double sum = _all.Zip(_boxes, (it, b) => b.IsChecked == true ? it.SizeMB : 0).Sum();
-                countTb.Text = $"已选 {n}/{_boxes.Count} 项（约 {sum:F0} MB）";
+                countTb.Text = $"已选 {n}/{_boxes.Count} 项（约 {FormatSize(sum)}）";
             }
             selectAll.Click += (s, e) =>
             {

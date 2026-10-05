@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -326,7 +326,8 @@ namespace CpqSystemTool
             return result;
         }
 
-        public static void Uninstall(List<string> names, Action<string> log)
+        /// <summary>卸载若干 AppX 包。返回失败个数（0=全部成功），调用方据此生成诚实的完成文案。</summary>
+        public static int Uninstall(List<string> names, Action<string> log)
         {
             int failCount = 0;
             foreach (var n in names)
@@ -376,6 +377,7 @@ namespace CpqSystemTool
             }
             if (failCount == 0) log("[OK] 批量卸载结束（部分系统应用可能无法移除，属正常）");
             else log("[FAIL] 批量卸载结束：" + failCount + "/" + names.Count + " 个失败，详见上方日志");
+            return failCount;
         }
 
         /// <summary>

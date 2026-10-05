@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -363,12 +363,14 @@ namespace CpqSystemTool
                 // 预检该频道是否支持自动安装（InstallUrl 非空），仅当 InstallEdge 真正会执行安装时才用成功文案，
                 // 否则在 onDoneUi 中覆盖为"未完成/不支持"。不改变 InstallEdge 签名。
                 bool supported = EdgeCore.FindChannel(channels[idx])?.InstallUrl != null;
-                RunInBg(log, l => EdgeCore.InstallEdge(channels[idx], l),
-                    "Edge " + displayNames[idx] + " 安装完成",
+                // 动态 done：InstallEdge 现返回真实结果（不支持的频道/下载失败/安装器非 0 都不再报「安装完成」）
+                bool edgeInstOk = false;
+                RunInBgWithStatus(log, l => { edgeInstOk = EdgeCore.InstallEdge(channels[idx], l); },
+                    () => edgeInstOk ? "Edge " + displayNames[idx] + " 安装完成" : "Edge " + displayNames[idx] + " 安装未完成（详见日志）",
                     () =>
                     {
                         pb.Visibility = Visibility.Collapsed;
-                        if (!supported) SetStatus("Edge " + displayNames[idx] + " 安装未完成：不支持的频道（详见日志）");
+                        if (!edgeInstOk && !supported) SetStatus("Edge " + displayNames[idx] + " 安装未完成：不支持的频道（详见日志）");
                     }, "正在安装 Edge " + displayNames[idx] + "…");
             }, 100);
             installBtn.Margin = new Thickness(0);
@@ -381,13 +383,15 @@ namespace CpqSystemTool
                 // 原实现无条件报"卸载完成"：选 Canary/SxS 时 EdgeCore 只打一行"不支持的频道"就返回，
                 // 用户却看到成功提示（假成功）。改为把 UninstallEdge 的实际结果带回 UI，
                 // 只有真正执行了卸载动作才保留成功文案，否则在 onDoneUi 里覆盖为"未执行"。
-                bool attempted = false;
-                RunInBg(log, l => { attempted = EdgeCore.UninstallEdge(channels[idx], false, l); },
-                    "Edge " + displayNames[idx] + " 卸载完成",
+                bool attempted = false, edgeUninstOk = false;
+                RunInBgWithStatus(log, l => { attempted = EdgeCore.UninstallEdge(channels[idx], false, l, out edgeUninstOk); },
+                    () => !attempted ? "Edge " + displayNames[idx] + " 卸载未执行（不支持的频道）"
+                        : (edgeUninstOk ? "Edge " + displayNames[idx] + " 卸载完成" : "Edge " + displayNames[idx] + " 卸载未成功（详见日志）"),
                     () =>
                     {
                         pb.Visibility = Visibility.Collapsed;
                         if (!attempted) SetStatus("Edge " + displayNames[idx] + " 卸载未执行：不支持的频道（详见日志）");
+                        else if (!edgeUninstOk) SetStatus("Edge " + displayNames[idx] + " 卸载未成功（卸载器返回非 0，详见日志）");
                     }, "正在卸载 Edge " + displayNames[idx] + "…");
             }, 100);
             uninstallBtn.Margin = new Thickness(0);

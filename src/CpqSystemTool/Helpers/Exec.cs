@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -331,6 +331,9 @@ namespace CpqSystemTool
                         return p.ExitCode;
                     }
                     KillIfTimeout(p, timeoutMs);
+                    // 【P3 复审】与 capture 路径同样的 15s 栅栏：KillTree 后进程可能尚未完全终止，
+                    // 立刻读 ExitCode 会抛 InvalidOperationException（被外层 catch 吞成 -1/空，语义混淆）
+                    p.WaitForExit(15000);
                     return p.ExitCode;
                 }
             }
@@ -408,6 +411,9 @@ namespace CpqSystemTool
                         return p.ExitCode;
                     }
                     KillIfTimeout(p, timeoutMs);
+                    // 【P3 复审】与 capture 路径同样的 15s 栅栏：KillTree 后进程可能尚未完全终止，
+                    // 立刻读 ExitCode 会抛 InvalidOperationException（被外层 catch 吞成 -1/空，语义混淆）
+                    p.WaitForExit(15000);
                     return p.ExitCode;
                 }
             }

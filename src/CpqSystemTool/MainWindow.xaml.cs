@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -104,6 +104,11 @@ namespace CpqSystemTool
                 App.Trace("ctor.afterApplyShellColors");
                 BuildSidebar(); // 轻量级：仅构建导航按钮，不读注册表
                 App.Trace("ctor.afterBuildSidebar");
+                // S1：关窗前把「背景设置」尚未落盘的防抖保存立即写盘（只订阅一次，避免重复挂载）
+                Closing += (s, e) =>
+                {
+                    try { FlushBackgroundSettingsDebounced(); } catch (Exception ex) { DebugLog.Ignore(ex); }
+                };
                 // 窗口 Loaded 即同步导航（Loaded 已在首次渲染之后触发，无需再等 ContextIdle）。
                 Loaded += (s, e) =>
                 {

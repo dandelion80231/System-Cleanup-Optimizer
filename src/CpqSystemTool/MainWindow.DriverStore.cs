@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -43,11 +43,13 @@ namespace CpqSystemTool
             var panel = new DriverStorePanel(this, null);
             Grid.SetRow(panel, 1);
             root.Children.Add(panel);
-            _driverStorePanel = panel;
 
             BindRootHeightToViewport(root);
 
+            // 先落缓存根、再暴露面板引用：中途抛异常时 _cachedDriverStoreRoot 仍为 null（下次访问会重建），
+            // 而 _driverStorePanel 也不会指向一个未挂进可视树的半成品面板。
             _cachedDriverStoreRoot = root;
+            _driverStorePanel = panel;
             return root;
         }
     }
