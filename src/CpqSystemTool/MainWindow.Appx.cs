@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -165,6 +165,8 @@ namespace CpqSystemTool
                     pb.Visibility = Visibility.Collapsed;
                     return;
                 }
+                // 进行中态：状态栏实时显示（原逻辑完成才提示，过程中无反馈；pb 进度条仍在）
+                SetStatus("正在卸载 " + selected.Count + " 项" + (alsoProvisioned ? "（含预装）" : "") + "…");
                 // ★ 单层 RunInBg：直接跑 Uninstall，不再 ThreadPool.QueueUserWorkItem 嵌套
                 RunInBg(log, l =>
                 {
@@ -455,7 +457,8 @@ namespace CpqSystemTool
                 });
             };
 
-            var uninstallBtn = Btn(isInstalled ? "卸载" : "安装", !isInstalled, () =>
+            Button uninstallBtn = null;   // 先声明（null 初始化）后赋值：让下方 lambda 内可更新进行中态（CS0841/CS0165）
+            uninstallBtn = Btn(isInstalled ? "卸载" : "安装", !isInstalled, () =>
             {
                 if (!isInstalled)
                 {
@@ -467,6 +470,10 @@ namespace CpqSystemTool
                             System.Windows.MessageBox.Show("已有「" + busyBy + "」操作正在运行，请先完成再执行。", "操作冲突", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                             return;
                         }
+                        // 进行中态：按钮置「安装中…+禁用」+ 状态栏实时显示（原逻辑完成才提示，过程中无反馈）
+                        uninstallBtn.Content = "安装中…";
+                        uninstallBtn.IsEnabled = false;
+                        SetStatus("正在安装: " + displayName + "…");
                         RunInBg(log, l => AppxManager.Install(def.StoreId, l), "安装完成: " + displayName, refreshThisCard);
                     }
                     return;
@@ -476,6 +483,10 @@ namespace CpqSystemTool
                     System.Windows.MessageBox.Show("已有「" + busyBy2 + "」操作正在运行，请先完成再执行。", "操作冲突", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                     return;
                 }
+                // 进行中态：按钮置「卸载中…+禁用」+ 状态栏实时显示
+                uninstallBtn.Content = "卸载中…";
+                uninstallBtn.IsEnabled = false;
+                SetStatus("正在卸载: " + displayName + "…");
                 RunInBg(log, l =>
                 {
                     if (isProvisioned) AppxManager.UninstallProvisioned(new System.Collections.Generic.List<string> { uninstallTarget }, l);
