@@ -422,13 +422,30 @@ namespace CpqSystemTool
                 catch (Exception ex) { SetStatus("打开链接失败: " + ex.Message); }
             }, 50));
 
-            // 安装/卸载完成后【原地刷新本卡片】：重新查询状态并替换该卡片，保留页面与日志，不重建整页（避免日志丢失）
+            // 安装/卸载完成后【原地刷新本卡片】，两阶段保证上下同步：
+            // ① 立即（UI 线程）按操作意图翻卡片：安装→视为已装、卸载→视为未装——消除「底部已显示完成、
+            //    卡片还挂着 安装中…」的中间态（旧实现整条刷新在 ThreadPool 里先重查 provider 再替换，滞后数秒）
+            // ② 后台重查真实状态做校正：与意图一致则不动（免闪烁）；不一致（安装真失败/provider 滞后）才再替换；
+            //    重查异常保留意图态不崩。异常路径（onDoneUi 在 catch 也触发）意图态可能短暂失真，由 ② 校正回真实态
             Action refreshThisCard = () =>
             {
                 OperationLock.Exit();   // P1 类修复：单卡安装/卸载完成（成功/异常 done 均触发）释放全局互斥
-                // 安装/卸载完成 → 显式失效整页缓存（下次进页重建，避免复用 stale 状态）
                 _appxCache.Invalidate();
                 _appxRawCache.Invalidate();
+                bool intentInstalled = !isInstalled;   // 本卡操作意图：安装操作→装完视为已装；卸载操作→卸完视为未装
+                System.Windows.Controls.Border fresh = null;   // BuildAppxCard 返回 Border
+                try
+                {
+                    var parent = card.Parent as System.Windows.Controls.Panel;
+                    int idx = parent != null ? parent.Children.IndexOf(card) : -1;
+                    if (idx >= 0)
+                    {
+                        fresh = BuildAppxCard(displayName, intentInstalled ? uninstallTarget : "", uninstallTarget, log, isProvisioned, intentInstalled, onCheckChanged);
+                        parent.Children[idx] = fresh;
+                    }
+                    // 卡片已脱离容器（页面已被重建）：新页状态已是最新，无需再替换
+                }
+                catch { /* 窗口已关闭，忽略 */ }
                 System.Threading.ThreadPool.QueueUserWorkItem(_ =>
                 {
                     bool nowInstalled = false;
@@ -438,19 +455,18 @@ namespace CpqSystemTool
                         var it = items.FirstOrDefault(x => x.Name == displayName || x.PackageName == uninstallTarget);
                         nowInstalled = it != null && !string.IsNullOrEmpty(it.FullName);
                     }
-                    catch (Exception ex) { DebugLog.Ignore(ex); }
+                    catch (Exception ex) { DebugLog.Ignore(ex); return; }   // 重查失败：保留意图态
+                    if (nowInstalled == intentInstalled) return;           // 与意图一致：无需再替换
                     try { Dispatcher.Invoke(() =>
                     {
-                        var parent = (Panel)card.Parent;
-                        if (parent != null)
+                        // 优先更新①里刚换上的新卡；若①没换成功（卡片已脱离）退回旧卡
+                        var p = (fresh != null ? fresh.Parent : null) as System.Windows.Controls.Panel ?? (card.Parent as System.Windows.Controls.Panel);
+                        var target = fresh != null ? fresh : card;
+                        int i = p != null ? p.Children.IndexOf(target) : -1;
+                        if (i >= 0)
                         {
-                            int idx = parent.Children.IndexOf(card);
-                            if (idx >= 0)
-                            {
-                                var fresh = BuildAppxCard(displayName, nowInstalled ? uninstallTarget : "", uninstallTarget, log, isProvisioned, nowInstalled, onCheckChanged);
-                                parent.Children[idx] = fresh;
-                                return;
-                            }
+                            p.Children[i] = BuildAppxCard(displayName, nowInstalled ? uninstallTarget : "", uninstallTarget, log, isProvisioned, nowInstalled, onCheckChanged);
+                            return;
                         }
                         SetPageContent(BuildAppx()); // 兜底：找不到容器时重建整页
                     }); } catch { /* 窗口已关闭，忽略 */ }
