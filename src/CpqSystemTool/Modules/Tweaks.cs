@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Microsoft.Win32;
 
@@ -126,7 +126,8 @@ namespace CpqSystemTool
                 Desc = "在快速访问中显示「常用文件夹」", Risk = "low",
                 Enable = log => { DwordR(HKCU, ADV, "ShowFrequent", 1, log); },
                 Disable = log => { DwordR(HKCU, ADV, "ShowFrequent", 0, log); },
-                State = () => RegistryHelper.GetDword(HKCU, ADV, "ShowFrequent", 0) == 1
+                // 哨兵取 1 = Windows 默认（快速访问默认显示常用文件夹）；原 0 在值不存在时会误示「未启用」
+                State = () => RegistryHelper.GetDword(HKCU, ADV, "ShowFrequent", 1) == 1
             });
             L.Add(new TweakEntry
             {
@@ -142,7 +143,9 @@ namespace CpqSystemTool
                 Desc = "始终显示文件扩展名（如 .txt/.exe）", Risk = "low",
                 Enable = log => { DwordR(HKCU, ADV, "HideFileExt", 0, log); },
                 Disable = log => { DwordR(HKCU, ADV, "HideFileExt", 1, log); },
-                State = () => RegistryHelper.GetDword(HKCU, ADV, "HideFileExt", 0) == 0
+                // 哨兵取 1 = Windows 默认（资源管理器默认隐藏扩展名）。原哨兵 0 会让「值不存在」被当成
+                // HideFileExt==0 → 勾选框误示「已显示扩展名」（同文件 show_hidden 用 Windows 默认哨兵 2 可证此约定）
+                State = () => RegistryHelper.GetDword(HKCU, ADV, "HideFileExt", 1) == 0
             });
             L.Add(new TweakEntry
             {
@@ -166,7 +169,9 @@ namespace CpqSystemTool
                 Desc = "在快速访问中显示「最近使用的文件」", Risk = "low",
                 Enable = log => { DwordR(HKCU, ADV, "ShowRecent", 1, log); },
                 Disable = log => { DwordR(HKCU, ADV, "ShowRecent", 0, log); },
-                State = () => RegistryHelper.GetDword(HKCU, ADV, "ShowRecent", 0) == 1
+                // 哨兵取 1 = Windows 默认（快速访问默认显示最近使用的文件）；与同文件 quick_access 条目的
+                // `GetDword(..., "ShowRecent", 1) == 0` 口径一致（原为 0，值不存在时误示「未启用」）
+                State = () => RegistryHelper.GetDword(HKCU, ADV, "ShowRecent", 1) == 1
             });
             L.Add(new TweakEntry
             {
@@ -194,7 +199,8 @@ namespace CpqSystemTool
                 Desc = "Win11 默认将开始菜单与图标居中显示", Risk = "low",
                 Enable = log => { DwordR(HKCU, ADV, "TaskbarAl", 1, log); },
                 Disable = log => { DwordR(HKCU, ADV, "TaskbarAl", 0, log); },
-                State = () => RegistryHelper.GetDword(HKCU, ADV, "TaskbarAl", 0) == 1
+                // 哨兵取 1 = Win11 默认（任务栏图标居中）；原 0 在值不存在时误示「未居中」
+                State = () => RegistryHelper.GetDword(HKCU, ADV, "TaskbarAl", 1) == 1
             });
             L.Add(new TweakEntry
             {
@@ -304,8 +310,8 @@ namespace CpqSystemTool
             {
                 Group = "性能优化", Id = "ucpd_task", Name = "禁用 UCPD 计划任务",
                 Desc = "禁用 \\Microsoft\\Windows\\AppxDeploymentClient\\UCPD velocity 计划任务", Risk = "low",
-                Enable = log => RegistryHelper.RunCommand("schtasks", @"/change /disable /tn """ + UCPD_TASK + @"""", log),
-                Disable = log => RegistryHelper.RunCommand("schtasks", @"/change /enable /tn """ + UCPD_TASK + @"""", log),
+                Enable = log => RunSchtasksOnUcpdTask("disable", log),
+                Disable = log => RunSchtasksOnUcpdTask("enable", log),
                 State = () => UcpdTaskDisabled()
             });
 
@@ -839,8 +845,30 @@ namespace CpqSystemTool
         // ---- UCPD 计划任务状态（schtasks /query 含 "Disabled" 即本优化已启用）----
         private static bool UcpdTaskDisabled()
         {
-            var outp = Exec.RunCmdGet(new[] { "schtasks", "/query", "/tn", UCPD_TASK }, _ => { });
+            // 任务路径两种写法都试：规范形式带前导反斜杠（\Microsoft\Windows\...），
+            // 部分 Windows 版本/本地化环境下仅其中一种能被 schtasks 接受；查询有输出即以它为准。
+            string outp = "";
+            foreach (var path in new[] { "\\" + UCPD_TASK, UCPD_TASK })
+            {
+                outp = Exec.RunCmdGet(new[] { "schtasks", "/query", "/tn", path }, _ => { });
+                if (!string.IsNullOrWhiteSpace(outp)) break;
+            }
             return outp.IndexOf("Disabled", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>对 UCPD 计划任务执行 schtasks /change /disable|/enable。
+        /// 任务路径前导反斜杠的接受度随 Windows 版本/语言而异，故两种写法依次尝试（以退出码判定），
+        /// 任一成功即返回；全部失败时如实记录最后退出码，由调用方的状态校验（UcpdTaskDisabled）反映真实结果。</summary>
+        private static void RunSchtasksOnUcpdTask(string verb, Action<string> log)
+        {
+            int last = -1;
+            foreach (var path in new[] { "\\" + UCPD_TASK, UCPD_TASK })
+            {
+                last = RegistryHelper.RunCommand("schtasks", "/change /" + verb + " /tn \"" + path + "\"", log);
+                if (last == 0) return;
+            }
+            log("  [!] schtasks /" + verb + " 未能修改该计划任务（最后退出码 " + last
+                + "）：任务可能不存在或已被系统更新改名，该项将显示为未生效");
         }
 
         // ---- MMAgent 属性查询（(Get-MMAgent).Xxx 返回 True/False）----

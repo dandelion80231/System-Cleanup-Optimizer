@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -255,8 +255,9 @@ namespace CpqSystemTool
             string rawExt = System.IO.Path.GetExtension(downloadUrl)?.ToLowerInvariant();
             string ext = (rawExt == ".exe" || rawExt == ".msi" || rawExt == ".zip") ? rawExt : ".exe";
             string dest = Path.Combine(GetTempDir(), SanitizeSwId(Id) + "_setup" + ext);
-            if (!await DownloadAsync(downloadUrl, dest, log, DownloadTimeout, sha256)) return false;
-            if (!VerifyIntegrity(dest, log)) return false;   // 下载文件完整性/签名校验
+            if (!await DownloadAsync(downloadUrl, dest, log, DownloadTimeout, sha256)) { CleanupTemp(); return false; }
+            // 完整性/签名校验失败同样清理临时目录：原先直接 return 会把可能数百 MB 的安装包留在 %TEMP%
+            if (!VerifyIntegrity(dest, log)) { CleanupTemp(); return false; }   // 下载文件完整性/签名校验
             string runPath = dest;
             bool extracted = false;
             if (dest.ToLowerInvariant().EndsWith(".zip"))
@@ -478,7 +479,14 @@ namespace CpqSystemTool
                     using (var p = Process.Start(psi))
                     {
                         if (p == null) { log("  [!] 无法启动卸载程序" + (elevate ? "(提权)" : "")); return -1; }
-                        if (!p.WaitForExit(UNINSTALL_TIMEOUT_MS)) { try { p.Kill(); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx); } return -2; }
+                        if (!p.WaitForExit(UNINSTALL_TIMEOUT_MS))
+                        {
+                            // UseShellExecute=true（runas）启动的进程在个别情形下 Kill(true) 会抛，
+                            // 故失败时回退单进程 Kill，保证「超时必杀」不因换用进程树 API 而失效。
+                            try { p.Kill(true); }
+                            catch (Exception kEx) { DebugLog.Ignore(kEx); try { p.Kill(); } catch (Exception kEx2) { DebugLog.Ignore(kEx2); } }
+                            return -2;
+                        }
                         return p.ExitCode;
                     }
                 }
@@ -935,14 +943,24 @@ namespace CpqSystemTool
                     waited += pollMs;
                     if (waited >= timeoutMs)
                     {
-                        try { p.Kill(); } catch (Exception ex) { DebugLog.Ignore(ex); }
-                        log("   [!] 安装超时（>" + (timeoutMs / 1000) + " 秒），已强制终止。");
+                        // 进程树终止（Kill(true)）：安装器常派生真实安装子进程，只杀直接子进程会留下
+                        // 仍在后台继续静默安装的孤儿进程（与 RunProbeProcess 的 Q28 同口径）。
+                        try { p.Kill(true); } catch (Exception ex) { DebugLog.Ignore(ex); }
+                        log("   [!] 安装超时（>" + (timeoutMs / 1000) + " 秒），已强制终止（含子进程树）。");
                         return false;
                     }
                     if (waited % 10000 == 0)
                         log("   [i] 安装进行中…（已 " + (waited / 1000) + " 秒）");
                 }
                 if (p.ExitCode == 0) { log("   [OK] 安装完成。"); return true; }
+                // 3010=ERROR_SUCCESS_REBOOT_REQUIRED / 1641=ERROR_SUCCESS_REBOOT_INITIATED：
+                // 标准「安装已成功但需重启」，属成功类退出码。原先一律按失败返回 false，会让
+                // 安装成功的 MSI/EXE（如需要重启的 VC++ 运行库、驱动组件）被 UI 报成「安装失败」。
+                if (p.ExitCode == 3010 || p.ExitCode == 1641)
+                {
+                    log("   [OK] 安装程序返回 " + p.ExitCode + "（安装已成功完成，需重启系统收尾）。");
+                    return true;
+                }
                 log("   [!] 安装程序返回非零退出码: " + p.ExitCode);
                 return false;
             }

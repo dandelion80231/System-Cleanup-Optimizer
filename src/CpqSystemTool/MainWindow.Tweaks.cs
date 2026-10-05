@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -656,6 +656,10 @@ namespace CpqSystemTool
                 }
 
                 SyncAllTweakColors();
+                // 导入结果是「待应用」的用户意图，必须全部标记 Touched：否则切页再进来命中页面缓存时
+                // reloadTweaksStates 会用系统实际状态覆盖掉导入的勾选（用户以为导入没生效）。
+                if (TweaksTouched != null)
+                    foreach (var id in TweaksCheckBoxes.Keys) TweaksTouched.Add(id);
                 UpdateSelectedPanel();
                 System.Windows.MessageBox.Show(this, "已导入配置\n点「开始优化」应用", "成功", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
             }
