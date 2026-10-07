@@ -48,7 +48,9 @@ namespace CpqSystemTool
                     else
                     {
                         // /ResetBase 不可逆：失败必须如实上报，不得置 didWork 让末行报「[OK] 额外清理完成」
-                        log("  [FAIL] DISM 退出码 " + rcDism + "（多为权限不足/需管理员），/ResetBase 未完成");
+                        // 主程序 manifest=requireAdministrator（见 app.manifest），必然以管理员运行，
+                        // 故失败归因不是「权限不足/需管理员」，而是组件存储异常：引导查 DISM.log 而非提权。
+                        log("  [FAIL] DISM 退出码 " + rcDism + "（程序已以管理员运行，失败多为组件存储异常；详见 DISM 日志 %WINDIR%\\Logs\\DISM\\dism.log），/ResetBase 未完成");
                     }
                     continue;
                 }
