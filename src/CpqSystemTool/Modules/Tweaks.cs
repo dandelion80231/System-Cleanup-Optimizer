@@ -842,18 +842,16 @@ namespace CpqSystemTool
             return data != null && data.Length > 8 && (data[8] & 0x08) != 0;
         }
 
-        // ---- UCPD 计划任务状态（schtasks /query 含 "Disabled" 即本优化已启用）----
+        // ---- UCPD 计划任务状态（任务 State=Disabled 即本优化已启用）----
         private static bool UcpdTaskDisabled()
         {
-            // 任务路径两种写法都试：规范形式带前导反斜杠（\Microsoft\Windows\...），
-            // 部分 Windows 版本/本地化环境下仅其中一种能被 schtasks 接受；查询有输出即以它为准。
-            string outp = "";
-            foreach (var path in new[] { "\\" + UCPD_TASK, UCPD_TASK })
-            {
-                outp = Exec.RunCmdGet(new[] { "schtasks", "/query", "/tn", path }, _ => { });
-                if (!string.IsNullOrWhiteSpace(outp)) break;
-            }
-            return outp.IndexOf("Disabled", StringComparison.OrdinalIgnoreCase) >= 0;
+            // 修复（locale 依赖漏判）：原实现匹配 schtasks 英文输出 "Disabled"——中文系统状态列显示「已禁用」，
+            // IndexOf 永不命中 → 已禁用任务被读成「未禁用」，优化项勾选框状态失真（Apply 本身不受影响）。
+            // 现改用 Get-ScheduledTask 的 .State（枚举名，locale 无关）；任务不存在/查询失败返回 false（未禁用）。
+            string outp = Exec.RunPowerShellGet(
+                "Get-ScheduledTask -TaskName '" + UCPD_TASK + "' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State",
+                _ => { });
+            return !string.IsNullOrWhiteSpace(outp) && outp.Trim() == "Disabled";
         }
 
         /// <summary>对 UCPD 计划任务执行 schtasks /change /disable|/enable。
