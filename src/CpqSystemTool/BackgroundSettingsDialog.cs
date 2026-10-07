@@ -1688,12 +1688,14 @@ namespace CpqSystemTool
             BackgroundSettings.RgbToCmyk(c.R, c.G, c.B, out double cK, out double mK, out double yK, out double kK);
             SetFmt(_rowCmyk, $"{cK * 100:F1}%, {mK * 100:F1}%, {yK * 100:F1}%, {kK * 100:F1}%");
 
-            var bgColor = _settings.Mode == BackgroundMode.Solid
-                ? c
-                : BackgroundSettings.ParseColor(_settings.SolidColor);
-            double ratio = ContrastRatio(c, bgColor);
+            // 修复（对比目标误导）：旧实现非纯色模式拿 SolidColor 当对比目标、纯色模式拿「自身」（恒 1.00:1「不及格」），
+            // 且渐变/网格模式下 SolidColor 根本不参与渲染，作为对比目标无意义（默认态首停靠点=SolidColor=#16E0BD 时全撞 1.00:1）。
+            // 现统一对比【主题主文字色】：语义 = 这个颜色作为窗口背景/该色区时，窗口主文字是否可读——
+            // 5 种模式都成立，且永不出现「自己比自己」。
+            var textOnBg = _owner._textMain != null ? _owner._textMain.Color : Colors.White;
+            double ratio = ContrastRatio(c, textOnBg);
             string verdict = ratio >= 7.0 ? "AAA 级（极佳）" : ratio >= 4.5 ? "AA 级（合格）" : ratio >= 3.0 ? "A 级（可接受）" : "不及格（文字可能难读）";
-            _contrastText.Text = $"对比度 {ratio:F2}:1 — {verdict}";
+            _contrastText.Text = $"对比度（对主文字）{ratio:F2}:1 — {verdict}";
             // 性能优化：低对比度提示色是常量，原来每次 UpdateColor（拖拽时每帧）都 new 一支笔刷。
             _contrastText.Foreground = ratio >= 4.5 ? _owner._successGreen ?? _owner._textDim : LowContrastBrush;
 
