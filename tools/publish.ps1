@@ -64,18 +64,20 @@ if (-not $Folder) {
     $pubArgs += "-p:PublishSingleFile=true"
     $pubArgs += "-p:IncludeNativeLibrariesForSelfExtract=true"
 }
-# 解析 dotnet 可执行文件：优先 PATH（.NET SDK 10 已装到 %LOCALAPPDATA%\Microsoft\dotnet，
-# 非提升进程可能没把该目录放进 PATH）；找不到再回退常见安装位置。
-$dotnet = (Get-Command dotnet -ErrorAction SilentlyContinue).Source
-if (-not $dotnet) {
-    foreach ($cand in @(
-        "$env:LOCALAPPDATA\Microsoft\dotnet\dotnet.exe",
-        "C:\Program Files\dotnet\dotnet.exe",
-        "C:\Program Files (x86)\dotnet\dotnet.exe"
-    )) {
-        if (Test-Path $cand) { $dotnet = $cand; break }
-    }
+# 解析 dotnet 可执行文件：优先 PATH；找不到按顺序回退——
+# ① 本项目专用便携 SDK（D:\cpq-builds\dotnet-sdk-10.0.300，C:\Program Files\dotnet\sdk 为空、
+#    非提升进程 PATH 无 dotnet 时的实际可用 SDK）；② 系统/便携常见安装位。
+# 优先用本项目专用便携 SDK（C:\Program Files\dotnet\sdk 为空，系统 dotnet 报「No .NET SDKs」）；
+# 仅当它不存在时才回退 PATH/常见位。
+$dotnet = $null
+foreach ($cand in @(
+    "D:\cpq-builds\dotnet-sdk-10.0.300\dotnet.exe",
+    "$env:LOCALAPPDATA\Microsoft\dotnet\dotnet.exe"
+)) {
+    if (Test-Path $cand) { $dotnet = $cand; break }
 }
+if (-not $dotnet) { $dotnet = (Get-Command dotnet -ErrorAction SilentlyContinue).Source }
+if (-not $dotnet) { $dotnet = "C:\Program Files\dotnet\dotnet.exe" }
 if (-not $dotnet) {
     Write-Error "dotnet not found on PATH or common install locations"
     exit 1

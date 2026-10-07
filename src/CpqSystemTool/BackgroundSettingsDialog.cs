@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -512,11 +512,15 @@ namespace CpqSystemTool
             };
             imgResetBtn.Click += (s, e) =>
             {
+                // 修复（行为与文案不符，与 Config 页同名按钮对齐）：原实现只清图路径+不透明度，
+                // 不清 Mode。弹窗在 Image 模式下显示此按钮（仅 Image 卡片可见），但用户可能刚切过
+                // Solid/Mesh 再切回 Image；为语义一致，这里也显式把 Mode 复位为 Image。
+                _settings.Mode = BackgroundMode.Image;
                 _settings.DarkPath = "";
                 _settings.LightPath = "";
-                _settings.DarkOpacity = 0.55;
+                _settings.DarkOpacity = 0.85;   // 与 BackgroundSettings 默认值对齐（原 0.55 已随默认上移）
                 _settings.LightOpacity = 1.0;
-                if (_darkOpacitySlider != null) { _darkOpacitySlider.Value = 0.55; _darkOpacityVal.Text = "55%"; }
+                if (_darkOpacitySlider != null) { _darkOpacitySlider.Value = 0.85; _darkOpacityVal.Text = "85%"; }
                 if (_lightOpacitySlider != null) { _lightOpacitySlider.Value = 1.0; _lightOpacityVal.Text = "100%"; }
                 // 修复：恢复默认背景也是一次真实编辑，原先未置位导致「应用→恢复默认→×关闭」时改动被回滚吞掉
                 _hasEditedAfterShow = true;
@@ -2977,7 +2981,14 @@ namespace CpqSystemTool
                 RefreshBlobList();
                 RefreshPreview();
                 UpdateEditLabel();
-                if (_cssStatus != null) _cssStatus.Text = "已导入 " + blobs.Count + " 个光斑。";
+                // 修复（导入提示）：CSS 格式本身不携带半径。本工具导出的 CSS 带 /* r:<v> */ 注释
+                // 可无损往返；外部 CSS（gradients.app 等）无注释，半径按 0.5 还原——给用户一条
+                // 明确提示，避免「导入后光斑尺寸莫名变了」的困惑。
+                bool hasRadiusHint = Regex.IsMatch(css, @"/\*\s*r:[\d.]+\s*\*/", RegexOptions.IgnoreCase);
+                if (_cssStatus != null)
+                    _cssStatus.Text = hasRadiusHint
+                        ? "已导入 " + blobs.Count + " 个光斑（半径来自本工具注释，无损往返）。"
+                        : "已导入 " + blobs.Count + " 个光斑（外部 CSS 不含半径信息，已按默认 0.5 还原尺寸）。";
             }
             catch (Exception ex)
             {

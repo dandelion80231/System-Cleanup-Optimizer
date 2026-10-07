@@ -1,4 +1,4 @@
-﻿<Window x:Class="CpqSystemTool.MainWindow"
+<Window x:Class="CpqSystemTool.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
@@ -141,7 +141,9 @@
              Stretch=Fill：忽略原图比例彻底铺满窗口（最大化时无死角）
              原 UniformToFill 在超宽屏可能露出边缘透明像素 -->
         <Image x:Name="BgImage" Grid.ColumnSpan="2" Stretch="Fill" IsHitTestVisible="False"/>
-        <!-- Mesh 光斑层（跨两列；由 ApplyShellColors 在 Mesh 模式下填充,Sidebar 会盖住 col 0 区域） -->
+        <!-- Mesh 光斑层（跨两列；由 ApplyShellColors 在 Mesh 模式下填充，Sidebar 会盖住 col 0 区域。
+             已知行为：mesh 光斑按整窗尺寸渲染，左列（侧边栏区域）被 Sidebar 遮挡；弹窗预览画完整 canvas，
+             故主窗口「所见」为右半部分 mesh——侧栏宽度可拖（180~420），遮挡范围随宽度变化，属有意简化。 -->
         <Canvas x:Name="BgBlobs" Grid.ColumnSpan="2" IsHitTestVisible="False" Background="Transparent"/>
         <!-- 侧边栏 -->
         <Border Grid.Column="0" x:Name="Sidebar" Background="#10151C" BorderBrush="#1E2630" BorderThickness="0,0,1,0"/>

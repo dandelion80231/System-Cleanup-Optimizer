@@ -339,16 +339,20 @@ namespace CpqSystemTool
             DockPanel.SetDock(titleLeft, Dock.Left);
             titleRow.Children.Add(titleLeft);
             // 恢复默认背景按钮（右上角）
+            // 修复（行为与文案不符）：原实现只清 DarkPath/LightPath + 改不透明度，【不清 Mode】——
+            // 若当前是 Solid/Linear/Radial/Mesh，点「恢复默认背景」后仍停在非图模式，用户以为恢复成图实际没变。
+            // 现同时把 Mode 复位为 Image（= 内置背景图），与按钮文案「恢复默认背景」一致。
             var resetBgBtn = Btn("🔄 恢复默认背景", false, () =>
             {
+                _backgroundSettings.Mode = BackgroundMode.Image;
                 _backgroundSettings.DarkPath = "";
                 _backgroundSettings.LightPath = "";
-                _backgroundSettings.DarkOpacity = 0.55;
+                _backgroundSettings.DarkOpacity = 0.85;   // 与 BackgroundSettings 默认值对齐（原硬编码 0.55 已随默认值上移而过时）
                 _backgroundSettings.LightOpacity = 1.0;
-                darkOpSlider.Value = 0.55;
+                darkOpSlider.Value = 0.85;
                 lightOpSlider.Value = 1.0;
                 SaveBackgroundSettings();
-                log.AppendText("[OK] 已恢复为内置默认背景\r\n");
+                log.AppendText("[OK] 已恢复为内置默认背景（图片模式）\r\n");
                 refreshThumbs();
                 ApplyShellColors();
                 InvalidateConfigCache(); // 背景设置已变化 → 失效缓存

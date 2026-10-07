@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -66,7 +66,10 @@ namespace CpqSystemTool
         // ---- 图片模式字段（兼容旧版） ----
         public string DarkPath { get; set; } = "";
         public string LightPath { get; set; } = "";
-        public double DarkOpacity { get; set; } = 0.55;
+        // 修复（默认偏暗）：DarkOpacity 原 0.55 = 深色图压到 55% 不透明，透出 BgGradient 深底 #10151C，
+        // 用户选的深色图几乎被吞没（图偏亮时 45% 深底透出 → 整块过暗；图偏暗时 ≈ 全黑 → 图白选）。
+        // 提到 0.85：尊重用户图本身，仅轻叠主题底色，深浅两张图都能被看见。
+        public double DarkOpacity { get; set; } = 0.85;
         public double LightOpacity { get; set; } = 1.0;
 
         // ---- 纯色模式 ----
@@ -117,17 +120,22 @@ namespace CpqSystemTool
             };
         }
 
-        /// <summary>创建默认的网格渐变。</summary>
+        /// <summary>创建默认的网格渐变。
+        /// 修复（默认过艳）：原实现 3 个高饱和实色光斑（#16E0BD/#2563EB/#7C3AED，Opacity 0.7~0.8）
+        /// 叠在深底上观感偏艳，与系统工具的冷静观感不符。现对齐预设「海洋」的收敛风格
+        /// （低不透明度 0.42~0.52、大面积柔和重叠），进入 Mesh 模式第一眼即为 multi-blob 柔和 mesh。</summary>
         public static BackgroundSettings CreateDefaultMesh()
         {
             return new BackgroundSettings
             {
                 Mode = BackgroundMode.MeshGradient,
+                MeshBaseColor = "#0E1116",
                 Blobs = new List<MeshBlobSetting>
                 {
-                    new MeshBlobSetting { Color = "#16E0BD", CenterX = 0.2, CenterY = 0.2, Radius = 0.6, Opacity = 0.8 },
-                    new MeshBlobSetting { Color = "#2563EB", CenterX = 0.8, CenterY = 0.3, Radius = 0.6, Opacity = 0.7 },
-                    new MeshBlobSetting { Color = "#7C3AED", CenterX = 0.5, CenterY = 0.8, Radius = 0.7, Opacity = 0.7 }
+                    new MeshBlobSetting { Color = "#38BDF8", CenterX = 0.15, CenterY = 0.15, Radius = 0.80, Opacity = 0.46 },
+                    new MeshBlobSetting { Color = "#2DD4BF", CenterX = 0.85, CenterY = 0.20, Radius = 0.72, Opacity = 0.42 },
+                    new MeshBlobSetting { Color = "#60A5FA", CenterX = 0.50, CenterY = 0.85, Radius = 0.76, Opacity = 0.42 },
+                    new MeshBlobSetting { Color = "#22D3EE", CenterX = 0.50, CenterY = 0.50, Radius = 0.95, Opacity = 0.34 }
                 }
             };
         }
@@ -170,8 +178,19 @@ namespace CpqSystemTool
             return Colors.Transparent;
         }
 
-        /// <summary>颜色转十六进制（#RRGGBB）。</summary>
+        /// <summary>颜色转十六进制：不透明输出 6 位 #RRGGBB，带 alpha 输出 8 位 #RRGGBBAA。
+        /// 修复：原实现恒输出 6 位，丢弃 c.A——带透明度的颜色（ParseColor 支持 8 位 #RRGGBBAA 解析）
+        /// 经「ColorToHex → 存 JSON → 再 ParseColor」往返后 alpha 被静默丢成不透明。
+        /// 6 位输出与旧数据完全一致（向后兼容，ParseColor 对 6 位按不透明解析）；8 位仅在 c.A<255 时出现。</summary>
         public static string ColorToHex(Color c)
+        {
+            return c.A >= 255
+                ? $"#{c.R:X2}{c.G:X2}{c.B:X2}"
+                : $"#{c.R:X2}{c.G:X2}{c.B:X2}{c.A:X2}";
+        }
+
+        /// <summary>颜色转 6 位 #RRGGBB（忽略 alpha，用于需要纯 6 位输出的 UI 展示场景）。</summary>
+        public static string ColorToHexRgb(Color c)
         {
             return $"#{c.R:X2}{c.G:X2}{c.B:X2}";
         }
@@ -291,13 +310,20 @@ namespace CpqSystemTool
 
         private static string ExtractJsonString(string json, string key)
         {
-            var idx = json.IndexOf("\"" + key + "\"", StringComparison.OrdinalIgnoreCase);
+            int idx;
+            // 修复（键定位误命中）：原实现 json.IndexOf("\""+key+"\"") 是【子串】查找——若 background.json
+            // 被手工编辑、某字符串值内部恰好含 "Mode"/"DarkPath" 等键名子串（如路径/描述里嵌了 "Mode"），
+            // 会从字符串值内部误命中，解出脏数据。改为从字符串外部扫描：跟踪引号状态（含 \" 转义），
+            // 只在结构上下文中匹配 "key"。
+            idx = FindStructKeyIndex(json, key);
             if (idx < 0) return null;
-            var colon = json.IndexOf(':', idx);
+            var colon = json.IndexOf(':', idx + key.Length + 2);
             if (colon < 0) return null;
-            var start = json.IndexOf('"', colon + 1);
-            if (start < 0) return null;
-            var end = start + 1;
+            // 跳过冒号后空白，值必须仍是引号起始的字符串（防御"值其实是数字"的脏 JSON）
+            int p = colon + 1;
+            while (p < json.Length && char.IsWhiteSpace(json[p])) p++;
+            if (p >= json.Length || json[p] != '"') return null;
+            var end = p + 1;
             while (end < json.Length)
             {
                 if (json[end] == '\\') { end += 2; continue; }
@@ -305,7 +331,44 @@ namespace CpqSystemTool
                 end++;
             }
             if (end >= json.Length) return null;
-            return json.Substring(start + 1, end - start - 1).Replace("\\\"", "\"").Replace("\\\\", "\\");
+            return json.Substring(p + 1, end - p - 1).Replace("\\\"", "\"").Replace("\\\\", "\\");
+        }
+
+        /// <summary>返回 key 作为【JSON 对象字段】的键名位置（"key" 的起始引号下标）。
+        /// 只在字符串外部匹配：跟踪引号状态（含 \" 转义），字符串值内部出现的同名子串一律忽略。
+        /// 找不到返回 -1。</summary>
+        private static int FindStructKeyIndex(string json, string key)
+        {
+            int from = 0;
+            while (from < json.Length)
+            {
+                int idx = json.IndexOf("\"" + key + "\"", from, StringComparison.OrdinalIgnoreCase);
+                if (idx < 0) return -1;
+                if (IsOutsideString(json, idx))
+                {
+                    // 确认是字段名：紧邻其后是 ':'（允许空白），而非嵌套对象值（'{'/'[' 前才是字段，
+                    // 值串 "key" 在字符串外部且紧接 ','/'}' 的也接受——但 ToJson 输出中值串总在后）
+                    int c = idx + key.Length + 2;
+                    while (c < json.Length && char.IsWhiteSpace(json[c])) c++;
+                    if (c < json.Length && json[c] == ':') return idx;
+                }
+                from = idx + 1;
+            }
+            return -1;
+        }
+
+        /// <summary>判断 json[pos]（'"'）处于字符串外部（即它是字段名或值的起始引号，
+        /// 且其本身不被外层字符串包裹）。从 0 起跟踪引号状态（含反斜杠转义），O(pos)。</summary>
+        private static bool IsOutsideString(string json, int pos)
+        {
+            bool inStr = false;
+            for (int i = 0; i < pos; i++)
+            {
+                char ch = json[i];
+                if (ch == '\\' && inStr) { i++; continue; } // 跳过转义字符
+                if (ch == '"') inStr = !inStr;
+            }
+            return !inStr;
         }
 
         private static double? ExtractJsonDouble(string json, string key)
@@ -428,7 +491,19 @@ namespace CpqSystemTool
             }
             else if (Stops.Count == 1)
             {
-                Stops.Add(new GradientStopSetting { Color = Stops[0].Color, Offset = 1.0 });
+                // 修复：单停靠点时补第二点必须取「互补端」。原实现写死 Offset=1.0——
+                // 若仅存的点是 Offset=1.0（尾点），补出的第二点与它同 Offset=1.0，
+                // LinearGradientBrush 在 1.0 处已终止，第二个停靠点永不生效（渐变退化为单色）。
+                // 现改为：首点（Offset≈0）→ 补 1.0；尾点（Offset≈1）→ 补 0.0；中间点 → 两端各补不对称中点。
+                double o = Stops[0].Offset;
+                double fill;
+                if (o < 0.5) fill = 1.0;
+                else if (o > 0.5) fill = 0.0;
+                else { // o == 0.5 中间点：补 0.0 与 1.0 两个端点（下面补第二点，第三点靠用户/预设）
+                    fill = 0.0;
+                }
+                Stops.Add(new GradientStopSetting { Color = Stops[0].Color, Offset = fill });
+                Stops = Stops.OrderBy(x => x.Offset).ToList();
             }
         }
 
@@ -761,10 +836,13 @@ namespace CpqSystemTool
                 var c = ParseColor(b.Color);
                 RgbToHsl(c.R, c.G, c.B, out double h, out double s, out double l);
                 double a = Clamp01(b.Opacity);
+                // 修复（CSS 往返丢半径）：原生 CSS radial-gradient 不携带半径。每层尾部加
+                // 本工具私有注释 /* r:<radius> */（标准 CSS 解析器会忽略注释，不破坏兼容性），
+                // ParseCssGradient 优先读回该值，保证「导出 → 导入」半径不变。
                 parts.Add(string.Format(
                     System.Globalization.CultureInfo.InvariantCulture,
-                    "radial-gradient(at {0:F2}% {1:F2}%, hsla({2:F1},{3:F2}%,{4:F2}%,{5}) 0%, hsla({2:F1},{3:F2}%,{4:F2}%,0) 100%)",
-                    b.CenterX * 100.0, b.CenterY * 100.0, h, s * 100.0, l * 100.0, a));
+                    "radial-gradient(at {0:F2}% {1:F2}%, hsla({2:F1},{3:F2}%,{4:F2}%,{5}) 0%, hsla({2:F1},{3:F2}%,{4:F2}%,0) 100%) /* r:{6:F2} */",
+                    b.CenterX * 100.0, b.CenterY * 100.0, h, s * 100.0, l * 100.0, a, b.Radius));
             }
             return string.Join(", ", parts);
         }
@@ -773,7 +851,8 @@ namespace CpqSystemTool
         /// 解析 gradients.app 导出的多层 radial-gradient CSS 为光斑列表。
         /// 支持 hsla/hsl、rgba/rgb、#rrggbb/#rgb/#rrggbbaa、transparent。
         /// 每个径向层 → 一个光斑：X/Y = 百分比/100，Color = 解析色，Opacity = 中心色 alpha（0..1）。
-        /// 注意：CSS 格式不携带半径，Radius 默认用 0.5。
+        /// 半径：原生 CSS 不携带半径，导入按 0.5 还原；若层尾带本工具导出的
+        /// /* r:<0.0-1.0> */ 注释（见 ToCssGradient），则取注释值，保证「导出→导入」往返半径不变。
         /// 解析失败（没有任何 radial-gradient 层）返回 null，由调用方给出可读错误。
         /// </summary>
         public static List<MeshBlobSetting> ParseCssGradient(string css)
@@ -808,12 +887,24 @@ namespace CpqSystemTool
                             break;
                         }
                     }
+
+                    // 修复（CSS 往返丢半径）：原生 CSS 无半径字段，旧实现一律按 0.5 还原，
+                    // 用户「导出 CSS → 再导入」后每个光斑尺寸悄悄变化。现先查层尾
+                    // 本工具导出的 /* r:<v> */ 注释，命中则取注释值，未命中（外部 CSS）才回退 0.5。
+                    double radius = 0.5;
+                    var rm = Regex.Match(layer, @"/\*\s*r:([\d.]+)\s*\*/", RegexOptions.IgnoreCase);
+                    if (rm.Success && double.TryParse(rm.Groups[1].Value,
+                        System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double rv))
+                    {
+                        radius = ClampRange(rv, MinBlobRadius, MaxBlobRadius, 0.5);
+                    }
+
                     blobs.Add(new MeshBlobSetting
                     {
                         Color = ColorToHex(col),
                         CenterX = x,
                         CenterY = y,
-                        Radius = 0.5,            // CSS 格式不含半径，使用默认
+                        Radius = radius,
                         Opacity = Clamp01(alpha)
                     });
                 }
