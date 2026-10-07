@@ -186,8 +186,12 @@ namespace CpqSystemTool
                 {
                     int totalFail = cardBatchFail + cardProvFail;
                     if (totalFail == 0) return "卸载完成";
-                    // 修复（文案自相矛盾）：「卸载完成（N/M 失败）」同句既说完成又说失败 → 中性措辞「结束 + 成败计数」
-                    return "批量卸载结束：成功 " + Math.Max(0, selected.Count - cardBatchFail) + "、失败 " + totalFail + "（详见日志）";
+                    // 修复（分母不自洽）：同一次批量里 Uninstall(已安装) 与 UninstallProvisioned(预装) 会对
+                    // **同一批 selected** 各跑一遍，两者失败数相加可超过 selected.Count，
+                    // 故不再用「成功 selected.Count - cardBatchFail、失败 totalFail」这种不自洽口径
+                    // （会出现「成功+失败 ≠ 总项数」且「失败 > 总项数」）。改为分通道只报失败数 + 总项数。
+                    return "批量卸载结束：已安装失败 " + cardBatchFail + "、预装失败 " + cardProvFail
+                        + "（共 " + selected.Count + " 项，详见日志）";
                 },
                     () => { OperationLock.Exit(); _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; LoadAndRender(rbCurrent.IsChecked == true, cardsPanel, countLbl, searchBox.Text, log, UpdateAppxSelCount); },
                     "正在卸载 " + selected.Count + " 项" + (alsoProvisioned ? "（含预装）" : "") + "…");
@@ -750,7 +754,14 @@ namespace CpqSystemTool
                 // 动态 done：按真实失败数报告（原来无论成败都显示「卸载完成」）
                 int rawBatchFail = 0;
                 RunInBgWithStatus(log, l => { rawBatchFail = AppxManager.Uninstall(sel, l); },
-                    () => rawBatchFail == 0 ? "卸载完成" : "卸载完成（" + rawBatchFail + "/" + sel.Count + " 失败，详见日志）",
+                    () =>
+                    {
+                        if (rawBatchFail == 0) return "卸载完成";
+                        // 修复（同类漏改）：原「卸载完成（N/M 失败，详见日志）」同句既说完成又说失败，
+                        // 与 ④/card 批量已修的口径不一致 → 统一为中性措辞「结束 + 成败计数」。
+                        // 此处 sel 只被 Uninstall 处理一遍，分母自洽（成功+失败 = sel.Count）。
+                        return "卸载结束：成功 " + (sel.Count - rawBatchFail) + "、失败 " + rawBatchFail + "（详见日志）";
+                    },
                     () => { OperationLock.Exit(); _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; RefreshList(true); },
                     "正在卸载 " + sel.Count + " 个已选包…");
             }, 110);
