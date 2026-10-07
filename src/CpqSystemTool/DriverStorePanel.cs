@@ -695,9 +695,12 @@ namespace CpqSystemTool
                     foreach (var d in targets) if (!DriverStore.InstallDriver(d.OemName, logf)) instFail++;
                 }
                 finally { OperationLock.Exit(); }
-            }, () => instFail == 0
-                    ? "驱动安装完成"
-                    : "驱动安装完成（" + instFail + "/" + targets.Count + " 个失败，详见日志）",
+            }, () =>
+            {
+                if (instFail == 0) return "驱动安装完成";
+                // 修复（文案自相矛盾）：「驱动安装完成（N/M 个失败）」同句既说完成又说失败 → 中性措辞「结束 + 成败计数」
+                return "驱动安装结束：成功 " + (targets.Count - instFail) + "、失败 " + instFail + "（详见日志）";
+            },
                 "正在安装 " + targets.Count + " 个驱动…", unbusy);
         }
 
