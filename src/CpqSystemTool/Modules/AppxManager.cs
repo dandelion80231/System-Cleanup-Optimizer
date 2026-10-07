@@ -854,14 +854,27 @@ namespace CpqSystemTool
         }
 
         // Issue 4: 卸载预装应用（DISM Remove-ProvisionedAppxPackage）
-        public static void UninstallProvisioned(List<string> packageNames, Action<string> log)
+        // 返回值 = 失败数（0 = 全部成功）。修复（预装路径假成功）：原实现 void 且不读 DISM 退出码，
+        // 预装移除真失败时调用方（单包/批量 done）仍报「卸载完成」。现逐项判退出码并如实记 [FAIL]。
+        public static int UninstallProvisioned(List<string> packageNames, Action<string> log)
         {
+            int fail = 0;
             foreach (var pn in packageNames)
             {
                 log("卸载预装: " + pn);
-                Exec.RunCmd(new[] { "DISM.exe", "/Online", "/Remove-ProvisionedAppxPackage", "/PackageName:" + pn }, log);
+                int rc = Exec.RunCmd(new[] { "DISM.exe", "/Online", "/Remove-ProvisionedAppxPackage", "/PackageName:" + pn }, log);
+                if (rc == 0)
+                {
+                    log("  [OK] " + pn + " 预装移除完成");
+                }
+                else
+                {
+                    log("  [FAIL] " + pn + " 预装移除失败，DISM 退出码 " + rc);
+                    fail++;
+                }
             }
-            log("[OK] 系统预装卸载结束");
+            log(fail == 0 ? "[OK] 系统预装卸载结束" : "[!] 系统预装卸载结束，" + fail + " 个失败");
+            return fail;
         }
 
         // 简单 CSV 行解析（值可能含逗号但通常不引号包裹 DisplayName/ PackageName）

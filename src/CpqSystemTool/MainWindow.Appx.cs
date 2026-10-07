@@ -168,7 +168,7 @@ namespace CpqSystemTool
                 // 进行中态统一走 RunInBg 的 progress 参数（P2：ad-hoc SetStatus 并入统一机制；pb 进度条仍在）
                 // ★ 单层 RunInBg：直接跑 Uninstall，不再 ThreadPool.QueueUserWorkItem 嵌套
                 // 动态 done：按真实失败数报告（原来部分/全部失败也统一显示「卸载完成」）
-                int cardBatchFail = 0;
+                int cardBatchFail = 0, cardProvFail = 0;
                 RunInBgWithStatus(log, l =>
                 {
                     cardBatchFail = AppxManager.Uninstall(selected, l);
@@ -177,10 +177,18 @@ namespace CpqSystemTool
                         foreach (var pn in selected)
                         {
                             var fam = AppxManager.Catalog.Find(c => c.PackageFamily == pn);
-                            if (fam != null) AppxManager.UninstallProvisioned(new List<string> { fam.PackageFamily }, s => l(s));
+                            // 修复（预装失败数不计入）：UninstallProvisioned 现返回失败数，批量侧累计，
+                            // done 文案一并计入预装失败（原 void 丢弃 → 预装失败也报「卸载完成」）
+                            if (fam != null) cardProvFail += AppxManager.UninstallProvisioned(new List<string> { fam.PackageFamily }, s => l(s));
                         }
                     }
-                }, () => cardBatchFail == 0 ? "卸载完成" : "卸载完成（" + cardBatchFail + "/" + selected.Count + " 失败，详见日志）",
+                }, () =>
+                {
+                    int totalFail = cardBatchFail + cardProvFail;
+                    if (totalFail == 0) return "卸载完成";
+                    // 修复（文案自相矛盾）：「卸载完成（N/M 失败）」同句既说完成又说失败 → 中性措辞「结束 + 成败计数」
+                    return "批量卸载结束：成功 " + Math.Max(0, selected.Count - cardBatchFail) + "、失败 " + totalFail + "（详见日志）";
+                },
                     () => { OperationLock.Exit(); _appxCache.Invalidate(); _appxRawCache.Invalidate(); pb.Visibility = Visibility.Collapsed; LoadAndRender(rbCurrent.IsChecked == true, cardsPanel, countLbl, searchBox.Text, log, UpdateAppxSelCount); },
                     "正在卸载 " + selected.Count + " 项" + (alsoProvisioned ? "（含预装）" : "") + "…");
             }, 110);
@@ -510,7 +518,9 @@ namespace CpqSystemTool
                 int apxUninstFail = 0;
                 RunInBgWithStatus(log, l =>
                 {
-                    if (isProvisioned) AppxManager.UninstallProvisioned(new System.Collections.Generic.List<string> { uninstallTarget }, l);
+                    // 修复（预装路径假成功）：预装分支现按真实失败数写入 apxUninstFail，
+                    // done 文案（「卸载失败: …（详见日志）」）随之生效；原 void 丢弃 → 恒报「卸载完成」
+                    if (isProvisioned) apxUninstFail = AppxManager.UninstallProvisioned(new System.Collections.Generic.List<string> { uninstallTarget }, l);
                     else apxUninstFail = AppxManager.Uninstall(new System.Collections.Generic.List<string> { uninstallTarget }, l);
                 }, () => apxUninstFail == 0 ? "卸载完成: " + displayName : "卸载失败: " + displayName + "（详见日志）",
                     () => { unbusy2(); refreshThisCard(); }, "正在卸载 " + displayName + "…");
