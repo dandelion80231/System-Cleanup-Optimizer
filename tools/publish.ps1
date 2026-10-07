@@ -1,4 +1,4 @@
-﻿# CpqSystemTool 发布脚本
+# CpqSystemTool 发布脚本
 #
 # 默认行为：产出【单文件 exe】（项目标准分发形态）—— PublishSingleFile=true，框架依赖。
 #   无同级 src/ 文件夹，运行时「导出源码」会提示未找到源码披露包（.NET 单文件固有行为，非 bug）。
@@ -64,7 +64,24 @@ if (-not $Folder) {
     $pubArgs += "-p:PublishSingleFile=true"
     $pubArgs += "-p:IncludeNativeLibrariesForSelfExtract=true"
 }
-& dotnet @pubArgs
+# 解析 dotnet 可执行文件：优先 PATH（.NET SDK 10 已装到 %LOCALAPPDATA%\Microsoft\dotnet，
+# 非提升进程可能没把该目录放进 PATH）；找不到再回退常见安装位置。
+$dotnet = (Get-Command dotnet -ErrorAction SilentlyContinue).Source
+if (-not $dotnet) {
+    foreach ($cand in @(
+        "$env:LOCALAPPDATA\Microsoft\dotnet\dotnet.exe",
+        "C:\Program Files\dotnet\dotnet.exe",
+        "C:\Program Files (x86)\dotnet\dotnet.exe"
+    )) {
+        if (Test-Path $cand) { $dotnet = $cand; break }
+    }
+}
+if (-not $dotnet) {
+    Write-Error "dotnet not found on PATH or common install locations"
+    exit 1
+}
+Write-Host ("Using dotnet: " + $dotnet)
+& $dotnet @pubArgs
 if ($LASTEXITCODE -ne 0) {
     Write-Error "dotnet publish failed (exit $LASTEXITCODE)"
     exit $LASTEXITCODE
