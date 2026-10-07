@@ -73,7 +73,10 @@ namespace CpqSystemTool
         public double LightOpacity { get; set; } = 1.0;
 
         // ---- 纯色模式 ----
-        public string SolidColor { get; set; } = "#10151C";
+        // 修复（默认近纯黑）：原默认 #10151C（≈纯黑）作为「纯色」首进显示不合理——
+        // 用户切到纯色模式第一眼看到整窗近黑。改为与色轮/主题 accent 一致的 #16E0BD，
+        // 纯色模式首进时色轮、HEX、预览三者天然一致（不再失步），观感也明确是有意的配色而非黑屏。
+        public string SolidColor { get; set; } = "#16E0BD";
 
         // ---- 线性/径向渐变 ----
         public double GradientAngle { get; set; } = 45.0;

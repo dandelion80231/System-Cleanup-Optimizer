@@ -904,16 +904,30 @@ namespace CpqSystemTool
                     if (_centerXBox != null) _centerXBox.Text = GetCenterX().ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
                     if (_centerYBox != null) _centerYBox.Text = GetCenterY().ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
                 }
-                // 模式切换后，把当前编辑颜色同步到自动选中的首个停靠点/光斑，让色轮/HEX/RGB 保持一致
-                if (_selectedStop != null)
+                // 修复（色轮/预览失步）：模式切换后必须把色轮同步到【新模式自身的代表色】，
+                // 旧实现只在「有选中停靠点/光斑」时同步——但纯色/图片模式会把 _selectedStop/_selectedBlob
+                // 置空，于是色轮残留上个模式的旧色（如 #16E0BD），预览却用 _settings.SolidColor 渲染，
+                // 出现「色轮显示青色、右边预览却是纯黑」的矛盾。现按新模式分别取代表色：
+                //   纯色 → _settings.SolidColor；渐变 → 选中停靠点（SyncModeUi 已 Ensure+选首）；
+                //   网格 → 选中光斑（同上）；图片 → 不动色轮（图片模式色卡本就隐藏）。
+                if (newMode == BackgroundMode.Solid)
+                {
+                    _currentColor = BackgroundSettings.ParseColor(_settings.SolidColor);
+                    UpdateColor(_currentColor, true);   // 内部写回 SolidColor（同值）并重绘色轮、刷新预览
+                }
+                else if (_selectedStop != null)
                 {
                     _currentColor = BackgroundSettings.ParseColor(_selectedStop.Color);
-                    UpdateColor(_currentColor, true);   // 内部已请求色轮重绘，去掉原重复的 RenderColorWheel()
+                    UpdateColor(_currentColor, true);   // 内部已请求色轮重绘
                 }
                 else if (_selectedBlob != null)
                 {
                     _currentColor = BackgroundSettings.ParseColor(_selectedBlob.Color);
-                    UpdateColor(_currentColor, true);   // 同上
+                    UpdateColor(_currentColor, true);
+                }
+                else if (newMode == BackgroundMode.Image)
+                {
+                    // 图片模式色卡隐藏，无需同步色轮；仅刷新预览（内置背景图 + 双透明度）
                 }
                 RefreshPreview();
             }
