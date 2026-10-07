@@ -46,22 +46,28 @@ namespace CpqSystemTool
         }
 
         /// <summary>读取并解析配置。
-        /// 契约：文件为空/解析不出本工具配置/读取异常 → 返回 null（由调用方判空中止，不应用空配置）。
+        /// 契约：文件为空/非本工具配置/读取异常 → 返回 null（由调用方判空中止，不应用空配置）。
         /// 修复（假成功误清优化项）：原实现失败路径返回 <c>new ToolConfig()</c>（非 null），
         /// 使 MainWindow.Config.cs 导入处的 <c>if (cfg == null)</c> 判空成为死代码——
         /// 导入损坏/空/非本工具的 .json 会照常用「空配置」ApplyConfig，把当前所有已启用的非三态优化项全部关掉，
-        /// 且 parse 为 null 时仍先打假的 [OK]「已读取配置」。现改为 null 契约 + [OK] 仅在解析成功后打印。</summary>
+        /// 且 parse 为 null 时仍先打假的 [OK]「已读取配置」。现改为 null 契约 + [OK] 仅在通过校验后打印。</summary>
         public static ToolConfig Load(string path, Action<string> log)
         {
             try
             {
                 var json = File.ReadAllText(path, Encoding.UTF8);
-                var cfg = MiniJson.ParseToolConfig(json);
-                if (cfg == null)
+                // 关键：ParseToolConfig 【永不返回 null】——空串/外来文件也返回全默认 new ToolConfig()，
+                // 因此「文件是否本工具配置」必须由 Load 自己判：合法导出（MiniJson.Serialize）恒含全部 5 个已知字段。
+                // 要求 ≥2 个已知键同时出现：既挡住空/外来文件，又容忍外来 JSON 恰好含单个同名键（如别的工具的 "Flags"）。
+                int knownKeys = 0;
+                foreach (var k in new[] { "\"EnabledTweaks\"", "\"SelectedAppx\"", "\"SelectedCleanup\"", "\"Flags\"", "\"TweakStates\"" })
+                    if (json != null && json.Contains(k, StringComparison.Ordinal)) knownKeys++;
+                if (knownKeys < 2)
                 {
-                    log("[!] 文件为空或不是本工具的有效配置，未应用: " + path);
+                    log("[!] 文件为空或不是本工具的有效配置，未应用任何优化项: " + path);
                     return null;
                 }
+                var cfg = MiniJson.ParseToolConfig(json);
                 log("[OK] 已读取配置: " + path);
                 return cfg;
             }
