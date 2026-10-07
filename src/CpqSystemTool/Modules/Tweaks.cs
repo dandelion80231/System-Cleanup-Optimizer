@@ -847,9 +847,18 @@ namespace CpqSystemTool
         {
             // 修复（locale 依赖漏判）：原实现匹配 schtasks 英文输出 "Disabled"——中文系统状态列显示「已禁用」，
             // IndexOf 永不命中 → 已禁用任务被读成「未禁用」，优化项勾选框状态失真（Apply 本身不受影响）。
-            // 现改用 Get-ScheduledTask 的 .State（枚举名，locale 无关）；任务不存在/查询失败返回 false（未禁用）。
+            // 修复（TaskName 不认全路径）：Get-ScheduledTask 的 -TaskName 只匹配「任务名」、不认带目录的全路径；
+            // 传 UCPD_TASK 全路径实测返回空 → 判据恒 false（本机 PowerShell 5.1 实测：
+            //   -TaskName 'Microsoft\Windows\AppID\PolicyConverter' → 空；
+            //   -TaskPath '\Microsoft\Windows\AppID\' -TaskName 'PolicyConverter' → Disabled）。
+            // 故按最后一个反斜杠把 UCPD_TASK 拆成 TaskPath/TaskName 两段传参，仍用 .State（枚举名，locale 无关）判定。
+            // 任务不存在/查询失败 → outp 为空 → 返回 false（视为未禁用，保守）。
+            int cut = UCPD_TASK.LastIndexOf('\\');
+            string taskPath = cut > 0 ? "\\" + UCPD_TASK.Substring(0, cut + 1) : "\\";
+            string taskName = cut >= 0 ? UCPD_TASK.Substring(cut + 1) : UCPD_TASK;
             string outp = Exec.RunPowerShellGet(
-                "Get-ScheduledTask -TaskName '" + UCPD_TASK + "' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State",
+                "Get-ScheduledTask -TaskPath '" + taskPath + "' -TaskName '" + taskName
+                    + "' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State",
                 _ => { });
             return !string.IsNullOrWhiteSpace(outp) && outp.Trim() == "Disabled";
         }
