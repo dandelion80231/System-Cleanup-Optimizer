@@ -76,7 +76,12 @@ namespace CpqSystemTool
         // 修复（默认近纯黑）：原默认 #10151C（≈纯黑）作为「纯色」首进显示不合理——
         // 用户切到纯色模式第一眼看到整窗近黑。改为与色轮/主题 accent 一致的 #16E0BD，
         // 纯色模式首进时色轮、HEX、预览三者天然一致（不再失步），观感也明确是有意的配色而非黑屏。
-        public string SolidColor { get; set; } = "#16E0BD";
+        // 出厂默认纯色：亮色青绿（V≈88%），首进纯色模式不再像纯黑（10/7 由近黑的 #10151C 改来）
+        public const string DefaultSolidColor = "#16E0BD";
+        // 10/7 之前的旧出厂默认纯色（V≈11%，近纯黑）。老配置里存的 SolidColor 都是这个值
+        // 而非用户自选色，载入时识别并迁移（见 FromJson）。
+        public const string LegacyDefaultSolidColor = "#10151C";
+        public string SolidColor { get; set; } = DefaultSolidColor;
 
         // ---- 线性/径向渐变 ----
         public double GradientAngle { get; set; } = 45.0;
@@ -275,7 +280,16 @@ namespace CpqSystemTool
                 if (lOp.HasValue) s.LightOpacity = ClampRange(lOp.Value, 0.0, 1.0, s.LightOpacity);
 
                 var solid = ExtractJsonString(json, "SolidColor");
-                if (solid != null) s.SolidColor = solid;
+                if (solid != null)
+                {
+                    // 一次性迁移（旧出厂默认值）：#10151C 是 10/7 前的出厂默认纯色（V≈11%，近纯黑），
+                    // 老配置里存的都是这个值而非用户自选色（用户多次反馈「默认看起来像纯黑」——
+                    // 当时只改了新出厂默认 #16E0BD，没迁旧值，老配置打开纯色模式仍是黑，同一类错）。
+                    // 仅当值恰好等于旧默认时替换为现默认亮色；其它任何值一律不动。
+                    s.SolidColor = solid.Trim().Equals(LegacyDefaultSolidColor, StringComparison.OrdinalIgnoreCase)
+                        ? DefaultSolidColor
+                        : solid;
+                }
 
                 var ga = ExtractJsonDouble(json, "GradientAngle");
                 if (ga.HasValue && double.IsFinite(ga.Value)) s.GradientAngle = ga.Value;
