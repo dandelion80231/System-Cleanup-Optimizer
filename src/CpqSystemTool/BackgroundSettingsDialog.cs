@@ -74,6 +74,11 @@ namespace CpqSystemTool
         private Border _sttCard;
         private WrapPanel _shadesPanel, _tintsPanel, _tonesPanel;
 
+        // 预设色板库卡片（12 套精选配色，点击应用到当前模式；对齐参考站 online-color.com 的调色板库）
+        private Border _paletteCard;
+        // 色轮上和色标记层（和谐规则的小圆点，叠加在轮盘上；对齐参考站色轮上的和色点）
+        private Canvas _harmonyOverlay;
+
         // 当前编辑态
         private GradientStopSetting _selectedStop;
         private MeshBlobSetting _selectedBlob;
@@ -344,6 +349,10 @@ namespace CpqSystemTool
             };
             _wheelOverlay.Children.Add(_wheelIndicator);
             wheelGrid.Children.Add(_wheelOverlay);
+
+            // 和色标记层：和谐规则的小圆点（UpdateHarmonyWheelDots 填充），叠在指示器之上
+            _harmonyOverlay = new Canvas { Width = 180, Height = 180, IsHitTestVisible = false };
+            wheelGrid.Children.Add(_harmonyOverlay);
             leftTop.Children.Add(wheelGrid);
 
             // HEX + RGB
@@ -656,6 +665,9 @@ namespace CpqSystemTool
 
             // 功能2b：色阶生成器（Shades / Tints / Tones），任意非图片模式可见
             BuildShadesTintsTonesCard(editPanel);
+
+            // 功能4：预设色板库（12 套精选配色，点击应用到当前模式；对齐参考站 online-color.com 调色板库）
+            BuildPresetPaletteCard(editPanel);
 
             // 渐变/径向专属：角度/中心/半径
             _geometryCard = new Border
@@ -1316,6 +1328,8 @@ namespace CpqSystemTool
             // 色阶生成器：非图片模式可见
             SetVisibility(_sttCard, showColor);
             if (showColor) UpdateShadesTintsTones();
+            // 预设色板库：非图片模式可见（纯色/线性/径向/网格都可用）
+            SetVisibility(_paletteCard, showColor);
 
             // 刷新列表以反映自动选中的停靠点/光斑高亮
             RefreshStopList();
@@ -2716,6 +2730,41 @@ namespace CpqSystemTool
                 };
                 _harmonySwatches.Children.Add(sw);
             }
+            UpdateHarmonyWheelDots();
+        }
+
+        /// <summary>在色轮上绘制当前和谐规则的和色标记（对齐参考站色轮上的和色点）：
+        /// 除当前色（_wheelIndicator）外，其余和谐色相按当前饱和度半径在同圈上打点。</summary>
+        private void UpdateHarmonyWheelDots()
+        {
+            if (_harmonyOverlay == null || _wheelHost == null) return;
+            _harmonyOverlay.Children.Clear();
+            var palette = BuildHarmonyPalette();
+            if (palette.Count <= 1)
+            {
+                _harmonyOverlay.Visibility = Visibility.Collapsed;
+                return;
+            }
+            var (cx, cy, maxR) = GetWheelGeometry(_wheelHost.Width, _wheelHost.Height);
+            double radius = _currentSat * maxR;
+            for (int i = 1; i < palette.Count; i++)
+            {
+                RgbToHsv(palette[i].R, palette[i].G, palette[i].B, out double h, out double s2, out double v2);
+                double rad = h * Math.PI / 180.0;
+                var dot = new Ellipse
+                {
+                    Width = 8,
+                    Height = 8,
+                    Stroke = Brushes.White,
+                    StrokeThickness = 1.5,
+                    Fill = new SolidColorBrush(Color.FromArgb(0x80, palette[i].R, palette[i].G, palette[i].B)),
+                    IsHitTestVisible = false
+                };
+                Canvas.SetLeft(dot, cx + radius * Math.Cos(rad) - 4);
+                Canvas.SetTop(dot, cy + radius * Math.Sin(rad) - 4);
+                _harmonyOverlay.Children.Add(dot);
+            }
+            _harmonyOverlay.Visibility = _settings.Mode == BackgroundMode.Image ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private void ApplyHarmonyToGradient_Click(object sender, RoutedEventArgs e)
@@ -3167,6 +3216,121 @@ namespace CpqSystemTool
 
             _meshCard.Child = sp;
             parent.Children.Add(_meshCard);
+        }
+
+        // ===================== 功能4：预设色板库（点击应用到当前模式） =====================
+        // 精选配色方案库（对齐参考站 online-color.com 主题调色板 / gradients.app 预设）：
+        // 复用网格预设的 12 套配色（每套 = 底色 + 光斑色），按当前模式应用：
+        //   网格→光斑+底色（复用 ApplyPreset）；纯色→底色；线性/径向→取前 5 色均布停靠点；
+        //   图片→切到线性再应用停靠点。
+        private void BuildPresetPaletteCard(StackPanel parent)
+        {
+            _paletteCard = new Border
+            {
+                Background = _owner._btnSecondaryBg,
+                BorderBrush = _owner._panelBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12),
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            var sp = new StackPanel();
+            sp.Children.Add(new TextBlock
+            {
+                Text = "预设色板（点击应用到当前模式：纯色=底色 / 渐变=均布停靠点 / 网格=光斑）",
+                FontWeight = FontWeights.SemiBold,
+                Foreground = _owner._textMain,
+                Margin = new Thickness(0, 0, 0, 6)
+            });
+            var wrap = new WrapPanel { Orientation = Orientation.Horizontal };
+            foreach (var p in BackgroundSettings.GetMeshPresets())
+            {
+                var preset = p;
+                var btn = new Button
+                {
+                    Height = 30,
+                    Margin = new Thickness(0, 0, 8, 8),
+                    Padding = new Thickness(8, 2, 8, 2),
+                    Background = _owner._btnSecondaryBg,
+                    Foreground = _owner._btnSecondaryFg,
+                    BorderThickness = new Thickness(0),
+                    ToolTip = preset.Name + "（点击应用到当前背景模式）"
+                };
+                var content = new StackPanel { Orientation = Orientation.Horizontal };
+                content.Children.Add(new TextBlock { Text = preset.Name, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center, FontSize = 11 });
+                foreach (var blob in preset.Blobs.Take(4))
+                {
+                    content.Children.Add(new Border
+                    {
+                        Width = 10, Height = 10,
+                        CornerRadius = new CornerRadius(2),
+                        Margin = new Thickness(0, 0, 2, 0),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Background = new SolidColorBrush(BackgroundSettings.ParseColor(blob.Color)),
+                        BorderBrush = _owner._panelBorder,
+                        BorderThickness = new Thickness(1)
+                    });
+                }
+                btn.Content = content;
+                btn.Click += (s, e) => ApplyPaletteToCurrentMode(preset);
+                wrap.Children.Add(btn);
+            }
+            sp.Children.Add(wrap);
+            _paletteCard.Child = sp;
+            parent.Children.Add(_paletteCard);
+        }
+
+        /// <summary>把预设配色方案应用到当前模式：网格→光斑 / 纯色→底色 / 线性、径向→均布停靠点 / 图片→切线性再应用。</summary>
+        private void ApplyPaletteToCurrentMode(BackgroundSettings.MeshPreset preset)
+        {
+            if (preset == null) return;
+            if (_settings.Mode == BackgroundMode.MeshGradient)
+            {
+                ApplyPreset(preset);
+                return;
+            }
+            if (_settings.Mode == BackgroundMode.Solid)
+            {
+                _settings.SolidColor = preset.BaseColor;
+                _selectedStop = null;
+                _selectedBlob = null;
+                _currentColor = BackgroundSettings.ParseColor(_settings.SolidColor);
+                _isUpdating = true;
+                try { UpdateColor(_currentColor, true); }
+                finally { _isUpdating = false; }
+                _hasEditedAfterShow = true;
+                RefreshPreview();
+                UpdateEditLabel();
+                return;
+            }
+            var colors = preset.Blobs.Select(b => b.Color).Distinct().Take(5).ToList();
+            _settings.EnsureGradientStops();
+            _settings.Stops = colors.Select((c, i) => new GradientStopSetting
+            {
+                Color = c,
+                Offset = colors.Count == 1 ? 0.0 : (double)i / (colors.Count - 1)
+            }).ToList();
+            _selectedStop = _settings.Stops[0];
+            _selectedBlob = null;
+            _currentColor = BackgroundSettings.ParseColor(_selectedStop.Color);
+            _isUpdating = true;
+            try { UpdateColor(_currentColor, true); }
+            finally { _isUpdating = false; }
+            _hasEditedAfterShow = true;
+            RefreshStopList();
+            RefreshPreview();
+            UpdateEditLabel();
+            if (_settings.Mode == BackgroundMode.Image)
+            {
+                foreach (ComboBoxItem it in _modeCombo.Items)
+                {
+                    if (it.Tag is BackgroundMode mm && mm == BackgroundMode.LinearGradient && _modeCombo.SelectedItem != it)
+                    {
+                        _modeCombo.SelectedItem = it;
+                        break;
+                    }
+                }
+            }
         }
 
         private void ApplyPreset(BackgroundSettings.MeshPreset preset)
