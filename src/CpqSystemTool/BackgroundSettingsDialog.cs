@@ -33,6 +33,9 @@ namespace CpqSystemTool
         private TextBox _hexBox;
         private Slider _rSlider, _gSlider, _bSlider;
         private TextBlock _rVal, _gVal, _bVal;
+        // 双列布局：HSV 列（H 色相 / S 饱和 / V 明度），与 RGB 列并排、互相实时联动
+        private Slider _hSlider, _sSlider;
+        private TextBlock _hVal, _sVal;
         private StackPanel _stopPanel;
         private StackPanel _blobPanel;
         private TextBox _angleBox;
@@ -87,7 +90,8 @@ namespace CpqSystemTool
         private bool _hasEditedAfterShow;
         private bool _hasAppliedAtLeastOnce;
         private BackgroundSettings _appliedSnapshot;
-        private Slider _valSlider;             // 明度滑块
+        private Slider _valSlider;             // 明度滑块（HSV 列，0–100% 量程）
+        private TextBlock _valVal;             // 明度数值显示
         private Border _colorCard;             // 颜色选择区外层卡片（用于整体显隐）
         private Canvas _wheelOverlay;          // 色轮上的当前颜色指示器容器
         private Ellipse _wheelIndicator;       // 当前颜色在色轮上的位置指示器
@@ -371,33 +375,42 @@ namespace CpqSystemTool
             hexRow.Children.Add(hexCopyBtn);
             lowerControls.Children.Add(hexRow);
 
-            var rgbPanel = new StackPanel();
-            var rPanel = CreateRgbSlider(out _rSlider, out _rVal, "R");
-            var gPanel = CreateRgbSlider(out _gSlider, out _gVal, "G");
-            var bPanel = CreateRgbSlider(out _bSlider, out _bVal, "B");
+            // 双列布局：左 RGB 列 / 右 HSV 列（H 色相 / S 饱和 / V 明度），两列是同一颜色的两套坐标、
+            // 实时互相联动（改任意一列，另一列 + HEX + 色轮指示器同步）。色轮保留在上排作 2D 快选。
+            // 修复（孤立控件/布局错位）：明度滑块原孤悬在 RGB 下方，像「RGB 第 4 个分量」；
+            // 现并入 HSV 列，量程改 0–100% 显示，新增 H/S 滑块补齐 HSV 三个维度。
+            var rgbPanel = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
+            rgbPanel.Children.Add(new TextBlock { Text = "RGB", FontWeight = FontWeights.SemiBold, Foreground = _owner._textDim, FontSize = 11, Margin = new Thickness(0, 0, 0, 4) });
+            var rPanel = CreateSliderRow("R", 0, 255, "", out _rSlider, out _rVal);
+            var gPanel = CreateSliderRow("G", 0, 255, "", out _gSlider, out _gVal);
+            var bPanel = CreateSliderRow("B", 0, 255, "", out _bSlider, out _bVal);
             _rSlider.ValueChanged += (s, e) => { if (!_isUpdating) { _currentColor = Color.FromRgb((byte)_rSlider.Value, _currentColor.G, _currentColor.B); UpdateColor(_currentColor, true); } };
             _gSlider.ValueChanged += (s, e) => { if (!_isUpdating) { _currentColor = Color.FromRgb(_currentColor.R, (byte)_gSlider.Value, _currentColor.B); UpdateColor(_currentColor, true); } };
             _bSlider.ValueChanged += (s, e) => { if (!_isUpdating) { _currentColor = Color.FromRgb(_currentColor.R, _currentColor.G, (byte)_bSlider.Value); UpdateColor(_currentColor, true); } };
             rgbPanel.Children.Add(rPanel);
             rgbPanel.Children.Add(gPanel);
             rgbPanel.Children.Add(bPanel);
-            lowerControls.Children.Add(rgbPanel);
 
-            // 明度（HSV 的 V）：配合色轮取色，可选取暗色背景；拖动时色轮同步变暗/变亮
-            var valRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
-            valRow.Children.Add(new TextBlock { Text = "明度:", Foreground = _owner._textMain, Width = 36, VerticalAlignment = VerticalAlignment.Center });
-            _valSlider = new Slider { Minimum = 0, Maximum = 1, Width = 150, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-            _valSlider.ValueChanged += (s, e) =>
-            {
-                if (_isUpdating) return;
-                _currentValue = _valSlider.Value;
-                _currentColor = HsvToRgb(_currentHue, _currentSat, _currentValue);
-                // 性能优化：这里不再单独调 RenderColorWheel()。UpdateColor(...,true) 内部已会请求一次
-                // 色轮重绘，原写法一帧内请求两次（且明度变化会真正重算像素），去掉重复的那一次。
-                UpdateColor(_currentColor, true); // 同步 RGB/HEX/明度滑块 + 请求色轮重绘
-            };
-            valRow.Children.Add(_valSlider);
-            lowerControls.Children.Add(valRow);
+            var hsvPanel = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
+            hsvPanel.Children.Add(new TextBlock { Text = "HSV", FontWeight = FontWeights.SemiBold, Foreground = _owner._textDim, FontSize = 11, Margin = new Thickness(0, 0, 0, 4) });
+            hsvPanel.Children.Add(CreateSliderRow("H", 0, 360, "°", out _hSlider, out _hVal));
+            hsvPanel.Children.Add(CreateSliderRow("S", 0, 100, "%", out _sSlider, out _sVal));
+            hsvPanel.Children.Add(CreateSliderRow("V", 0, 100, "%", out _valSlider, out _valVal));
+            // HSV 列：滑块是色相/饱和/明度的来源——传 syncHsv:false，避免 UpdateColor 内从 RGB 反算
+            // HSV 再写回滑块造成拖拽抖动；色轮像素重绘仍由 RenderColorWheel 缓存机制按需触发。
+            _hSlider.ValueChanged += (s, e) => { if (!_isUpdating) { _currentHue = _hSlider.Value; UpdateColor(HsvToRgb(_currentHue, _currentSat, _currentValue), true, false); } };
+            _sSlider.ValueChanged += (s, e) => { if (!_isUpdating) { _currentSat = _sSlider.Value / 100.0; UpdateColor(HsvToRgb(_currentHue, _currentSat, _currentValue), true, false); } };
+            _valSlider.ValueChanged += (s, e) => { if (!_isUpdating) { _currentValue = _valSlider.Value / 100.0; UpdateColor(HsvToRgb(_currentHue, _currentSat, _currentValue), true, false); } };
+
+            var dualGrid = new Grid { Margin = new Thickness(0, 0, 0, 0) };
+            dualGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            dualGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+            dualGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Grid.SetColumn(rgbPanel, 0);
+            Grid.SetColumn(hsvPanel, 2);
+            dualGrid.Children.Add(rgbPanel);
+            dualGrid.Children.Add(hsvPanel);
+            lowerControls.Children.Add(dualGrid);
 
             // 右列：颜色格式 / 对比度（Grid 垂直撑满，底部与色轮底部对齐）
             rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 标题
@@ -864,13 +877,14 @@ namespace CpqSystemTool
             Loaded += (s, e) => { RenderColorWheel(); UpdateWheelIndicator(); };
         }
 
-        private StackPanel CreateRgbSlider(out Slider slider, out TextBlock valBlock, string label)
+        /// <summary>双列布局通用滑块行：标签(32) + 滑块(自动填满列宽) + 数值显示(40, 可带单位后缀)。
+        /// RGB 列（0–255，无单位）与 HSV 列（H 0–360°、S/V 0–100%）共用同一构造，保证两列视觉对称。</summary>
+        private StackPanel CreateSliderRow(string label, double min, double max, string unit, out Slider slider, out TextBlock valBlock)
         {
             var panel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
-            // 标签宽度与明度滑块标签统一（36px），使 RGB 滑块与明度滑块左右边缘对齐，视觉上长度一致
-            panel.Children.Add(new TextBlock { Text = label + ":", Foreground = _owner._textMain, Width = 36, VerticalAlignment = VerticalAlignment.Center });
-            slider = new Slider { Minimum = 0, Maximum = 255, Width = 150, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-            valBlock = new TextBlock { Text = "0", Foreground = _owner._accent, Width = 32, VerticalAlignment = VerticalAlignment.Center };
+            panel.Children.Add(new TextBlock { Text = label + ":", Foreground = _owner._textMain, Width = 32, VerticalAlignment = VerticalAlignment.Center });
+            slider = new Slider { Minimum = min, Maximum = max, HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+            valBlock = new TextBlock { Text = "0" + unit, Foreground = _owner._accent, Width = 40, VerticalAlignment = VerticalAlignment.Center };
             panel.Children.Add(slider);
             panel.Children.Add(valBlock);
             return panel;
@@ -1657,10 +1671,12 @@ namespace CpqSystemTool
             UpdateEditLabel();
         }
 
-        private void UpdateColor(Color c, bool updateSliders)
+        /// <summary>syncHsv=false 表示本次改色来自 H/S/V 滑块（滑块是权威值）：不从 RGB 反算 HSV，
+        /// 避免「拖 H → 反算出 215.3° → 写回滑块 215」的往返抖动；色轮指示器仍按当前 H/S 移动。</summary>
+        private void UpdateColor(Color c, bool updateSliders, bool syncHsv = true)
         {
             _currentColor = c;
-            if (!_isUpdating) _hasEditedAfterShow = true;   // 初始化阶段不算编辑；色轮/HEX/RGB 滑块等真实用户操作均视为编辑
+            if (!_isUpdating) _hasEditedAfterShow = true;   // 初始化阶段不算编辑；色轮/HEX/RGB/HSV 滑块等真实用户操作均视为编辑
             if (updateSliders)
             {
                 _isUpdating = true;
@@ -1670,15 +1686,20 @@ namespace CpqSystemTool
                     _gSlider.Value = c.G;
                     _bSlider.Value = c.B;
                     _hexBox.Text = BackgroundSettings.ColorToHex(c);
-                    SyncHsvFromColor(c);              // 让色轮/明度滑块与当前颜色同步
-                    _valSlider.Value = _currentValue;
-                    RenderColorWheel();               // 当前颜色亮度可能改变，重绘色轮使指示器下方像素一致
+                    if (syncHsv) SyncHsvFromColor(c);       // RGB/HEX/色轮来源：反算 HSV 供 H/S/V 列显示
+                    _hSlider.Value = Math.Round(_currentHue);
+                    _sSlider.Value = Math.Round(_currentSat * 100);
+                    _valSlider.Value = Math.Round(_currentValue * 100);
+                    RenderColorWheel();                     // 当前颜色明度可能改变，重绘色轮使指示器下方像素一致
                 }
                 finally { _isUpdating = false; }
             }
             _rVal.Text = c.R.ToString();
             _gVal.Text = c.G.ToString();
             _bVal.Text = c.B.ToString();
+            _hVal.Text = ((int)Math.Round(_currentHue)) + "°";
+            _sVal.Text = ((int)Math.Round(_currentSat * 100)) + "%";
+            _valVal.Text = ((int)Math.Round(_currentValue * 100)) + "%";
 
             // 同步颜色格式显示（RGB / HSL / HSV / CMYK）与对比度检查
             SetFmt(_rowRgb, $"{c.R}, {c.G}, {c.B}");
