@@ -32,10 +32,10 @@ namespace CpqSystemTool
         private Image _wheelImage;
         private TextBox _hexBox;
         private Slider _rSlider, _gSlider, _bSlider;
-        private TextBlock _rVal, _gVal, _bVal;
+        private TextBox _rVal, _gVal, _bVal;   // 数值可点击直接键入修改（回车/失焦提交，解析+钳制）
         // 双列布局：HSV 列（H 色相 / S 饱和 / V 明度），与 RGB 列并排、互相实时联动
         private Slider _hSlider, _sSlider;
-        private TextBlock _hVal, _sVal;
+        private TextBox _hVal, _sVal;   // 同 R/G/B：数值可点击直接键入修改
         private StackPanel _stopPanel;
         private StackPanel _blobPanel;
         private TextBox _angleBox;
@@ -99,7 +99,7 @@ namespace CpqSystemTool
         private bool _hasAppliedAtLeastOnce;
         private BackgroundSettings _appliedSnapshot;
         private Slider _valSlider;             // 明度滑块（HSV 列，0–100% 量程）
-        private TextBlock _valVal;             // 明度数值显示
+        private TextBox _valVal;              // 明度数值（可点击直接键入修改）
         private Border _colorCard;             // 颜色选择区外层卡片（用于整体显隐）
         private Canvas _wheelOverlay;          // 色轮上的当前颜色指示器容器
         private Ellipse _wheelIndicator;       // 当前颜色在色轮上的位置指示器
@@ -392,9 +392,9 @@ namespace CpqSystemTool
             // 现并入 HSV 列，量程改 0–100% 显示，新增 H/S 滑块补齐 HSV 三个维度。
             var rgbPanel = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
             rgbPanel.Children.Add(new TextBlock { Text = "RGB", FontWeight = FontWeights.SemiBold, Foreground = _owner._textDim, FontSize = 11, Margin = new Thickness(0, 0, 0, 4) });
-            var rPanel = CreateSliderRow("R", 0, 255, "", out _rSlider, out _rVal);
-            var gPanel = CreateSliderRow("G", 0, 255, "", out _gSlider, out _gVal);
-            var bPanel = CreateSliderRow("B", 0, 255, "", out _bSlider, out _bVal);
+            var rPanel = CreateSliderRow("R", 0, 255, "", out _rSlider, out _rVal, v => { _currentColor = Color.FromRgb((byte)v, _currentColor.G, _currentColor.B); UpdateColor(_currentColor, true); });
+            var gPanel = CreateSliderRow("G", 0, 255, "", out _gSlider, out _gVal, v => { _currentColor = Color.FromRgb(_currentColor.R, (byte)v, _currentColor.B); UpdateColor(_currentColor, true); });
+            var bPanel = CreateSliderRow("B", 0, 255, "", out _bSlider, out _bVal, v => { _currentColor = Color.FromRgb(_currentColor.R, _currentColor.G, (byte)v); UpdateColor(_currentColor, true); });
             _rSlider.ValueChanged += (s, e) => { if (!_isUpdating) { _currentColor = Color.FromRgb((byte)_rSlider.Value, _currentColor.G, _currentColor.B); UpdateColor(_currentColor, true); } };
             _gSlider.ValueChanged += (s, e) => { if (!_isUpdating) { _currentColor = Color.FromRgb(_currentColor.R, (byte)_gSlider.Value, _currentColor.B); UpdateColor(_currentColor, true); } };
             _bSlider.ValueChanged += (s, e) => { if (!_isUpdating) { _currentColor = Color.FromRgb(_currentColor.R, _currentColor.G, (byte)_bSlider.Value); UpdateColor(_currentColor, true); } };
@@ -404,9 +404,9 @@ namespace CpqSystemTool
 
             var hsvPanel = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
             hsvPanel.Children.Add(new TextBlock { Text = "HSV", FontWeight = FontWeights.SemiBold, Foreground = _owner._textDim, FontSize = 11, Margin = new Thickness(0, 0, 0, 4) });
-            hsvPanel.Children.Add(CreateSliderRow("H", 0, 360, "°", out _hSlider, out _hVal));
-            hsvPanel.Children.Add(CreateSliderRow("S", 0, 100, "%", out _sSlider, out _sVal));
-            hsvPanel.Children.Add(CreateSliderRow("V", 0, 100, "%", out _valSlider, out _valVal));
+            hsvPanel.Children.Add(CreateSliderRow("H", 0, 360, "°", out _hSlider, out _hVal, v => { _currentHue = v; UpdateColor(HsvToRgb(_currentHue, _currentSat, _currentValue), true, false); }));
+            hsvPanel.Children.Add(CreateSliderRow("S", 0, 100, "%", out _sSlider, out _sVal, v => { _currentSat = v / 100.0; UpdateColor(HsvToRgb(_currentHue, _currentSat, _currentValue), true, false); }));
+            hsvPanel.Children.Add(CreateSliderRow("V", 0, 100, "%", out _valSlider, out _valVal, v => { _currentValue = v / 100.0; UpdateColor(HsvToRgb(_currentHue, _currentSat, _currentValue), true, false); }));
             // HSV 列：滑块是色相/饱和/明度的来源——传 syncHsv:false，避免 UpdateColor 内从 RGB 反算
             // HSV 再写回滑块造成拖拽抖动；色轮像素重绘仍由 RenderColorWheel 缓存机制按需触发。
             _hSlider.ValueChanged += (s, e) => { if (!_isUpdating) { _currentHue = _hSlider.Value; UpdateColor(HsvToRgb(_currentHue, _currentSat, _currentValue), true, false); } };
@@ -895,7 +895,7 @@ namespace CpqSystemTool
         /// RGB 列（0–255，无单位）与 HSV 列（H 0–360°、S/V 0–100%）共用同一构造，保证两列视觉对称。
         /// 行内必须用 Grid（Star 列）承载滑块：横向 StackPanel 不给 stretch 子项分配宽度，
         /// Slider 会塌缩到最小宽、滑轨几乎不可见（曾因此滑轨消失，现 Grid 保证占满）。</summary>
-        private Grid CreateSliderRow(string label, double min, double max, string unit, out Slider slider, out TextBlock valBlock)
+        private Grid CreateSliderRow(string label, double min, double max, string unit, out Slider slider, out TextBox valBlock, Action<double> onCommit)
         {
             var row = new Grid { Margin = new Thickness(0, 0, 0, 4) };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -906,13 +906,37 @@ namespace CpqSystemTool
             Grid.SetColumn(lbl, 0);
             slider = new Slider { Minimum = min, Maximum = max, VerticalAlignment = VerticalAlignment.Center, IsMoveToPointEnabled = true };
             Grid.SetColumn(slider, 1);
-            valBlock = new TextBlock { Text = "0" + unit, Foreground = _owner._accent, Width = 40, VerticalAlignment = VerticalAlignment.Center };
+            valBlock = new TextBox
+            {
+                Text = "0" + unit,
+                Foreground = _owner._accent,
+                Width = 44,
+                FontSize = 12,
+                TextAlignment = TextAlignment.Center,
+                Background = _owner._inputBg,
+                BorderBrush = _owner._panelBorder,
+                VerticalContentAlignment = VerticalAlignment.Center
+            };
             Grid.SetColumn(valBlock, 2);
+            // 单击数字精确输入：回车 / 失焦提交（解析 + 钳制到 [min,max]）；解析失败则不提交、保留当前值。
+            // out 参数 valBlock 不能直接进 lambda（CS1628），取本地副本 valBoxRef。
+            var valBoxRef = valBlock;
+            valBoxRef.LostFocus += (s, e) => CommitSliderValue(valBoxRef, min, max, onCommit);
+            valBoxRef.PreviewKeyDown += (s, e) => { if (e.Key == Key.Enter) { e.Handled = true; CommitSliderValue(valBoxRef, min, max, onCommit); } };
 
             row.Children.Add(lbl);
             row.Children.Add(slider);
             row.Children.Add(valBlock);
             return row;
+        }
+
+        /// <summary>数值框提交：去掉单位后缀（°/%）解析为 double，钳制到 [min,max] 后回调 onCommit；解析失败不提交。</summary>
+        private static void CommitSliderValue(TextBox box, double min, double max, Action<double> onCommit)
+        {
+            if (box == null || onCommit == null) return;
+            var s = (box.Text ?? "").Trim().TrimEnd('°', '%');
+            if (double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v))
+                onCommit(Math.Max(min, Math.Min(max, v)));
         }
 
         // ---- 事件处理 ----
@@ -2751,6 +2775,21 @@ namespace CpqSystemTool
             {
                 RgbToHsv(palette[i].R, palette[i].G, palette[i].B, out double h, out double s2, out double v2);
                 double rad = h * Math.PI / 180.0;
+                double px = cx + radius * Math.Cos(rad);
+                double py = cy + radius * Math.Sin(rad);
+                // 虚线辐条：圆心 → 和色点（对齐参考站 online-color 色轮上的虚线辐条；之前只打了点漏了线）
+                var spoke = new Line
+                {
+                    X1 = cx,
+                    Y1 = cy,
+                    X2 = px,
+                    Y2 = py,
+                    Stroke = new SolidColorBrush(Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)),
+                    StrokeThickness = 1,
+                    StrokeDashArray = new DoubleCollection { 3.0, 3.0 },
+                    IsHitTestVisible = false
+                };
+                _harmonyOverlay.Children.Add(spoke);
                 var dot = new Ellipse
                 {
                     Width = 8,
@@ -2760,8 +2799,8 @@ namespace CpqSystemTool
                     Fill = new SolidColorBrush(Color.FromArgb(0x80, palette[i].R, palette[i].G, palette[i].B)),
                     IsHitTestVisible = false
                 };
-                Canvas.SetLeft(dot, cx + radius * Math.Cos(rad) - 4);
-                Canvas.SetTop(dot, cy + radius * Math.Sin(rad) - 4);
+                Canvas.SetLeft(dot, px - 4);
+                Canvas.SetTop(dot, py - 4);
                 _harmonyOverlay.Children.Add(dot);
             }
             _harmonyOverlay.Visibility = _settings.Mode == BackgroundMode.Image ? Visibility.Collapsed : Visibility.Visible;
