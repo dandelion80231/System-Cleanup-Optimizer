@@ -2777,18 +2777,26 @@ namespace CpqSystemTool
                 double rad = h * Math.PI / 180.0;
                 double px = cx + radius * Math.Cos(rad);
                 double py = cy + radius * Math.Sin(rad);
-                // 虚线辐条：圆心 → 和色点（对齐参考站 online-color 色轮上的虚线辐条；之前只打了点漏了线）
-                var spoke = new Line
+                // 虚线辐条：圆心 → 和色点（对齐参考站 online-color 色轮上的虚线辐条；之前只打了点漏了线）。
+                // 修复「几乎看不清」：单条 1px/0x99 白线在明亮轮盘区不可见 → 深色衬线 + 亮色主线 双层描边，
+                // 明暗轮盘区都清晰（同色轮指示器自适应描边原理）。
+                var under = new Line
                 {
-                    X1 = cx,
-                    Y1 = cy,
-                    X2 = px,
-                    Y2 = py,
-                    Stroke = new SolidColorBrush(Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)),
-                    StrokeThickness = 1,
-                    StrokeDashArray = new DoubleCollection { 3.0, 3.0 },
+                    X1 = cx, Y1 = cy, X2 = px, Y2 = py,
+                    Stroke = new SolidColorBrush(Color.FromArgb(0x88, 0x00, 0x00, 0x00)),
+                    StrokeThickness = 3,
+                    StrokeDashArray = new DoubleCollection { 4.0, 3.0 },
                     IsHitTestVisible = false
                 };
+                var spoke = new Line
+                {
+                    X1 = cx, Y1 = cy, X2 = px, Y2 = py,
+                    Stroke = new SolidColorBrush(Color.FromArgb(0xEE, 0xFF, 0xFF, 0xFF)),
+                    StrokeThickness = 1.5,
+                    StrokeDashArray = new DoubleCollection { 4.0, 3.0 },
+                    IsHitTestVisible = false
+                };
+                _harmonyOverlay.Children.Add(under);
                 _harmonyOverlay.Children.Add(spoke);
                 var dot = new Ellipse
                 {
