@@ -83,7 +83,10 @@ namespace CpqSystemTool
         private Color _currentColor = Color.FromRgb(0x16, 0xE0, 0xBD);
         private double _currentHue;            // HSV 色相（色轮取色用）
         private double _currentSat;            // HSV 饱和度
-        private double _currentValue = 0.95;   // HSV 明度（0..1），配合色轮选暗色背景
+        private double _currentValue = 0.95;   // HSV 明度（0..1），由 V 滑块控制当前颜色明暗
+        // 色轮恒亮：轮盘像素恒以满明度渲染（对齐参考站 H/S 轮机制），明暗只由 V 滑块决定。
+        // 旧实现用 _currentValue 渲染轮盘，当前色很暗时整个色轮变纯黑、无法取色。
+        private const double WheelBrightness = 1.0;
         private bool _isUpdating;
         private bool _isInitializing;          // 防止初始化时 SelectionChanged 重入导致 UI 树抖动
         // 关闭时撤销用：_hasEditedAfterShow=用户曾编辑；_hasAppliedAtLeastOnce=曾点过"应用"；_appliedSnapshot=最近一次 Apply 时的 _settings 快照
@@ -104,9 +107,8 @@ namespace CpqSystemTool
         // 同一帧内的重绘请求合并标志：拖明度/取色一帧内可能触发多次 RenderColorWheel，
         // 用 BeginInvoke + 标志位把多次请求压缩成一次真实渲染。
         private bool _wheelRenderScheduled;
-        // 已经渲染到 _wheelBitmap 的明度值。色轮像素 = f(角度→色相, 半径→饱和度, 明度)，
-        // 与当前选中的 _currentHue/_currentSat 无关，故仅当明度变化时才需要重算像素，
-        // 拖色轮改色相/饱和度时只需移动指示器（UpdateWheelIndicator），零像素运算。
+        // 已经渲染到 _wheelBitmap 的明度值。色轮恒亮（像素 = f(角度→色相, 半径→饱和度), 明度恒 WheelBrightness=1.0），
+        // 与当前选取完全无关 → 首绘一次后永久复用，取色/改 H/S/V 都只移动指示器（UpdateWheelIndicator），零像素重算。
         private double _wheelRenderedValue = double.NaN;
 
         // 增量维护停靠点/光斑列表的 UI 映射，避免每次改颜色都重建整个列表导致滑块焦点丢失
@@ -877,17 +879,28 @@ namespace CpqSystemTool
             Loaded += (s, e) => { RenderColorWheel(); UpdateWheelIndicator(); };
         }
 
-        /// <summary>双列布局通用滑块行：标签(32) + 滑块(自动填满列宽) + 数值显示(40, 可带单位后缀)。
-        /// RGB 列（0–255，无单位）与 HSV 列（H 0–360°、S/V 0–100%）共用同一构造，保证两列视觉对称。</summary>
-        private StackPanel CreateSliderRow(string label, double min, double max, string unit, out Slider slider, out TextBlock valBlock)
+        /// <summary>双列布局通用滑块行：标签(自动) + 滑块(占满列宽) + 数值显示(40, 可带单位后缀)。
+        /// RGB 列（0–255，无单位）与 HSV 列（H 0–360°、S/V 0–100%）共用同一构造，保证两列视觉对称。
+        /// 行内必须用 Grid（Star 列）承载滑块：横向 StackPanel 不给 stretch 子项分配宽度，
+        /// Slider 会塌缩到最小宽、滑轨几乎不可见（曾因此滑轨消失，现 Grid 保证占满）。</summary>
+        private Grid CreateSliderRow(string label, double min, double max, string unit, out Slider slider, out TextBlock valBlock)
         {
-            var panel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
-            panel.Children.Add(new TextBlock { Text = label + ":", Foreground = _owner._textMain, Width = 32, VerticalAlignment = VerticalAlignment.Center });
-            slider = new Slider { Minimum = min, Maximum = max, HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+            var row = new Grid { Margin = new Thickness(0, 0, 0, 4) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var lbl = new TextBlock { Text = label + ":", Foreground = _owner._textMain, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+            Grid.SetColumn(lbl, 0);
+            slider = new Slider { Minimum = min, Maximum = max, VerticalAlignment = VerticalAlignment.Center, IsMoveToPointEnabled = true };
+            Grid.SetColumn(slider, 1);
             valBlock = new TextBlock { Text = "0" + unit, Foreground = _owner._accent, Width = 40, VerticalAlignment = VerticalAlignment.Center };
-            panel.Children.Add(slider);
-            panel.Children.Add(valBlock);
-            return panel;
+            Grid.SetColumn(valBlock, 2);
+
+            row.Children.Add(lbl);
+            row.Children.Add(slider);
+            row.Children.Add(valBlock);
+            return row;
         }
 
         // ---- 事件处理 ----
@@ -1776,9 +1789,11 @@ namespace CpqSystemTool
         {
             _wheelRenderScheduled = false;
             if (_wheelImage == null) return;
-            // 最小重绘：色轮像素只由明度 V 决定（色相由像素角度、饱和度由半径决定，与当前选取无关）。
-            // 明度未变 → 位图内容已经正确，直接复用，省掉 32,400 次 HsvToRgb。
-            if (_wheelBitmap != null && _wheelRenderedValue.Equals(_currentValue)) return;
+            // 色轮恒亮（对齐参考站 online-color/gradients.app 的 H/S 轮机制）：像素只由角度→色相、
+            // 半径→饱和度决定，明度恒取 1.0。旧实现像素绑定当前 V——用户当前色很暗（如 #10151C，
+            // V=11%）时整个轮盘渲染成纯黑、无法取色。现亮度只由 V 滑块控制，轮盘永远鲜艳可用。
+            // 像素与选取完全无关 → 首绘后永久复用（32,400 次 HsvToRgb 只跑一次）。
+            if (_wheelBitmap != null && _wheelRenderedValue.Equals(WheelBrightness)) return;
 
             int w = 180, h = 180;
             // 复用位图与像素数组：尺寸不变时不重新分配，避免每次重绘产生 129,600 字节垃圾。
@@ -1805,7 +1820,7 @@ namespace CpqSystemTool
                     {
                         double hue = (Math.Atan2(dy, dx) * 180 / Math.PI + 360) % 360;
                         double sat = r / maxR;
-                        var c = HsvToRgb(hue, sat, _currentValue);
+                        var c = HsvToRgb(hue, sat, WheelBrightness);
                         pixels[idx] = c.B;
                         pixels[idx + 1] = c.G;
                         pixels[idx + 2] = c.R;
@@ -1823,7 +1838,7 @@ namespace CpqSystemTool
             wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
             if (!ReferenceEquals(_wheelImage.Source, wb))
                 _wheelImage.Source = wb;   // 复用同一位图实例，避免反复换 Source 触发重新解码/重绘
-            _wheelRenderedValue = _currentValue;
+            _wheelRenderedValue = WheelBrightness;
         }
 
         /// <summary>在色轮上绘制当前颜色位置（小圆环），让用户知道当前选的是色轮上哪一点。</summary>
