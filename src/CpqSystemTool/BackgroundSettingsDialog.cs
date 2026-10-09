@@ -2771,7 +2771,7 @@ namespace CpqSystemTool
             }
             var (cx, cy, maxR) = GetWheelGeometry(_wheelHost.Width, _wheelHost.Height);
             double radius = _currentSat * maxR;
-            for (int i = 1; i < palette.Count; i++)
+            for (int i = 0; i < palette.Count; i++)   // 从 0 起：基色本身也画辐条+圆点（对齐参考站，补上此前漏的 i=0 那条）
             {
                 RgbToHsv(palette[i].R, palette[i].G, palette[i].B, out double h, out double s2, out double v2);
                 double rad = h * Math.PI / 180.0;
