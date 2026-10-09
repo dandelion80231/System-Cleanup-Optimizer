@@ -78,6 +78,11 @@ namespace CpqSystemTool
         private Border _paletteCard;
         // 色轮上和色标记层（和谐规则的小圆点，叠加在轮盘上；对齐参考站色轮上的和色点）
         private Canvas _harmonyOverlay;
+        // 「深浅背景切换」：非图片模式下，预览/编辑的当前套（true=深色套，false=浅色套）
+        private bool _previewDark = true;
+        private Button _previewDarkBtn, _previewLightBtn;   // 预览套切换按钮（非图片模式可见）
+        private StackPanel _dlToggleRow;   // 深浅切换行（非图片模式可见）
+        private Button _dlSyncBtn;             // 同步深色套→浅色套 按钮
 
         // 当前编辑态
         private GradientStopSetting _selectedStop;
@@ -280,6 +285,38 @@ namespace CpqSystemTool
                 Margin = new Thickness(0, 0, 0, 8)
             };
             colorSp.Children.Add(_editLabel);
+
+            // 「深浅背景切换」：深色套/浅色套 预览切换 + 一键同步（仅非图片模式显示，SyncModeUi 控制）
+            _dlToggleRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+            _dlToggleRow.Children.Add(new TextBlock { Text = "深浅背景:", Foreground = _owner._textDim, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+            _previewDarkBtn = new Button
+            {
+                Content = new Emoji.Wpf.TextBlock { Text = "🌙 深色套", VerticalAlignment = VerticalAlignment.Center },
+                Height = 26, Width = 84, Margin = new Thickness(0, 0, 6, 0),
+                Padding = new Thickness(4, 0, 4, 0),
+                Background = _owner._accent, Foreground = _owner._btnPrimaryFg, BorderThickness = new Thickness(0)
+            };
+            _previewDarkBtn.Click += (s, e) => { SetPreviewSet(true); };
+            _dlToggleRow.Children.Add(_previewDarkBtn);
+            _previewLightBtn = new Button
+            {
+                Content = new Emoji.Wpf.TextBlock { Text = "☀️ 浅色套", VerticalAlignment = VerticalAlignment.Center },
+                Height = 26, Width = 84,
+                Padding = new Thickness(4, 0, 4, 0),
+                Background = _owner._btnSecondaryBg, Foreground = _owner._btnSecondaryFg, BorderThickness = new Thickness(0)
+            };
+            _previewLightBtn.Click += (s, e) => { SetPreviewSet(false); };
+            _dlToggleRow.Children.Add(_previewLightBtn);
+            _dlSyncBtn = new Button
+            {
+                Content = new Emoji.Wpf.TextBlock { Text = "⧉ 同步深色→浅色", VerticalAlignment = VerticalAlignment.Center },
+                Height = 26, Width = 130,
+                Padding = new Thickness(4, 0, 4, 0),
+                Background = _owner._btnSecondaryBg, Foreground = _owner._btnSecondaryFg, BorderThickness = new Thickness(0)
+            };
+            _dlSyncBtn.Click += (s, e) => SyncDarkToLight();
+            _dlToggleRow.Children.Add(_dlSyncBtn);
+            colorSp.Children.Add(_dlToggleRow);
 
             // 颜色编辑区：两行结构
             //   行0：左=色轮，右=颜色格式/对比度面板（两列底部对齐）
@@ -1354,6 +1391,8 @@ namespace CpqSystemTool
             if (showColor) UpdateShadesTintsTones();
             // 预设色板库：非图片模式可见（纯色/线性/径向/网格都可用）
             SetVisibility(_paletteCard, showColor);
+            if (_dlToggleRow != null) SetVisibility(_dlToggleRow, _settings.Mode != BackgroundMode.Image);
+            UpdateDlToggleUi();
 
             // 刷新列表以反映自动选中的停靠点/光斑高亮
             RefreshStopList();
@@ -1923,7 +1962,13 @@ namespace CpqSystemTool
                 }
                 else
                 {
-                    _previewRect.Fill = _owner.BuildBackgroundBrushPreview(_settings);
+                    // 「深浅背景切换」：预览按「当前预览套」渲染（_previewDark=false 取浅色套，空则回退深色套）。
+                    // 网格光斑层同源刷新（与主窗口 BgBlobs 同一 PopulateBlobCanvas + 取套逻辑）。
+                    _previewRect.Fill = _owner.BuildBackgroundBrushPreview(_settings, _previewDark);
+                    if (_settings.Mode == BackgroundMode.MeshGradient && _blobCanvas != null && _blobCanvas.Width > 1)
+                        MainWindow.PopulateBlobCanvas(_blobCanvas, _settings.GetBlobs(_previewDark), _blobCanvas.Width, _blobCanvas.Height);
+                    else if (_settings.Mode != BackgroundMode.MeshGradient)
+                        _blobCanvas?.Children.Clear();
                 }
             }
             catch (Exception ex)
@@ -2778,25 +2823,16 @@ namespace CpqSystemTool
                 double px = cx + radius * Math.Cos(rad);
                 double py = cy + radius * Math.Sin(rad);
                 // 虚线辐条：圆心 → 和色点（对齐参考站 online-color 色轮上的虚线辐条；之前只打了点漏了线）。
-                // 修复「几乎看不清」：单条 1px/0x99 白线在明亮轮盘区不可见 → 深色衬线 + 亮色主线 双层描边，
-                // 明暗轮盘区都清晰（同色轮指示器自适应描边原理）。
-                var under = new Line
-                {
-                    X1 = cx, Y1 = cy, X2 = px, Y2 = py,
-                    Stroke = new SolidColorBrush(Color.FromArgb(0x88, 0x00, 0x00, 0x00)),
-                    StrokeThickness = 3,
-                    StrokeDashArray = new DoubleCollection { 4.0, 3.0 },
-                    IsHitTestVisible = false
-                };
+                // 样式与预览区渐变箭头/径向环完全同款（AxisStrokeBrush 白 78%、2px、虚线 {5,4}，见 DrawLinearHandles/DrawRadialHandles），
+                // 整弹窗视觉一致；之前用过「深色衬线+白主线」双层描边，被用户指出与右侧预览虚线不一致。
                 var spoke = new Line
                 {
                     X1 = cx, Y1 = cy, X2 = px, Y2 = py,
-                    Stroke = new SolidColorBrush(Color.FromArgb(0xEE, 0xFF, 0xFF, 0xFF)),
-                    StrokeThickness = 1.5,
-                    StrokeDashArray = new DoubleCollection { 4.0, 3.0 },
+                    Stroke = AxisStrokeBrush,
+                    StrokeThickness = 2,
+                    StrokeDashArray = new DoubleCollection { 5, 4 },
                     IsHitTestVisible = false
                 };
-                _harmonyOverlay.Children.Add(under);
                 _harmonyOverlay.Children.Add(spoke);
                 var dot = new Ellipse
                 {
@@ -3265,7 +3301,65 @@ namespace CpqSystemTool
             parent.Children.Add(_meshCard);
         }
 
+        // ===================== 深浅背景切换（非图片模式：深/浅两套色 + 预览套切换 + 一键同步） =====================
+
+        /// <summary>预览套从深色切到浅色（或反向）：重新取套渲染预览 + 当前色（浅色套为空时 GetStops 自动回退深色套）。</summary>
+        private void SetPreviewSet(bool dark)
+        {
+            _previewDark = dark;
+            // 当前编辑色切到对应套的首个停靠点/纯色，让色轮/HEX/滑块与预览套一致
+            try
+            {
+                var first = _settings.Mode == BackgroundMode.Solid
+                    ? BackgroundSettings.ParseColor(_settings.GetSolidColor(_previewDark))
+                    : BackgroundSettings.ParseColor(_settings.GetStops(_previewDark).FirstOrDefault()?.Color ?? "#16E0BD");
+                _isUpdating = true;
+                try { _currentColor = first; UpdateColor(_currentColor, true); }
+                finally { _isUpdating = false; }
+            }
+            catch { /* 取套失败保持当前色 */ }
+            RefreshPreview();
+            UpdateDlToggleUi();
+        }
+
+        /// <summary>把当前深色套（SolidColor/Stops/Blobs/MeshBaseColor）整体复制到浅色套（Light*），
+        /// 使浅色主题拥有独立的背景。若浅色套已有内容则直接覆盖（幂等）。之后可再单独编辑浅色套。</summary>
+        private void SyncDarkToLight()
+        {
+            _settings.LightSolidColor = _settings.SolidColor;
+            _settings.LightStops = _settings.Stops?.Select(s => new GradientStopSetting { Color = s.Color, Offset = s.Offset }).ToList();
+            _settings.LightBlobs = _settings.Blobs?.Select(b => new MeshBlobSetting
+            {
+                Color = b.Color, CenterX = b.CenterX, CenterY = b.CenterY, Radius = b.Radius, Opacity = b.Opacity
+            }).ToList();
+            _settings.LightMeshBaseColor = _settings.MeshBaseColor;
+            _hasEditedAfterShow = true;
+            // 同步后切到浅色套预览，让用户立刻看到浅色效果
+            _previewDark = false;
+            RefreshPreview();
+            UpdateDlToggleUi();
+        }
+
+        /// <summary>深浅切换按钮的选中态样式（当前套高亮为 accent，另一套为次级色）+ 显隐控制。</summary>
+        private void UpdateDlToggleUi()
+        {
+            if (_previewDarkBtn == null || _previewLightBtn == null) return;
+            Brush on = _owner._accent, off = _owner._btnSecondaryBg;
+            Brush onFg = _owner._btnPrimaryFg, offFg = _owner._btnSecondaryFg;
+            if (_previewDark)
+            {
+                _previewDarkBtn.Background = on; _previewDarkBtn.Foreground = onFg;
+                _previewLightBtn.Background = off; _previewLightBtn.Foreground = offFg;
+            }
+            else
+            {
+                _previewLightBtn.Background = on; _previewLightBtn.Foreground = onFg;
+                _previewDarkBtn.Background = off; _previewDarkBtn.Foreground = offFg;
+            }
+        }
+
         // ===================== 功能4：预设色板库（点击应用到当前模式） =====================
+
         // 精选配色方案库（对齐参考站 online-color.com 主题调色板 / gradients.app 预设）：
         // 复用网格预设的 12 套配色（每套 = 底色 + 光斑色），按当前模式应用：
         //   网格→光斑+底色（复用 ApplyPreset）；纯色→底色；线性/径向→取前 5 色均布停靠点；
@@ -3282,47 +3376,69 @@ namespace CpqSystemTool
                 Margin = new Thickness(0, 0, 0, 12)
             };
             var sp = new StackPanel();
+            // 修复（标题过长被截断）：原 30 字描述在弹窗默认宽下显示不全且不换行。
+            // 精简为主标题 + 短副标题两行，副标题设 TextWrapping=Wrap 双保险（窄窗也能折行不裁切）。
             sp.Children.Add(new TextBlock
             {
-                Text = "预设色板（点击应用到当前模式：纯色=底色 / 渐变=均布停靠点 / 网格=光斑）",
+                Text = "预设色板",
                 FontWeight = FontWeights.SemiBold,
                 Foreground = _owner._textMain,
+                Margin = new Thickness(0, 0, 0, 2)
+            });
+            sp.Children.Add(new TextBlock
+            {
+                Text = "点击应用到当前模式（纯色=底色 / 渐变=停靠点 / 网格=光斑）",
+                FontSize = 11,
+                Foreground = _owner._textDim,
+                TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 6)
             });
-            var wrap = new WrapPanel { Orientation = Orientation.Horizontal };
+            // 修复（列数不匀）：原 WrapPanel 按可用宽度自动换行，12 套排成 4/3/3/2 每行列数不一致（用户指出）。
+            // 改固定 4列×3行 Grid，每列等宽、每行等高；每格内部「名称在上 + 4 色块在下」堆叠，
+            // 列宽由 Grid 均分保证整齐，弹窗缩放时仍保持 4 列。
+            var grid = new Grid();
+            for (int col = 0; col < 4; col++)
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            for (int row = 0; row < 3; row++)
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            int idx = 0;
             foreach (var p in BackgroundSettings.GetMeshPresets())
             {
                 var preset = p;
                 var btn = new Button
                 {
-                    Height = 30,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
                     Margin = new Thickness(0, 0, 8, 8),
-                    Padding = new Thickness(8, 2, 8, 2),
+                    Padding = new Thickness(6, 4, 6, 4),
                     Background = _owner._btnSecondaryBg,
                     Foreground = _owner._btnSecondaryFg,
                     BorderThickness = new Thickness(0),
                     ToolTip = preset.Name + "（点击应用到当前背景模式）"
                 };
-                var content = new StackPanel { Orientation = Orientation.Horizontal };
-                content.Children.Add(new TextBlock { Text = preset.Name, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center, FontSize = 11 });
+                var content = new StackPanel { Orientation = Orientation.Vertical };
+                content.Children.Add(new TextBlock { Text = preset.Name, FontSize = 11, Margin = new Thickness(0, 0, 0, 4) });
+                var swRow = new StackPanel { Orientation = Orientation.Horizontal };
                 foreach (var blob in preset.Blobs.Take(4))
                 {
-                    content.Children.Add(new Border
+                    swRow.Children.Add(new Border
                     {
-                        Width = 10, Height = 10,
+                        Width = 12, Height = 12,
                         CornerRadius = new CornerRadius(2),
-                        Margin = new Thickness(0, 0, 2, 0),
-                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(0, 0, 4, 0),
                         Background = new SolidColorBrush(BackgroundSettings.ParseColor(blob.Color)),
                         BorderBrush = _owner._panelBorder,
                         BorderThickness = new Thickness(1)
                     });
                 }
+                content.Children.Add(swRow);
                 btn.Content = content;
                 btn.Click += (s, e) => ApplyPaletteToCurrentMode(preset);
-                wrap.Children.Add(btn);
+                Grid.SetColumn(btn, idx % 4);
+                Grid.SetRow(btn, idx / 4);
+                grid.Children.Add(btn);
+                idx++;
             }
-            sp.Children.Add(wrap);
+            sp.Children.Add(grid);
             _paletteCard.Child = sp;
             parent.Children.Add(_paletteCard);
         }

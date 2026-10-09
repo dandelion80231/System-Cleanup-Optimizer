@@ -82,6 +82,8 @@ namespace CpqSystemTool
         // 而非用户自选色，载入时识别并迁移（见 FromJson）。
         public const string LegacyDefaultSolidColor = "#10151C";
         public string SolidColor { get; set; } = DefaultSolidColor;
+        // 「深浅背景切换」：浅色主题下的纯色（与 SolidColor 平行）。空 = 浅色未单独设置，渲染/编辑时回退用 SolidColor。
+        public string LightSolidColor { get; set; } = "";
 
         // ---- 线性/径向渐变 ----
         public double GradientAngle { get; set; } = 45.0;
@@ -97,11 +99,16 @@ namespace CpqSystemTool
         public double LinearCenterY { get; set; } = 0.5;
 
         public List<GradientStopSetting> Stops { get; set; } = new List<GradientStopSetting>();
+        // 「深浅背景切换」：浅色主题下的停靠点（与 Stops 平行）。空 = 回退用 Stops。
+        public List<GradientStopSetting> LightStops { get; set; }
 
         // ---- 网格渐变 ----
         public List<MeshBlobSetting> Blobs { get; set; } = new List<MeshBlobSetting>();
         /// <summary>网格底色（Base color）：无光斑覆盖处的填充色。</summary>
         public string MeshBaseColor { get; set; } = "#0E1116";
+        // 「深浅背景切换」：浅色主题下的网格光斑/底色（与 Blobs/MeshBaseColor 平行）。空 = 回退深色套。
+        public List<MeshBlobSetting> LightBlobs { get; set; }
+        public string LightMeshBaseColor { get; set; } = "";
 
         // 类级共享 RNG：避免 CreateDefaultMeshBlobs 等静态方法内反复 new Random() 触发同种子序列。
         // 修复：.NET Framework 的 Random 实例非线程安全，静态单例被多线程并发调用会破坏内部状态并持续返回 0，
@@ -214,6 +221,7 @@ namespace CpqSystemTool
             sb.AppendLine("  \"DarkOpacity\": " + DarkOpacity.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",");
             sb.AppendLine("  \"LightOpacity\": " + LightOpacity.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",");
             sb.AppendLine("  \"SolidColor\": " + JsonStr(SolidColor) + ",");
+            sb.AppendLine("  \"LightSolidColor\": " + JsonStr(LightSolidColor) + ",");
             sb.AppendLine("  \"GradientAngle\": " + GradientAngle.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",");
             sb.AppendLine("  \"RadialCenterX\": " + RadialCenterX.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",");
             sb.AppendLine("  \"RadialCenterY\": " + RadialCenterY.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",");
@@ -232,6 +240,32 @@ namespace CpqSystemTool
                 }
             }
             sb.AppendLine("],");
+            if (Stops != null)
+            {
+                for (int i = 0; i < Stops.Count; i++)
+                {
+                    var s = Stops[i];
+                    sb.Append("{\"Color\":" + JsonStr(s.Color) + ",\"Offset\":" + s.Offset.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}");
+                    if (i < Stops.Count - 1) sb.Append(",");
+                }
+            }
+            sb.AppendLine("],");
+            // 浅色停靠点（深浅背景切换）：null 时不输出，保持旧版 JSON 最小
+            if (LightStops != null && LightStops.Count > 0)
+            {
+                sb.Append("  \"LightStops\": [");
+                for (int i = 0; i < LightStops.Count; i++)
+                {
+                    var s = LightStops[i];
+                    sb.Append("{\"Color\":" + JsonStr(s.Color) + ",\"Offset\":" + s.Offset.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}");
+                    if (i < LightStops.Count - 1) sb.Append(",");
+                }
+                sb.AppendLine("],");
+            }
+            else
+            {
+                sb.AppendLine("  \"LightStops\": [],");
+            }
             sb.Append("  \"Blobs\": [");
             if (Blobs != null)
             {
@@ -247,7 +281,27 @@ namespace CpqSystemTool
                 }
             }
             sb.AppendLine("],");
-            sb.AppendLine("  \"MeshBaseColor\": " + JsonStr(MeshBaseColor));
+            if (LightBlobs != null && LightBlobs.Count > 0)
+            {
+                sb.Append("  \"LightBlobs\": [");
+                for (int i = 0; i < LightBlobs.Count; i++)
+                {
+                    var b = LightBlobs[i];
+                    sb.Append("{\"Color\":" + JsonStr(b.Color) +
+                        ",\"CenterX\":" + b.CenterX.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                        ",\"CenterY\":" + b.CenterY.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                        ",\"Radius\":" + b.Radius.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                        ",\"Opacity\":" + b.Opacity.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}");
+                    if (i < LightBlobs.Count - 1) sb.Append(",");
+                }
+                sb.AppendLine("],");
+            }
+            else
+            {
+                sb.AppendLine("  \"LightBlobs\": [],");
+            }
+            sb.AppendLine("  \"MeshBaseColor\": " + JsonStr(MeshBaseColor) + ",");
+            sb.AppendLine("  \"LightMeshBaseColor\": " + JsonStr(LightMeshBaseColor));
             sb.AppendLine("}");
             return sb.ToString();
         }
@@ -290,6 +344,8 @@ namespace CpqSystemTool
                         ? DefaultSolidColor
                         : solid;
                 }
+                var lSolid = ExtractJsonString(json, "LightSolidColor");
+                if (lSolid != null) s.LightSolidColor = lSolid;
 
                 var ga = ExtractJsonDouble(json, "GradientAngle");
                 if (ga.HasValue && double.IsFinite(ga.Value)) s.GradientAngle = ga.Value;
@@ -307,9 +363,13 @@ namespace CpqSystemTool
                 if (lcy.HasValue && double.IsFinite(lcy.Value)) s.LinearCenterY = lcy.Value;
 
                 s.Stops = ExtractGradientStops(json, "Stops");
+                s.LightStops = ExtractGradientStops(json, "LightStops"); // 旧配置无此键 → 空列表 = 回退深色（GetStops 处理）
                 s.Blobs = ExtractMeshBlobs(json, "Blobs");
+                s.LightBlobs = ExtractMeshBlobs(json, "LightBlobs");     // 同上
                 var mbc = ExtractJsonString(json, "MeshBaseColor");
                 if (mbc != null) s.MeshBaseColor = mbc;
+                var lmbc = ExtractJsonString(json, "LightMeshBaseColor");
+                if (lmbc != null) s.LightMeshBaseColor = lmbc;
             }
             catch (Exception ex)
             {
@@ -497,6 +557,38 @@ namespace CpqSystemTool
             return list;
         }
 
+        // ---- 深浅主题取套（「深浅背景切换」功能核心）----
+        // 浅色套（LightSolidColor/LightStops/LightBlobs/LightMeshBaseColor）为空时一律回退深色主套，
+        // 旧配置（无浅色字段）行为与以前完全一致。
+
+        /// <summary>取指定主题下的纯色。dark=true 取 SolidColor；dark=false 取 LightSolidColor，空则回退 SolidColor。</summary>
+        public string GetSolidColor(bool dark)
+        {
+            if (dark) return SolidColor;
+            return string.IsNullOrEmpty(LightSolidColor) ? SolidColor : LightSolidColor;
+        }
+
+        /// <summary>取指定主题下的停靠点。dark=false 且 LightStops 为空时回退深色 Stops。</summary>
+        public List<GradientStopSetting> GetStops(bool dark)
+        {
+            if (dark) return Stops;
+            return (LightStops != null && LightStops.Count > 0) ? LightStops : Stops;
+        }
+
+        /// <summary>取指定主题下的网格光斑。dark=false 且 LightBlobs 为空时回退深色 Blobs。</summary>
+        public List<MeshBlobSetting> GetBlobs(bool dark)
+        {
+            if (dark) return Blobs;
+            return (LightBlobs != null && LightBlobs.Count > 0) ? LightBlobs : Blobs;
+        }
+
+        /// <summary>取指定主题下的网格底色。dark=false 且 LightMeshBaseColor 为空时回退 MeshBaseColor。</summary>
+        public string GetMeshBaseColor(bool dark)
+        {
+            if (dark) return MeshBaseColor;
+            return string.IsNullOrEmpty(LightMeshBaseColor) ? MeshBaseColor : LightMeshBaseColor;
+        }
+
         /// <summary>确保渐变至少有两个停靠点。</summary>
         public void EnsureGradientStops()
         {
@@ -591,6 +683,7 @@ namespace CpqSystemTool
                 DarkOpacity = DarkOpacity,
                 LightOpacity = LightOpacity,
                 SolidColor = SolidColor,
+                LightSolidColor = LightSolidColor,
                 GradientAngle = GradientAngle,
                 RadialCenterX = RadialCenterX,
                 RadialCenterY = RadialCenterY,
@@ -599,7 +692,9 @@ namespace CpqSystemTool
                 LinearCenterX = LinearCenterX,
                 LinearCenterY = LinearCenterY,
                 Stops = Stops?.Select(s => new GradientStopSetting { Color = s.Color, Offset = s.Offset }).ToList() ?? new List<GradientStopSetting>(),
+                LightStops = LightStops?.Select(s => new GradientStopSetting { Color = s.Color, Offset = s.Offset }).ToList(),
                 MeshBaseColor = MeshBaseColor,
+                LightMeshBaseColor = LightMeshBaseColor,
                 Blobs = Blobs?.Select(b => new MeshBlobSetting
                 {
                     Color = b.Color,
@@ -607,7 +702,15 @@ namespace CpqSystemTool
                     CenterY = b.CenterY,
                     Radius = b.Radius,
                     Opacity = b.Opacity
-                }).ToList() ?? new List<MeshBlobSetting>()
+                }).ToList() ?? new List<MeshBlobSetting>(),
+                LightBlobs = LightBlobs?.Select(b => new MeshBlobSetting
+                {
+                    Color = b.Color,
+                    CenterX = b.CenterX,
+                    CenterY = b.CenterY,
+                    Radius = b.Radius,
+                    Opacity = b.Opacity
+                }).ToList()
             };
         }
 
@@ -934,6 +1037,167 @@ namespace CpqSystemTool
             }
         }
 
+        // ===================== 线性/径向渐变 CSS 导入导出（补全仅网格有的 CSS 往返能力） =====================
+
+        /// <summary>导出线性渐变为标准 CSS：linear-gradient(&lt;cssDeg&gt;deg, &lt;color&gt; &lt;offset&gt;% ...)。
+        /// 角度换算：WPF GradientAngle（0°=左→右、90°=底→顶）与 CSS（0deg=向上、90deg=向右、顺时针）相差 90°，
+        /// cssDeg = (90 − wpfDeg + 360) % 360，保证浏览器渲染方向与工具内屏幕效果一致。</summary>
+        public static string ToCssLinear(double angleDeg, List<GradientStopSetting> stops)
+        {
+            if (stops == null || stops.Count == 0) return string.Empty;
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            double cssDeg = (90.0 - angleDeg) % 360.0;
+            if (cssDeg < 0) cssDeg += 360.0;
+            var parts = stops.OrderBy(s => s.Offset)
+                .Select(s => string.Format(inv, "{0} {1}%", ColorToHexRgb(ParseColor(s.Color)), (int)Math.Round(Clamp01(s.Offset) * 100.0)))
+                .ToList();
+            return string.Format(inv, "linear-gradient({0}deg, {1})", (int)Math.Round(cssDeg), string.Join(", ", parts));
+        }
+
+        /// <summary>导出径向渐变为标准 CSS：radial-gradient(&lt;rx&gt;% &lt;ry&gt;% at &lt;cx&gt;% &lt;cy&gt;%, ...)。
+        /// 双值 size = 椭圆：WPF 的 RadiusX/RadiusY 为逐轴比例，CSS 百分比半径同为逐轴（宽/高），语义一致。</summary>
+        public static string ToCssRadial(double centerX, double centerY, double radiusX, double radiusY, List<GradientStopSetting> stops)
+        {
+            if (stops == null || stops.Count == 0) return string.Empty;
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            var parts = stops.OrderBy(s => s.Offset)
+                .Select(s => string.Format(inv, "{0} {1}%", ColorToHexRgb(ParseColor(s.Color)), (int)Math.Round(Clamp01(s.Offset) * 100.0)))
+                .ToList();
+            return string.Format(inv, "radial-gradient({0}% {1}% at {2}% {3}%, {4})",
+                (int)Math.Round(Clamp01(radiusX) * 100.0), (int)Math.Round(Clamp01(radiusY) * 100.0),
+                (int)Math.Round(Clamp01(centerX) * 100.0), (int)Math.Round(Clamp01(centerY) * 100.0),
+                string.Join(", ", parts));
+        }
+
+        /// <summary>解析 linear-gradient(...) CSS 为角度（WPF 约定）+ 停靠点。
+        /// 支持 deg/turn/grad/rad 角度单位与 to &lt;方向&gt;；无位置的颜色停靠点按均匀分布（CSS auto 放置近似）；颜色格式同 TryParseColorSegment（不支持命名色）。</summary>
+        public static bool TryParseCssLinear(string css, out double wpfAngle, out List<GradientStopSetting> stops)
+        {
+            wpfAngle = 45.0;
+            stops = null;
+            var layers = ExtractFunctionCalls(css, "linear-gradient");
+            if (layers == null || layers.Count == 0) return false;
+            var segs = SplitTopLevel(layers[0], ',');
+            if (segs.Count == 0) return false;
+            var head = segs[0].Trim();
+            double cssDeg = 180.0;
+            int stopStart = 1;
+            var am = Regex.Match(head, @"^(-?[\d.]+)\s*(deg|rad|grad|turn)$");
+            if (am.Success)
+            {
+                cssDeg = ParseDoubleOrZero(am.Groups[1].Value);
+                switch (am.Groups[2].Value.ToLowerInvariant())
+                {
+                    case "turn": cssDeg *= 360.0; break;
+                    case "grad": cssDeg *= 0.9; break;
+                    case "rad": cssDeg = cssDeg * 180.0 / Math.PI; break;
+                }
+            }
+            else
+            {
+                var tm = Regex.Match(head, @"^to\s+(top|bottom|left|right)\s*(top|bottom|left|right)?$");
+                if (tm.Success)
+                    cssDeg = CornerToCssDeg(tm.Groups[1].Value, (tm.Groups[2].Value ?? "").Trim());
+                else
+                {
+                    cssDeg = 180.0;
+                    stopStart = 0;
+                }
+            }
+            wpfAngle = ((90.0 - cssDeg) % 360.0 + 360.0) % 360.0;
+            stops = ParseCssStops(segs.GetRange(stopStart, segs.Count - stopStart));
+            return stops != null;
+        }
+
+        /// <summary>解析 radial-gradient(...) CSS（单层、非网格）为中心/半径/停靠点。
+        /// 支持「N% N% at A% B%」与「at A% B%」几何前缀；多层网格走 ParseCssGradient（返回 false）；
+        /// circle/closest-side 等形状关键字不支持，会解析失败返回 false。</summary>
+        public static bool TryParseCssRadial(string css, out double centerX, out double centerY, out double radiusX, out double radiusY, out List<GradientStopSetting> stops)
+        {
+            centerX = 0.5; centerY = 0.5; radiusX = 0.5; radiusY = 0.5;
+            stops = null;
+            var layers = ExtractFunctionCalls(css, "radial-gradient");
+            if (layers == null || layers.Count != 1) return false;
+            var segs = SplitTopLevel(layers[0], ',');
+            if (segs.Count == 0) return false;
+            var head = segs[0].Trim();
+            int stopStart;
+            var gm = Regex.Match(head, @"^([\d.]+)\s*%?\s+([\d.]+)\s*%?\s*at\s*([\d.]+)\s*%?\s*([\d.]+)\s*%?\s*$");
+            if (gm.Success)
+            {
+                radiusX = Clamp01(ParseDoubleOrZero(gm.Groups[1].Value));
+                radiusY = Clamp01(ParseDoubleOrZero(gm.Groups[2].Value));
+                centerX = Clamp01(ParseDoubleOrZero(gm.Groups[3].Value) / 100.0);
+                centerY = Clamp01(ParseDoubleOrZero(gm.Groups[4].Value) / 100.0);
+                stopStart = 1;
+            }
+            else
+            {
+                var am = Regex.Match(head, @"^at\s*([\d.]+)\s*%?\s*([\d.]+)\s*%?\s*$", RegexOptions.IgnoreCase);
+                if (am.Success)
+                {
+                    centerX = Clamp01(ParseDoubleOrZero(am.Groups[1].Value) / 100.0);
+                    centerY = Clamp01(ParseDoubleOrZero(am.Groups[2].Value) / 100.0);
+                    stopStart = 1;
+                }
+                else
+                {
+                    stopStart = 0;
+                }
+            }
+            stops = ParseCssStops(segs.GetRange(stopStart, segs.Count - stopStart));
+            return stops != null;
+        }
+
+        private static double CornerToCssDeg(string a, string b)
+        {
+            if (string.IsNullOrEmpty(b))
+                return a.ToLowerInvariant() switch { "top" => 0, "right" => 90, "bottom" => 180, "left" => 270, _ => 180 };
+            var pair = (a + "-" + b).ToLowerInvariant();
+            return pair switch
+            {
+                "top-right" or "right-top" => 45,
+                "bottom-right" or "right-bottom" => 135,
+                "bottom-left" or "left-bottom" => 225,
+                "top-left" or "left-top" => 315,
+                _ => 180
+            };
+        }
+
+        /// <summary>解析 CSS 颜色停靠点序列（color [position%] ...）：颜色格式走 TryParseColorSegment；
+        /// 任一停靠点缺位置时全部按均匀分布（CSS auto 放置近似），带 % 的按百分比钳制到 [0,1]。</summary>
+        private static List<GradientStopSetting> ParseCssStops(List<string> segs)
+        {
+            var result = new List<GradientStopSetting>();
+            var explicitPct = new List<double>();
+            foreach (var raw in segs)
+            {
+                var t = (raw ?? "").Trim();
+                if (t.Length == 0) continue;
+                double pct = -1;
+                var pm = Regex.Match(t, @"\s+(-?[\d.]+)\s*(%|px|pt|cm|mm|in|em|rem)?\s*$");
+                string colorPart = t;
+                if (pm.Success)
+                {
+                    colorPart = t.Substring(0, pm.Index).Trim();
+                    if (pm.Groups[2].Value == "%" || pm.Groups[2].Value == "")
+                        pct = ParseDoubleOrZero(pm.Groups[1].Value);
+                }
+                if (!TryParseColorSegment(colorPart, out var c, out var a)) continue;
+                result.Add(new GradientStopSetting { Color = a < 0.999 ? ColorToHex(c) : ColorToHexRgb(c), Offset = 0.0 });
+                explicitPct.Add(pct);
+            }
+            if (result.Count == 0) return null;
+            bool anyExplicit = explicitPct.Any(p => p >= 0);
+            for (int i = 0; i < result.Count; i++)
+            {
+                double even = result.Count == 1 ? 0.0 : (double)i / (result.Count - 1);
+                result[i].Offset = (!anyExplicit || explicitPct[i] < 0)
+                    ? even
+                    : Clamp01(explicitPct[i] / 100.0);
+            }
+            return result;
+        }
         private static double Clamp01(double v) => v < 0 ? 0 : (v > 1 ? 1 : v);
 
         // ---- 反序列化数值校验常量（background.json 是用户可直接编辑的明文本，必须当作不可信输入处理）----

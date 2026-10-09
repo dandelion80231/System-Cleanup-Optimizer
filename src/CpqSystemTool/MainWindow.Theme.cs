@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -469,17 +469,20 @@ namespace CpqSystemTool
                 BgBlobs.Children.Clear();
                 return;
             }
-            PopulateBlobCanvas(BgBlobs, _backgroundSettings.Blobs, BgBlobs.ActualWidth, BgBlobs.ActualHeight);
+            // 「深浅背景切换」：光斑层也按当前主题取套（GetBlobs 内部浅色空时回退深色套）。
+            PopulateBlobCanvas(BgBlobs, _backgroundSettings.GetBlobs(_isDarkMode), BgBlobs.ActualWidth, BgBlobs.ActualHeight);
         }
 
         /// <summary>根据设置构建背景 Brush（纯色/线性/径向/网格）。
-        /// 运行时与弹窗预览共用同一套逻辑，避免两套实现各自漂移。</summary>
-        private Brush BuildBrushFrom(BackgroundSettings s)
+        /// 运行时与弹窗预览共用同一套逻辑，避免两套实现各自漂移。
+        /// 「深浅背景切换」：dark=false 时取浅色套（GetSolidColor/GetStops/GetBlobs/GetMeshBaseColor），
+        /// 浅色套为空时 GetX 内部回退深色套，旧配置行为不变。</summary>
+        private Brush BuildBrushFrom(BackgroundSettings s, bool dark = true)
         {
             var mode = s?.Mode ?? BackgroundMode.Image;
             if (mode == BackgroundMode.Solid)
             {
-                return new SolidColorBrush(BackgroundSettings.ParseColor(s.SolidColor));
+                return new SolidColorBrush(BackgroundSettings.ParseColor(s.GetSolidColor(dark)));
             }
 
             if (mode == BackgroundMode.LinearGradient)
@@ -498,7 +501,7 @@ namespace CpqSystemTool
                     MappingMode = BrushMappingMode.RelativeToBoundingBox,
                     SpreadMethod = GradientSpreadMethod.Pad
                 };
-                foreach (var st in s.Stops.OrderBy(x => x.Offset))
+                foreach (var st in s.GetStops(dark).OrderBy(x => x.Offset))
                     brush.GradientStops.Add(new GradientStop(BackgroundSettings.ParseColor(st.Color), st.Offset));
                 if (brush.GradientStops.Count == 0)
                 {
@@ -519,7 +522,7 @@ namespace CpqSystemTool
                     MappingMode = BrushMappingMode.RelativeToBoundingBox,
                     SpreadMethod = GradientSpreadMethod.Pad
                 };
-                foreach (var st in s.Stops.OrderBy(x => x.Offset))
+                foreach (var st in s.GetStops(dark).OrderBy(x => x.Offset))
                     brush.GradientStops.Add(new GradientStop(BackgroundSettings.ParseColor(st.Color), st.Offset));
                 if (brush.GradientStops.Count == 0)
                 {
@@ -535,7 +538,7 @@ namespace CpqSystemTool
                 // ActualWidth/Height 像素定位渲染。VisualBrush/DrawingBrush 的 brush math 在跨不同
                 // 容器(主窗口 Rectangle vs Dialog Rectangle)时行为不一致,反复试错不收敛。
                 // 这条路径保证底色铺满,光斑由 PopulateBlobCanvas 单独画,完全规避 brush viewport 问题。
-                return new SolidColorBrush(BackgroundSettings.ParseColor(s.MeshBaseColor));
+                return new SolidColorBrush(BackgroundSettings.ParseColor(s.GetMeshBaseColor(dark)));
             }
 
             return Brushes.Transparent;
@@ -589,16 +592,17 @@ namespace CpqSystemTool
             }
         }
 
-        /// <summary>运行时应用：基于当前 _backgroundSettings 构建背景 Brush。</summary>
+        /// <summary>运行时应用：基于当前 _backgroundSettings 构建背景 Brush（按当前主题取深/浅色套）。</summary>
         private Brush BuildBackgroundBrush()
         {
-            return BuildBrushFrom(_backgroundSettings);
+            return BuildBrushFrom(_backgroundSettings, _isDarkMode);
         }
 
-        /// <summary>为弹窗预览生成背景 Brush（不依赖 _backgroundSettings，支持任意设置实例）。</summary>
-        internal Brush BuildBackgroundBrushPreview(BackgroundSettings settings)
+        /// <summary>为弹窗预览生成背景 Brush（不依赖 _backgroundSettings，支持任意设置实例）。
+        /// 「深浅背景切换」：预览侧 dark 参数指定预览哪套，默认 true（深色套）。</summary>
+        internal Brush BuildBackgroundBrushPreview(BackgroundSettings settings, bool dark = true)
         {
-            return BuildBrushFrom(settings);
+            return BuildBrushFrom(settings, dark);
         }
 
         private void ThemeToggle_Click(object sender, RoutedEventArgs e)
