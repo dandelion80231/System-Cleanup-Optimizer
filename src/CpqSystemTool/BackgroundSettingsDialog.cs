@@ -55,6 +55,7 @@ namespace CpqSystemTool
         private Button _applyHarmonyGradBtn, _applyHarmonyMeshBtn;
         private StackPanel _harmonySwatches;
         private Border _cssCard;
+        private Button _randMeshBtn, _exportSvgBtn;   // P1c：网格专属按钮（非网格模式隐藏）
         // 图片模式控件（方案 A：左列深色/浅色选择 + 独立透明度；右列随主题的大预览）
         private Slider _darkOpacitySlider;
         private Slider _lightOpacitySlider;
@@ -1380,8 +1381,24 @@ namespace CpqSystemTool
             SetVisibility(_harmonyCard, mode != BackgroundMode.Image && mode != BackgroundMode.Solid);
             if (_applyHarmonyGradBtn != null) _applyHarmonyGradBtn.IsEnabled = showStops;
             if (_applyHarmonyMeshBtn != null) _applyHarmonyMeshBtn.IsEnabled = showBlobs;
-            SetVisibility(_cssCard, showBlobs);
-            if (showBlobs && _cssBox != null) _cssBox.Text = BackgroundSettings.ToCssGradient(_settings.Blobs);
+            // P1c：CSS 卡片在 线性/径向/网格 均可见（原先仅网格）；网格专属按钮（随机光斑/SVG）仅网格显示
+            bool showCss = _settings.Mode == BackgroundMode.LinearGradient
+                         || _settings.Mode == BackgroundMode.RadialGradient
+                         || _settings.Mode == BackgroundMode.MeshGradient;
+            SetVisibility(_cssCard, showCss);
+            SetVisibility(_randMeshBtn, showBlobs);
+            SetVisibility(_exportSvgBtn, showBlobs);
+            // 切模式时按当前预览套（_previewDark）刷新 CSS 文本：所见即所导
+            if (showCss && _cssBox != null)
+            {
+                var stops = _settings.GetStops(_previewDark);
+                if (_settings.Mode == BackgroundMode.LinearGradient && stops != null && stops.Count > 0)
+                    _cssBox.Text = BackgroundSettings.ToCssLinear(_settings.GradientAngle, stops);
+                else if (_settings.Mode == BackgroundMode.RadialGradient && stops != null && stops.Count > 0)
+                    _cssBox.Text = BackgroundSettings.ToCssRadial(_settings.RadialCenterX, _settings.RadialCenterY, _settings.RadialRadiusX, _settings.RadialRadiusY, stops);
+                else if (showBlobs)
+                    _cssBox.Text = BackgroundSettings.ToCssGradient(_settings.GetBlobs(_previewDark));
+            }
 
             // 网格专属卡片（底色 + 预设）：仅网格模式可见
             SetVisibility(_meshCard, showBlobs);
@@ -3010,7 +3027,7 @@ namespace CpqSystemTool
             var cssSp = new StackPanel();
             cssSp.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "网格 CSS 导入/导出",
+                Text = "CSS 导入/导出（线性/径向/网格）",
                 FontWeight = FontWeights.SemiBold,
                 Foreground = _owner._textMain,
                 Margin = new Thickness(0, 0, 0, 8)
@@ -3101,6 +3118,8 @@ namespace CpqSystemTool
             };
             exportSvgBtn.Click += ExportSvg_Click;
             cssBtnRow.Children.Add(exportSvgBtn);
+            _randMeshBtn = randMeshBtn;
+            _exportSvgBtn = exportSvgBtn;
             cssSp.Children.Add(cssBtnRow);
 
             _cssBox = new TextBox
@@ -3134,10 +3153,27 @@ namespace CpqSystemTool
         {
             try
             {
-                var css = BackgroundSettings.ToCssGradient(_settings.Blobs);
+                // P1c：按当前模式 + 当前预览套生成 CSS（所见即所拷）
+                string css, note;
+                var stops = _settings.GetStops(_previewDark);
+                if (_settings.Mode == BackgroundMode.LinearGradient)
+                {
+                    css = BackgroundSettings.ToCssLinear(_settings.GradientAngle, stops);
+                    note = "线性渐变 CSS";
+                }
+                else if (_settings.Mode == BackgroundMode.RadialGradient)
+                {
+                    css = BackgroundSettings.ToCssRadial(_settings.RadialCenterX, _settings.RadialCenterY, _settings.RadialRadiusX, _settings.RadialRadiusY, stops);
+                    note = "径向渐变 CSS";
+                }
+                else
+                {
+                    css = BackgroundSettings.ToCssGradient(_settings.GetBlobs(_previewDark));
+                    note = _settings.GetBlobs(_previewDark).Count + " 个光斑的网格 CSS";
+                }
                 if (_cssBox != null) _cssBox.Text = css;
                 Clipboard.SetText(css); // 按钮点击在 UI 线程（STA），可直接写入剪贴板
-                if (_cssStatus != null) _cssStatus.Text = "已复制 " + _settings.Blobs.Count + " 个光斑的 CSS 到剪贴板。";
+                if (_cssStatus != null) _cssStatus.Text = "已复制" + (_previewDark ? "" : "（浅色套）") + " " + note + "到剪贴板。";
             }
             catch (Exception ex)
             {
@@ -3150,6 +3186,67 @@ namespace CpqSystemTool
             try
             {
                 var css = _cssBox != null ? _cssBox.Text : string.Empty;
+                // P1c：按内容分流——linear-gradient → 线性导入；单 radial 层（无本工具 r 注释）→ 径向导入；
+                // 多层/r 注释 → 网格导入（原路径）。写入「当前预览套」（_previewDark），所见即所写。
+                bool hasLinear = Regex.IsMatch(css, @"linear-gradient\s*\(", RegexOptions.IgnoreCase);
+                int radialCount = Regex.Matches(css, @"radial-gradient\s*\(", RegexOptions.IgnoreCase).Count;
+                bool hasRC = Regex.IsMatch(css, @"/\\*\\s*r:[\\d.]+\\s*\\*/", RegexOptions.IgnoreCase);
+                if (hasLinear)
+                {
+                    if (BackgroundSettings.TryParseCssLinear(css, out double ang, out List<GradientStopSetting> stp))
+                    {
+                        _settings.GradientAngle = ang;
+                        if (_previewDark) _settings.Stops = stp;
+                        else _settings.LightStops = stp;
+                        _selectedStop = stp[0];
+                        _selectedBlob = null;
+                        _currentColor = BackgroundSettings.ParseColor(_selectedStop.Color);
+                        _isUpdating = true;
+                        try { UpdateColor(_currentColor, true); }
+                        finally { _isUpdating = false; }
+                        _hasEditedAfterShow = true;
+                        if (_settings.Mode != BackgroundMode.LinearGradient) _modeCombo.SelectedIndex = 2;
+                        else SyncModeUi();
+                        if (_angleBox != null) _angleBox.Text = ang.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+                        RefreshStopList();
+                        RefreshPreview();
+                        UpdateEditLabel();
+                        if (_cssStatus != null) _cssStatus.Text = "已导入线性渐变：" + stp.Count + " 个停靠点，角度 " + ang.ToString("F0") + "°（写入" + (_previewDark ? "深色" : "浅色") + "套）。";
+                        return;
+                    }
+                    if (_cssStatus != null) _cssStatus.Text = "linear-gradient 解析失败：颜色须为 #hex/rgb/rgba/hsla，停靠点位置可选。";
+                    return;
+                }
+                if (radialCount == 1 && !hasRC)
+                {
+                    if (BackgroundSettings.TryParseCssRadial(css, out double rcx, out double rcy, out double rrx, out double rry, out List<GradientStopSetting> stp))
+                    {
+                        _settings.RadialCenterX = rcx; _settings.RadialCenterY = rcy;
+                        _settings.RadialRadiusX = rrx; _settings.RadialRadiusY = rry;
+                        if (_previewDark) _settings.Stops = stp;
+                        else _settings.LightStops = stp;
+                        _selectedStop = stp[0];
+                        _selectedBlob = null;
+                        _currentColor = BackgroundSettings.ParseColor(_selectedStop.Color);
+                        _isUpdating = true;
+                        try { UpdateColor(_currentColor, true); }
+                        finally { _isUpdating = false; }
+                        _hasEditedAfterShow = true;
+                        if (_settings.Mode != BackgroundMode.RadialGradient) _modeCombo.SelectedIndex = 3;
+                        else SyncModeUi();
+                        if (_centerXBox != null) _centerXBox.Text = rcx.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+                        if (_centerYBox != null) _centerYBox.Text = rcy.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+                        if (_radiusXBox != null) _radiusXBox.Text = rrx.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+                        if (_radiusYBox != null) _radiusYBox.Text = rry.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+                        RefreshStopList();
+                        RefreshPreview();
+                        UpdateEditLabel();
+                        if (_cssStatus != null) _cssStatus.Text = "已导入径向渐变：" + stp.Count + " 个停靠点（写入" + (_previewDark ? "深色" : "浅色") + "套）。";
+                        return;
+                    }
+                    if (_cssStatus != null) _cssStatus.Text = "radial-gradient 解析失败：支持「N% N% at A% B%」几何前缀 + #hex/rgb/hsla 停靠点。";
+                    return;
+                }
                 var blobs = BackgroundSettings.ParseCssGradient(css);
                 if (blobs == null)
                 {
