@@ -1597,7 +1597,7 @@ namespace CpqSystemTool
             };
             del.Click += (s, e) =>
             {
-                _settings.Stops.Remove(stop);
+                _settings.GetStops(_previewDark).Remove(stop);
                 if (_selectedStop == stop) _selectedStop = _settings.Stops.FirstOrDefault();
                 RefreshStopList();
                 RefreshPreview();
@@ -2243,8 +2243,8 @@ namespace CpqSystemTool
                     double mbx = pos2.X / w - _settings.LinearCenterX;
                     double mby = pos2.Y / h - _settings.LinearCenterY;
                     double c = Math.Cos(_linearAngleRad), s = Math.Sin(_linearAngleRad);
-                    // 投影到渐变轴方向 dir=(c,s)，offset = 投影长度 + 0.5（中线在中心处为 0.5）
-                    double ux = mbx * c + mby * s;
+                    // 投影到渐变轴方向 dir=(c,-s)（标准约定 90°=上，屏幕 y 向下），offset = 投影长度 + 0.5
+                    double ux = mbx * c - mby * s;
                     _draggingStop.Offset = Clamp(ux + 0.5, 0, 1);
                 }
                 else if (_settings.Mode == BackgroundMode.RadialGradient)
@@ -2266,7 +2266,7 @@ namespace CpqSystemTool
             {
                 double dxc = pos2.X / w - _settings.LinearCenterX;
                 double dyc = pos2.Y / h - _settings.LinearCenterY;
-                _settings.GradientAngle = Math.Atan2(dyc, dxc) * 180.0 / Math.PI;
+                _settings.GradientAngle = Math.Atan2(-dyc, dxc) * 180.0 / Math.PI;   // 标准约定：90°=上（屏幕 y 向下）
                 _linearAngleRad = _settings.GradientAngle * Math.PI / 180.0;
                 _hasEditedAfterShow = true;
                 SyncGeometryBoxes();
@@ -2382,7 +2382,9 @@ namespace CpqSystemTool
             double ang = _settings.GradientAngle * Math.PI / 180.0;
             _linearAngleRad = ang;
             double cx = _settings.LinearCenterX, cy = _settings.LinearCenterY;
-            double dx = Math.Cos(ang), dy = Math.Sin(ang);
+            // 标准角度约定（与 WPF Angle / CSS 一致：0°=右、90°=上）：屏幕 y 向下，方向向量 = (cos, -sin)。
+            // 旧实现用 +sin（90°=下），导致 45° 时 0% 停点画在上侧、与导出的 CSS 45deg 方向相反（所见≠所导）。
+            double dx = Math.Cos(ang), dy = -Math.Sin(ang);
             double sx = (cx - 0.5 * dx) * w, sy = (cy - 0.5 * dy) * h;   // 线起点 = 中心 - 0.5·方向
             double ex = (cx + 0.5 * dx) * w, ey = (cy + 0.5 * dy) * h;   // 线终点 = 中心 + 0.5·方向
 
@@ -2412,7 +2414,7 @@ namespace CpqSystemTool
             _gradientOverlayItems.Add(AddDot(sx, sy, Brushes.White, (s, e) => { _draggingLineEnd = true; _previewOverlay.CaptureMouse(); e.Handled = true; }));
             _gradientOverlayItems.Add(AddDot(ex, ey, Brushes.White, (s, e) => { _draggingLineEnd = true; _previewOverlay.CaptureMouse(); e.Handled = true; }));
 
-            foreach (var stop in _settings.Stops.OrderBy(x => x.Offset))
+            foreach (var stop in _settings.GetStops(_previewDark).OrderBy(x => x.Offset))   // 停点圆点跟活动套
             {
                 double t = stop.Offset;
                 double px = (cx + (t - 0.5) * dx) * w;
@@ -2533,7 +2535,7 @@ namespace CpqSystemTool
             _gradientOverlayItems.Add(hy);
 
             // 停靠点句柄：沿 45° 半径方向分布（offset 0=中心，1=边缘），与中心/半径句柄错开避免重叠
-            foreach (var stop in _settings.Stops.OrderBy(x => x.Offset))
+            foreach (var stop in _settings.GetStops(_previewDark).OrderBy(x => x.Offset))   // 停点圆点跟活动套
             {
                 double px = cx + stop.Offset * rx * K45;
                 double py = cy - stop.Offset * ry * K45;
@@ -2621,7 +2623,9 @@ namespace CpqSystemTool
                 _editLabel.Visibility = Visibility.Visible;
                 if (_selectedStop != null)
                 {
-                    int n = _settings.Stops.IndexOf(_selectedStop) + 1;
+                    // 编号按活动套列表算（浅色套下用 Stops.IndexOf 会得到 0）
+                    var activeStops = _settings.GetStops(_previewDark);
+                    int n = Math.Max(0, activeStops.IndexOf(_selectedStop)) + 1;
                     int pct = (int)Math.Round(_selectedStop.Offset * 100);
                     _editLabel.Text = string.Format(System.Globalization.CultureInfo.InvariantCulture,
                         "正在编辑：停靠点 #{0}（位置 {1}%）", n, pct);
@@ -2634,7 +2638,7 @@ namespace CpqSystemTool
                 _editLabel.Visibility = Visibility.Visible;
                 if (_selectedBlob != null)
                 {
-                    int n = _settings.Blobs.IndexOf(_selectedBlob) + 1;
+                    int n = _settings.GetBlobs(_previewDark).IndexOf(_selectedBlob) + 1;
                     _editLabel.Text = string.Format(System.Globalization.CultureInfo.InvariantCulture,
                         "正在编辑：光斑 #{0}", n);
                 }

@@ -493,7 +493,8 @@ namespace CpqSystemTool
                 // 拖「轴线本体」平移中心、拖「两端圆点」绕中心旋转角度，二者互不干扰。
                 double ang = s.GradientAngle * Math.PI / 180.0;
                 double cx = s.LinearCenterX, cy = s.LinearCenterY;
-                double dx = Math.Cos(ang), dy = Math.Sin(ang);
+                // 标准角度约定（与 WPF Angle / CSS 一致：0°=右、90°=上）：屏幕 y 向下，方向向量 = (cos, -sin)
+                double dx = Math.Cos(ang), dy = -Math.Sin(ang);
                 var brush = new LinearGradientBrush
                 {
                     StartPoint = new Point(cx - 0.5 * dx, cy - 0.5 * dy),
