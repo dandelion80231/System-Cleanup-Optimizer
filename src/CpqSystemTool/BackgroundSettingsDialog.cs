@@ -190,6 +190,10 @@ namespace CpqSystemTool
 
             BuildUi();
             SyncUiToSettings();
+            PromoteActiveSet();   // 「分别编辑浅色套」：打开时活动套=浅色且未同步过 → 克隆深色套内容，编辑落在浅色套
+            RefreshStopList();
+            RefreshBlobList();
+            UpdateEditLabel();
         }
 
         private void BuildUi()
@@ -1101,12 +1105,12 @@ namespace CpqSystemTool
 
         private void AddStop_Click(object sender, RoutedEventArgs e)
         {
-            _settings.EnsureGradientStops();
-            var last = _settings.Stops.LastOrDefault();
+            var stops = ActiveStops();   // 「分别编辑浅色套」：新增停靠点落在活动套
+            var last = stops.LastOrDefault();
             double off = last != null ? Math.Min(last.Offset + 0.2, 1.0) : 1.0;
             var ns = new GradientStopSetting { Color = BackgroundSettings.ColorToHex(_currentColor), Offset = off };
-            _settings.Stops.Add(ns);
-            _settings.Stops = _settings.Stops.OrderBy(x => x.Offset).ToList();
+            stops.Add(ns);
+            stops.Sort((x, y) => x.Offset.CompareTo(y.Offset));
             _selectedStop = ns;
             _selectedBlob = null;
             RefreshStopList();
@@ -1115,10 +1119,10 @@ namespace CpqSystemTool
 
         private void AddBlob_Click(object sender, RoutedEventArgs e)
         {
-            _settings.EnsureMeshBlobs();
+            var blobs = ActiveBlobs();   // 「分别编辑浅色套」：新增光斑落在活动套
             double radius = 0.35;
-            double cx = 0.3 + (_settings.Blobs.Count % 3) * 0.2;
-            double cy = 0.3 + (_settings.Blobs.Count / 3) * 0.2;
+            double cx = 0.3 + (blobs.Count % 3) * 0.2;
+            double cy = 0.3 + (blobs.Count / 3) * 0.2;
             // 保证光斑主体在画布 [0,1] 范围内，避免越界后被完全裁切
             cx = Math.Max(radius, Math.Min(1.0 - radius, cx));
             cy = Math.Max(radius, Math.Min(1.0 - radius, cy));
@@ -1130,7 +1134,7 @@ namespace CpqSystemTool
                 Radius = radius,
                 Opacity = 0.8
             };
-            _settings.Blobs.Add(nb);
+            blobs.Add(nb);
             _selectedBlob = nb;
             _selectedStop = null;
             RefreshBlobList();
@@ -1474,11 +1478,13 @@ namespace CpqSystemTool
         {
             _settings.EnsureGradientStops();
 
+            // 「分别编辑浅色套」：列表显示活动套（GetStops 读回退，不产生写副作用）
+            var list = _settings.GetStops(_previewDark);
             // 删除已不存在的停靠点对应的 UI 行
             var removed = new List<GradientStopSetting>();
             foreach (var kv in _stopRows)
             {
-                if (!_settings.Stops.Contains(kv.Key))
+                if (!list.Contains(kv.Key))
                 {
                     _stopPanel.Children.Remove(kv.Value);
                     removed.Add(kv.Key);
@@ -1486,10 +1492,10 @@ namespace CpqSystemTool
             }
             foreach (var r in removed) _stopRows.Remove(r);
 
-            // 按当前停靠点顺序重建/调整 UI 行
-            for (int i = 0; i < _settings.Stops.Count; i++)
+            // 按当前停靠点顺序重建/调整 UI 行（活动套）
+            for (int i = 0; i < list.Count; i++)
             {
-                var stop = _settings.Stops[i];
+                var stop = list[i];
                 if (!_stopRows.TryGetValue(stop, out var row))
                 {
                     row = CreateStopRow(stop);
@@ -1629,10 +1635,11 @@ namespace CpqSystemTool
         {
             _settings.EnsureMeshBlobs();
 
+            var blobList = _settings.GetBlobs(_previewDark);   // 「分别编辑浅色套」：显示活动套
             var removed = new List<MeshBlobSetting>();
             foreach (var kv in _blobRows)
             {
-                if (!_settings.Blobs.Contains(kv.Key))
+                if (!blobList.Contains(kv.Key))
                 {
                     _blobPanel.Children.Remove(kv.Value);
                     removed.Add(kv.Key);
@@ -1640,9 +1647,9 @@ namespace CpqSystemTool
             }
             foreach (var r in removed) _blobRows.Remove(r);
 
-            for (int i = 0; i < _settings.Blobs.Count; i++)
+            for (int i = 0; i < blobList.Count; i++)
             {
-                var blob = _settings.Blobs[i];
+                var blob = blobList[i];
                 if (!_blobRows.TryGetValue(blob, out var row))
                 {
                     row = CreateBlobRow(blob);
@@ -1850,10 +1857,10 @@ namespace CpqSystemTool
                 UpdateBlobRow(_selectedBlob);
             }
 
-            // 纯色模式直接同步
+            // 纯色模式直接同步（「分别编辑浅色套」：写入落活动套，浅色套未设先克隆再写）
             if (_settings.Mode == BackgroundMode.Solid)
             {
-                _settings.SolidColor = BackgroundSettings.ColorToHex(c);
+                WriteSolidHex(BackgroundSettings.ColorToHex(c));
             }
 
             UpdateWheelIndicator();
@@ -2885,12 +2892,14 @@ namespace CpqSystemTool
             var palette = BuildHarmonyPalette();
             if (palette.Count < 2) return;
             _settings.EnsureGradientStops();
-            _settings.Stops = palette.Select((c, i) => new GradientStopSetting
+            var dst = ActiveStops();   // 「分别编辑浅色套」：和谐调色板写活动套
+            dst.Clear();
+            dst.AddRange(palette.Select((c, i) => new GradientStopSetting
             {
                 Color = BackgroundSettings.ColorToHex(c),
                 Offset = palette.Count == 1 ? 0.0 : (double)i / (palette.Count - 1)
-            }).ToList();
-            _selectedStop = _settings.Stops[0];
+            }).ToList());
+            _selectedStop = dst[0];
             _selectedBlob = null;
             _currentColor = BackgroundSettings.ParseColor(_selectedStop.Color);
             UpdateColor(_currentColor, true);
@@ -3327,7 +3336,7 @@ namespace CpqSystemTool
             };
             _baseSwatch.MouseLeftButtonDown += (s, e) =>
             {
-                _settings.MeshBaseColor = BackgroundSettings.ColorToHex(_currentColor);
+                WriteMeshBaseHex(BackgroundSettings.ColorToHex(_currentColor));   // 「分别编辑浅色套」
                 UpdateMeshBaseUi();
                 RefreshPreview();
             };
@@ -3356,7 +3365,7 @@ namespace CpqSystemTool
                 var c = BackgroundSettings.ParseColor(norm);
                 if (c.A > 0)
                 {
-                    _settings.MeshBaseColor = norm;
+                    WriteMeshBaseHex(norm);
                     UpdateMeshBaseUi();
                     RefreshPreview();
                 }
@@ -3373,7 +3382,7 @@ namespace CpqSystemTool
             };
             basePickBtn.Click += (s, e) =>
             {
-                _settings.MeshBaseColor = BackgroundSettings.ColorToHex(_currentColor);
+                WriteMeshBaseHex(BackgroundSettings.ColorToHex(_currentColor));   // 「分别编辑浅色套」
                 UpdateMeshBaseUi();
                 RefreshPreview();
             };
@@ -3413,7 +3422,69 @@ namespace CpqSystemTool
 
         // ===================== 深浅背景切换（非图片模式：深/浅两套色 + 预览套切换 + 一键同步） =====================
 
-        /// <summary>预览套从深色切到浅色（或反向）：重新取套渲染预览 + 当前色（浅色套为空时 GetStops 自动回退深色套）。</summary>
+        /// <summary>「分别编辑浅色套」：活动套=浅色且其数据为空时，把深色套内容克隆进去（一次性升级，幂等）。
+        /// 升级后 _selectedStop/_selectedBlob 重指到浅色套对应元素，列表行重建——之后所有编辑都落在浅色套。</summary>
+        private void PromoteActiveSet()
+        {
+            if (_previewDark) return;
+            bool changed = false;
+            _settings.EnsureGradientStops();
+            if (_settings.LightStops == null || _settings.LightStops.Count == 0)
+            {
+                _settings.LightStops = _settings.Stops.Select(x => new GradientStopSetting { Color = x.Color, Offset = x.Offset }).ToList();
+                changed = true;
+            }
+            _settings.EnsureMeshBlobs();
+            if (_settings.LightBlobs == null || _settings.LightBlobs.Count == 0)
+            {
+                _settings.LightBlobs = _settings.Blobs.Select(x => new MeshBlobSetting
+                {
+                    Color = x.Color, CenterX = x.CenterX, CenterY = x.CenterY, Radius = x.Radius, Opacity = x.Opacity
+                }).ToList();
+                changed = true;
+            }
+            if (string.IsNullOrEmpty(_settings.LightMeshBaseColor))
+            {
+                _settings.LightMeshBaseColor = _settings.MeshBaseColor;
+                changed = true;
+            }
+            if (string.IsNullOrEmpty(_settings.LightSolidColor))
+            {
+                _settings.LightSolidColor = _settings.SolidColor;
+                changed = true;
+            }
+            if (!changed) return;
+            _hasEditedAfterShow = true;
+            // 选中项重指到浅色套对应元素（按位置对齐），列表行重建
+            _selectedStop = _settings.LightStops.FirstOrDefault();
+            _selectedBlob = _settings.LightBlobs.FirstOrDefault();
+            RefreshStopList();
+            RefreshBlobList();
+        }
+
+        /// <summary>活动套的停靠点列表（写点用）：浅色套未升级时按 GetStops 回退深色套。</summary>
+        private List<GradientStopSetting> ActiveStops() => _settings.GetStops(_previewDark);
+
+        /// <summary>活动套的光斑列表（写点用）。</summary>
+        private List<MeshBlobSetting> ActiveBlobs() => _settings.GetBlobs(_previewDark);
+
+        /// <summary>纯色写入（落点跟活动套；浅色套未设时先克隆深色值再写）。</summary>
+        private void WriteSolidHex(string hex)
+        {
+            if (_previewDark) { _settings.SolidColor = hex; return; }
+            if (string.IsNullOrEmpty(_settings.LightSolidColor)) _settings.LightSolidColor = _settings.SolidColor;
+            _settings.LightSolidColor = hex;
+        }
+
+        /// <summary>网格底色写入（同上）；显示侧用 GetMeshBaseColor(_previewDark)。</summary>
+        private void WriteMeshBaseHex(string hex)
+        {
+            if (_previewDark) { _settings.MeshBaseColor = hex; return; }
+            if (string.IsNullOrEmpty(_settings.LightMeshBaseColor)) _settings.LightMeshBaseColor = _settings.MeshBaseColor;
+            _settings.LightMeshBaseColor = hex;
+        }
+
+        /// <summary>预览套从深色切到浅色（或反向）：共用 _owner.ToggleTheme 翻转主题，随后升级活动套并刷新。</summary>
         private void SetPreviewSet(bool dark)
         {
             // 共用主窗口切换逻辑：目标套与当前主题不一致时翻主题（主窗背景 + 弹窗预览一起换套）
@@ -3430,6 +3501,9 @@ namespace CpqSystemTool
                 finally { _isUpdating = false; }
             }
             catch { /* 取套失败保持当前色 */ }
+            PromoteActiveSet();
+            RefreshStopList();
+            RefreshBlobList();
             RefreshPreview();
             UpdateDlToggleUi();
         }
@@ -3564,10 +3638,10 @@ namespace CpqSystemTool
             }
             if (_settings.Mode == BackgroundMode.Solid)
             {
-                _settings.SolidColor = preset.BaseColor;
+                WriteSolidHex(preset.BaseColor);   // 「分别编辑浅色套」：写入活动套
                 _selectedStop = null;
                 _selectedBlob = null;
-                _currentColor = BackgroundSettings.ParseColor(_settings.SolidColor);
+                _currentColor = BackgroundSettings.ParseColor(_settings.GetSolidColor(_previewDark));
                 _isUpdating = true;
                 try { UpdateColor(_currentColor, true); }
                 finally { _isUpdating = false; }
@@ -3578,12 +3652,14 @@ namespace CpqSystemTool
             }
             var colors = preset.Blobs.Select(b => b.Color).Distinct().Take(5).ToList();
             _settings.EnsureGradientStops();
-            _settings.Stops = colors.Select((c, i) => new GradientStopSetting
+            var dst = ActiveStops();   // 「分别编辑浅色套」：停靠点写活动套
+            dst.Clear();
+            dst.AddRange(colors.Select((c, i) => new GradientStopSetting
             {
                 Color = c,
                 Offset = colors.Count == 1 ? 0.0 : (double)i / (colors.Count - 1)
-            }).ToList();
-            _selectedStop = _settings.Stops[0];
+            }).ToList());
+            _selectedStop = dst[0];
             _selectedBlob = null;
             _currentColor = BackgroundSettings.ParseColor(_selectedStop.Color);
             _isUpdating = true;
@@ -3610,16 +3686,18 @@ namespace CpqSystemTool
         {
             if (preset == null) return;
             _settings.Mode = BackgroundMode.MeshGradient;
-            _settings.MeshBaseColor = preset.BaseColor;
-            _settings.Blobs = preset.Blobs.Select(b => new MeshBlobSetting
+            WriteMeshBaseHex(preset.BaseColor);   // 「分别编辑浅色套」：底色写活动套
+            var blobs = ActiveBlobs();
+            blobs.Clear();
+            blobs.AddRange(preset.Blobs.Select(b => new MeshBlobSetting
             {
                 Color = b.Color,
                 CenterX = b.CenterX,
                 CenterY = b.CenterY,
                 Radius = b.Radius,
                 Opacity = b.Opacity
-            }).ToList();
-            _selectedBlob = _settings.Blobs.FirstOrDefault();
+            }).ToList());
+            _selectedBlob = blobs.FirstOrDefault();
             _selectedStop = null;
             // [Q45] preset 无光斑（Blobs 为空）时 FirstOrDefault()=null，原直接 _selectedBlob.Color 会 NRE。
             // 回退用基础色初始化选中色；光斑列表为空时 RefreshBlobList 无行可刷，安全。
@@ -3635,7 +3713,7 @@ namespace CpqSystemTool
             RefreshBlobList();
             RefreshPreview();
             UpdateEditLabel();
-            if (_cssBox != null) _cssBox.Text = BackgroundSettings.ToCssGradient(_settings.Blobs);
+            if (_cssBox != null) _cssBox.Text = BackgroundSettings.ToCssGradient(_settings.GetBlobs(_previewDark));
             // 同步模式下拉框（预设按钮只在网格模式可见，通常已是 MeshGradient，此处兜底）
             foreach (ComboBoxItem it in _modeCombo.Items)
             {
@@ -3670,9 +3748,10 @@ namespace CpqSystemTool
             _isUpdating = true;
             try
             {
-                _baseSwatch.Background = MakeColorBrush(_settings.MeshBaseColor);
-                if (!_baseHexBox.IsKeyboardFocused && _baseHexBox.Text != _settings.MeshBaseColor)
-                    _baseHexBox.Text = _settings.MeshBaseColor;
+                var baseHex = _settings.GetMeshBaseColor(_previewDark);   // 「分别编辑浅色套」：显示活动套底色
+                _baseSwatch.Background = MakeColorBrush(baseHex);
+                if (!_baseHexBox.IsKeyboardFocused && _baseHexBox.Text != baseHex)
+                    _baseHexBox.Text = baseHex;
             }
             finally { _isUpdating = false; }
         }
