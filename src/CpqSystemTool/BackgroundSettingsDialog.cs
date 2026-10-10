@@ -715,6 +715,10 @@ namespace CpqSystemTool
             _imageCard.Child = imgRoot;
             editPanel.Children.Add(_imageCard);
 
+            // 网格底色卡上移到颜色卡正下方：选色（色轮/HEX/滑块）与底色确认同屏完成
+            // （原来在滚动区最底部，点底色色块后要看反馈要滚上去，来回滚动——用户指出位置不合理）
+            BuildMeshCard(editPanel);
+
             // 和谐色（颜色组合 + 调色板）：显示在颜色编辑区下方（原位置）
             BuildHarmonyCard(editPanel);
 
@@ -832,8 +836,7 @@ namespace CpqSystemTool
             _listCard.Child = listSp;
             editPanel.Children.Add(_listCard);
 
-            // 网格专属卡片：底色（Base color），仅网格模式可见（预设模板已并入「预设色板」卡片）
-            BuildMeshCard(editPanel);
+
 
             editScroll.Content = editPanel;
             content.Children.Add(editScroll);
