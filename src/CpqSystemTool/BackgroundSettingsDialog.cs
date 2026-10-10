@@ -62,8 +62,6 @@ namespace CpqSystemTool
         private TextBlock _darkOpacityVal;
         private TextBlock _lightOpacityVal;
         private Image _imgBigPreview;        // 右列大预览：按「深浅预览切换行」所选套显示深色/浅色背景图
-        private bool _imgPreviewDark = true;  // 「深浅背景切换」(图片模式)：大预览当前显示哪套（仅预览，不改主窗口实际主题）
-        private Button _imgPreviewDarkBtn, _imgPreviewLightBtn;   // 深浅预览切换按钮（图片模式）
         private TextBlock _imgBigPlaceholder;
         private TextBox _cssBox;
         private TextBlock _cssStatus;
@@ -195,7 +193,6 @@ namespace CpqSystemTool
 
         private void BuildUi()
         {
-            _imgPreviewDark = _owner.IsDarkMode;   // 深浅预览初值：跟随主窗口当前主题
             var root = new Grid { Margin = new Thickness(16) };
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 标题+模式
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 内容
@@ -695,35 +692,8 @@ namespace CpqSystemTool
             };
             bigGrid.Children.Add(_imgBigPlaceholder);
             bigPreviewHost.Child = bigGrid;
-            // 「深浅背景切换」（图片模式）：深色/浅色 预览切换行。
-            // 缺失原因：大预览原按主窗口当前主题自动选 DarkPath/LightPath，弹窗内无控件切换，
-            // 比对另一张图要关弹窗→主窗口切主题→重开。现加显式切换（仅预览，不影响主窗口实际主题）。
-            var imgDlRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
-            imgDlRow.Children.Add(new TextBlock { Text = "深浅预览:", Foreground = _owner._textDim, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
-            _imgPreviewDarkBtn = new Button
-            {
-                Content = new Emoji.Wpf.TextBlock { Text = "🌙 深色", VerticalAlignment = VerticalAlignment.Center },
-                Height = 26, Width = 76, Margin = new Thickness(0, 0, 6, 0),
-                Padding = new Thickness(4, 0, 4, 0),
-                Background = _owner._accent, Foreground = _owner._btnPrimaryFg, BorderThickness = new Thickness(0)
-            };
-            _imgPreviewDarkBtn.Click += (s, e) => { _imgPreviewDark = true; RefreshImageModePreviews(); UpdateImgPreviewToggleUi(); };
-            imgDlRow.Children.Add(_imgPreviewDarkBtn);
-            _imgPreviewLightBtn = new Button
-            {
-                Content = new Emoji.Wpf.TextBlock { Text = "☀️ 浅色", VerticalAlignment = VerticalAlignment.Center },
-                Height = 26, Width = 76,
-                Padding = new Thickness(4, 0, 4, 0),
-                Background = _owner._btnSecondaryBg, Foreground = _owner._btnSecondaryFg, BorderThickness = new Thickness(0)
-            };
-            _imgPreviewLightBtn.Click += (s, e) => { _imgPreviewDark = false; RefreshImageModePreviews(); UpdateImgPreviewToggleUi(); };
-            imgDlRow.Children.Add(_imgPreviewLightBtn);
-            var bigWrap = new StackPanel();
-            bigWrap.Children.Add(imgDlRow);
-            bigWrap.Children.Add(bigPreviewHost);
-            Grid.SetColumn(bigWrap, 1);
-            imgRoot.Children.Add(bigWrap);
-            UpdateImgPreviewToggleUi();
+            Grid.SetColumn(bigPreviewHost, 1);
+            imgRoot.Children.Add(bigPreviewHost);
 
             _imageCard.Child = imgRoot;
             editPanel.Children.Add(_imageCard);
@@ -2036,30 +2006,14 @@ namespace CpqSystemTool
         /// </summary>
         private void RefreshImageModePreviews()
         {
-            // 「深浅背景切换」：大预览按 _imgPreviewDark（深浅预览切换行）选套，不再直接跟主窗口主题——
-            // 主窗口主题只决定弹窗打开时的初值（BuildUi），之后由用户手动切换预览套。
-            bool dark = _imgPreviewDark;
+            // 深浅背景切换走主窗口右上角单按钮（🌙/☀️，共用）：本弹窗模态期间主窗口禁用、
+            // 大预览按打开时的主题显示对应背景图；关闭后点主窗口按钮切换主题，背景图随 ApplyShellColors 换套。
+            bool dark = _owner.IsDarkMode;
             string path = dark ? _settings.DarkPath : _settings.LightPath;
             double opacity = dark ? _settings.DarkOpacity : _settings.LightOpacity;
             LoadImagePreview(_imgBigPreview, _imgBigPlaceholder, path, dark, opacity);
-            UpdateImgPreviewToggleUi();
         }
 
-        /// <summary>深浅预览切换按钮高亮态（当前套 accent 高亮，另一套次级色），与深浅套切换行同款。</summary>
-        private void UpdateImgPreviewToggleUi()
-        {
-            if (_imgPreviewDarkBtn == null || _imgPreviewLightBtn == null) return;
-            if (_imgPreviewDark)
-            {
-                _imgPreviewDarkBtn.Background = _owner._accent; _imgPreviewDarkBtn.Foreground = _owner._btnPrimaryFg;
-                _imgPreviewLightBtn.Background = _owner._btnSecondaryBg; _imgPreviewLightBtn.Foreground = _owner._btnSecondaryFg;
-            }
-            else
-            {
-                _imgPreviewLightBtn.Background = _owner._accent; _imgPreviewLightBtn.Foreground = _owner._btnPrimaryFg;
-                _imgPreviewDarkBtn.Background = _owner._btnSecondaryBg; _imgPreviewDarkBtn.Foreground = _owner._btnSecondaryFg;
-            }
-        }
 
         /// <summary>
         /// 透明度快路径：大预览已经显示着本滑块对应的图时，只改 Opacity 即可。
@@ -2069,7 +2023,7 @@ namespace CpqSystemTool
         private bool ApplyImageOpacityOnly(bool isDark, double opacity)
         {
             if (_imgBigPreview == null || _imgBigPreview.Source == null) return false;
-            if (isDark != _imgPreviewDark) return false;   // 快路径：大预览当前显示的是否本套（深浅预览切换行）
+            if (isDark != _owner.IsDarkMode) return false;
             _imgBigPreview.Opacity = Math.Max(0.05, Math.Min(1.0, opacity));
             return true;
         }
