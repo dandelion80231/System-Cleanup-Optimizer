@@ -70,6 +70,7 @@ namespace CpqSystemTool
         private Border _meshCard;
         private Border _baseSwatch;
         private TextBox _baseHexBox;
+        private bool _editingMeshBase;   // 网格模式编辑目标：true=网格底色（色轮/HEX/滑块直接写底色），false=选中的光斑（默认）
 
         // 色阶生成器（Shades / Tints / Tones）
         private Border _sttCard;
@@ -1423,6 +1424,7 @@ namespace CpqSystemTool
             if (showColor) UpdateShadesTintsTones();
             // 预设色板库：非图片模式可见（纯色/线性/径向/网格都可用）
             SetVisibility(_paletteCard, showColor);
+            _editingMeshBase = false;   // 切模式时编辑目标复位为光斑（底色编辑仅网格模式有意义）
             if (_dlToggleRow != null) SetVisibility(_dlToggleRow, _settings.Mode != BackgroundMode.Image);
             UpdateDlToggleUi();
 
@@ -1520,6 +1522,7 @@ namespace CpqSystemTool
             row.MouseLeftButtonDown += (s, e) =>
             {
                 if (e.OriginalSource is Button) return; // 避免与删除按钮冲突
+                _editingMeshBase = false;
                 _selectedStop = stop;
                 _currentColor = BackgroundSettings.ParseColor(stop.Color);
                 UpdateColor(_currentColor, true);
@@ -1673,6 +1676,7 @@ namespace CpqSystemTool
             row.MouseLeftButtonDown += (s, e) =>
             {
                 if (e.OriginalSource is Button) return;
+                _editingMeshBase = false;   // 点光斑行 = 编辑目标切回光斑
                 _selectedBlob = blob;
                 _currentColor = BackgroundSettings.ParseColor(blob.Color);
                 UpdateColor(_currentColor, true);
@@ -1691,6 +1695,7 @@ namespace CpqSystemTool
             };
             colorBox.MouseLeftButtonDown += (s, e) =>
             {
+                _editingMeshBase = false;
                 _selectedBlob = blob;
                 _currentColor = BackgroundSettings.ParseColor(blob.Color);
                 UpdateColor(_currentColor, true); // 同步 RGB/HEX/明度滑块
@@ -1757,8 +1762,9 @@ namespace CpqSystemTool
             };
             del.Click += (s, e) =>
             {
-                _settings.Blobs.Remove(blob);
-                if (_selectedBlob == blob) _selectedBlob = _settings.Blobs.FirstOrDefault();
+                var src = _settings.GetBlobs(_previewDark);   // 「分别编辑浅色套」：从活动套删除
+                src.Remove(blob);
+                if (_selectedBlob == blob) _selectedBlob = src.FirstOrDefault();
                 RefreshBlobList();
                 RefreshPreview();
             };
@@ -1846,15 +1852,24 @@ namespace CpqSystemTool
             _contrastText.Foreground = ratio >= 4.5 ? _owner._successGreen ?? _owner._textDim : LowContrastBrush;
 
             // 如果当前有选中的 stop/blob，同步颜色并局部刷新该行的颜色块/HEX，避免重建整个列表导致滑块丢失焦点
-            if (_selectedStop != null)
+            if (_editingMeshBase && _settings.Mode == BackgroundMode.MeshGradient)
             {
-                _selectedStop.Color = BackgroundSettings.ColorToHex(c);
-                UpdateStopRow(_selectedStop);
+                // 编辑目标=网格底色（点底色色块选中）：色轮/HEX/滑块直接写底色（活动套）
+                WriteMeshBaseHex(BackgroundSettings.ColorToHex(c));
+                UpdateMeshBaseUi();
             }
-            if (_selectedBlob != null)
+            else
             {
-                _selectedBlob.Color = BackgroundSettings.ColorToHex(c);
-                UpdateBlobRow(_selectedBlob);
+                if (_selectedStop != null)
+                {
+                    _selectedStop.Color = BackgroundSettings.ColorToHex(c);
+                    UpdateStopRow(_selectedStop);
+                }
+                if (_selectedBlob != null)
+                {
+                    _selectedBlob.Color = BackgroundSettings.ColorToHex(c);
+                    UpdateBlobRow(_selectedBlob);
+                }
             }
 
             // 纯色模式直接同步（「分别编辑浅色套」：写入落活动套，浅色套未设先克隆再写）
@@ -2636,7 +2651,11 @@ namespace CpqSystemTool
             else if (_settings.Mode == BackgroundMode.MeshGradient)
             {
                 _editLabel.Visibility = Visibility.Visible;
-                if (_selectedBlob != null)
+                if (_editingMeshBase)
+                {
+                    _editLabel.Text = "正在编辑：网格底色" + (_previewDark ? "" : "（浅色套）");
+                }
+                else if (_selectedBlob != null)
                 {
                     int n = _settings.GetBlobs(_previewDark).IndexOf(_selectedBlob) + 1;
                     _editLabel.Text = string.Format(System.Globalization.CultureInfo.InvariantCulture,
@@ -3121,6 +3140,7 @@ namespace CpqSystemTool
                         Opacity = 0.30 + _rng.NextDouble() * 0.25
                     });
                 }
+                _editingMeshBase = false;
                 _selectedBlob = _settings.Blobs[0];
                 _selectedStop = null;
                 _currentColor = BackgroundSettings.ParseColor(_selectedBlob.Color);
@@ -3340,9 +3360,17 @@ namespace CpqSystemTool
             };
             _baseSwatch.MouseLeftButtonDown += (s, e) =>
             {
-                WriteMeshBaseHex(BackgroundSettings.ColorToHex(_currentColor));   // 「分别编辑浅色套」
-                UpdateMeshBaseUi();
+                // 点底色色块 = 选中「网格底色」为编辑目标：之后色轮/HEX/RGB/HSV/数值框 直接改底色
+                // （旧行为只是"把当前色应用到底色"，必须先选色再点，反直觉——用户指出"点击之后应该能改色"）
+                _editingMeshBase = true;
+                _selectedBlob = null;
+                _currentColor = BackgroundSettings.ParseColor(_settings.GetMeshBaseColor(_previewDark));
+                _isUpdating = true;
+                try { UpdateColor(_currentColor, true); }
+                finally { _isUpdating = false; }
+                _hasEditedAfterShow = true;
                 RefreshPreview();
+                UpdateEditLabel();
             };
             baseRow.Children.Add(_baseSwatch);
             _baseHexBox = new TextBox
@@ -3475,7 +3503,9 @@ namespace CpqSystemTool
             {
                 var first = _settings.Mode == BackgroundMode.Solid
                     ? BackgroundSettings.ParseColor(_settings.GetSolidColor(_previewDark))
-                    : BackgroundSettings.ParseColor(_settings.GetStops(_previewDark).FirstOrDefault()?.Color ?? "#16E0BD");
+                    : _settings.Mode == BackgroundMode.MeshGradient
+                        ? BackgroundSettings.ParseColor(_settings.GetBlobs(_previewDark).FirstOrDefault()?.Color ?? _settings.GetMeshBaseColor(_previewDark))
+                        : BackgroundSettings.ParseColor(_settings.GetStops(_previewDark).FirstOrDefault()?.Color ?? "#16E0BD");
                 _isUpdating = true;
                 try { _currentColor = first; UpdateColor(_currentColor, true); }
                 finally { _isUpdating = false; }
@@ -3677,6 +3707,7 @@ namespace CpqSystemTool
                 Radius = b.Radius,
                 Opacity = b.Opacity
             }).ToList());
+            _editingMeshBase = false;
             _selectedBlob = blobs.FirstOrDefault();
             _selectedStop = null;
             // [Q45] preset 无光斑（Blobs 为空）时 FirstOrDefault()=null，原直接 _selectedBlob.Color 会 NRE。
