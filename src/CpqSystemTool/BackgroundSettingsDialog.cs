@@ -81,7 +81,8 @@ namespace CpqSystemTool
         private Canvas _harmonyOverlay;
         // 「深浅背景切换」：非图片模式下，预览/编辑的当前套（true=深色套，false=浅色套）
         private bool _previewDark = true;
-        private Button _previewDarkBtn, _previewLightBtn;   // 预览套切换按钮（非图片模式可见）
+        private Button _previewThemeBtn;   // 深浅切换单按钮（非图片模式；🌙/☀️ 同主窗口右上角，共用 _owner.ToggleTheme）
+        private Button _imgThemeToggleBtn;  // 深浅切换单按钮（图片模式；同上）
         private StackPanel _dlToggleRow;   // 深浅切换行（非图片模式可见）
         private Button _dlSyncBtn;             // 同步深色套→浅色套 按钮
 
@@ -194,6 +195,7 @@ namespace CpqSystemTool
         private void BuildUi()
         {
             var root = new Grid { Margin = new Thickness(16) };
+            _previewDark = _owner.IsDarkMode;   // 预览套初值 = 主窗口当前主题（弹窗内深浅与主窗背景保持一致）
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 标题+模式
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 内容
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 按钮
@@ -290,24 +292,16 @@ namespace CpqSystemTool
             // 「深浅背景切换」：深色套/浅色套 预览切换 + 一键同步（仅非图片模式显示，SyncModeUi 控制）
             _dlToggleRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
             _dlToggleRow.Children.Add(new TextBlock { Text = "深浅背景:", Foreground = _owner._textDim, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
-            _previewDarkBtn = new Button
+            // 单按钮（同主窗口右上角 🌙）：点一下深浅套同翻，共用 _owner.ToggleTheme 切换逻辑
+            _previewThemeBtn = new Button
             {
-                Content = new Emoji.Wpf.TextBlock { Text = "🌙 深色套", VerticalAlignment = VerticalAlignment.Center },
-                Height = 26, Width = 84, Margin = new Thickness(0, 0, 6, 0),
-                Padding = new Thickness(4, 0, 4, 0),
-                Background = _owner._accent, Foreground = _owner._btnPrimaryFg, BorderThickness = new Thickness(0)
+                Content = new Emoji.Wpf.TextBlock { Text = "🌙", VerticalAlignment = VerticalAlignment.Center, FontSize = 14 },
+                Width = 36, Height = 26, Margin = new Thickness(0, 0, 6, 0),
+                Background = _owner._btnSecondaryBg, Foreground = _owner._textDim, BorderThickness = new Thickness(0),
+                ToolTip = "切换深浅背景（与主窗口右上角按钮共用同一切换逻辑）"
             };
-            _previewDarkBtn.Click += (s, e) => { SetPreviewSet(true); };
-            _dlToggleRow.Children.Add(_previewDarkBtn);
-            _previewLightBtn = new Button
-            {
-                Content = new Emoji.Wpf.TextBlock { Text = "☀️ 浅色套", VerticalAlignment = VerticalAlignment.Center },
-                Height = 26, Width = 84,
-                Padding = new Thickness(4, 0, 4, 0),
-                Background = _owner._btnSecondaryBg, Foreground = _owner._btnSecondaryFg, BorderThickness = new Thickness(0)
-            };
-            _previewLightBtn.Click += (s, e) => { SetPreviewSet(false); };
-            _dlToggleRow.Children.Add(_previewLightBtn);
+            _previewThemeBtn.Click += (s, e) => { SetPreviewSet(!_previewDark); };
+            _dlToggleRow.Children.Add(_previewThemeBtn);
             _dlSyncBtn = new Button
             {
                 Content = new Emoji.Wpf.TextBlock { Text = "⧉ 同步深色→浅色", VerticalAlignment = VerticalAlignment.Center },
@@ -692,8 +686,25 @@ namespace CpqSystemTool
             };
             bigGrid.Children.Add(_imgBigPlaceholder);
             bigPreviewHost.Child = bigGrid;
-            Grid.SetColumn(bigPreviewHost, 1);
-            imgRoot.Children.Add(bigPreviewHost);
+            // 「深浅背景切换」（图片模式）：补一个与主窗口右上角同款单按钮——弹窗模态期间主窗按钮点不了，
+            // 共用 _owner.ToggleTheme：点一下主窗主题翻转，大预览随新主题换 深色图/浅色图。
+            var imgDlRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+            imgDlRow.Children.Add(new TextBlock { Text = "深浅背景:", Foreground = _owner._textDim, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+            _imgThemeToggleBtn = new Button
+            {
+                Content = new Emoji.Wpf.TextBlock { Text = "🌙", VerticalAlignment = VerticalAlignment.Center, FontSize = 14 },
+                Width = 36, Height = 26,
+                Background = _owner._btnSecondaryBg, Foreground = _owner._textDim, BorderThickness = new Thickness(0),
+                ToolTip = "切换深浅背景（与主窗口右上角按钮共用同一切换逻辑）"
+            };
+            _imgThemeToggleBtn.Click += (s, e) => { _owner.ToggleTheme(); RefreshImageModePreviews(); UpdateDlToggleUi(); };
+            imgDlRow.Children.Add(_imgThemeToggleBtn);
+            var bigWrap = new StackPanel();
+            bigWrap.Children.Add(imgDlRow);
+            bigWrap.Children.Add(bigPreviewHost);
+            Grid.SetColumn(bigWrap, 1);
+            imgRoot.Children.Add(bigWrap);
+            UpdateDlToggleUi();
 
             _imageCard.Child = imgRoot;
             editPanel.Children.Add(_imageCard);
@@ -3405,7 +3416,9 @@ namespace CpqSystemTool
         /// <summary>预览套从深色切到浅色（或反向）：重新取套渲染预览 + 当前色（浅色套为空时 GetStops 自动回退深色套）。</summary>
         private void SetPreviewSet(bool dark)
         {
-            _previewDark = dark;
+            // 共用主窗口切换逻辑：目标套与当前主题不一致时翻主题（主窗背景 + 弹窗预览一起换套）
+            if (dark != _owner.IsDarkMode) _owner.ToggleTheme();
+            _previewDark = _owner.IsDarkMode;
             // 当前编辑色切到对应套的首个停靠点/纯色，让色轮/HEX/滑块与预览套一致
             try
             {
@@ -3433,27 +3446,25 @@ namespace CpqSystemTool
             }).ToList();
             _settings.LightMeshBaseColor = _settings.MeshBaseColor;
             _hasEditedAfterShow = true;
-            // 同步后切到浅色套预览，让用户立刻看到浅色效果
-            _previewDark = false;
-            RefreshPreview();
-            UpdateDlToggleUi();
+            // 同步后切到浅色套预览（共用主窗口切换逻辑，主窗背景/弹窗预览一起换），让用户立刻看到浅色效果
+            SetPreviewSet(false);
         }
 
-        /// <summary>深浅切换按钮的选中态样式（当前套高亮为 accent，另一套为次级色）+ 显隐控制。</summary>
+        /// <summary>深浅切换单按钮的图标/提示（与主窗口 🌙 按钮同款语义：深色态=🌙"切换到浅色"，浅色态=☀️"切换到深色"）。</summary>
         private void UpdateDlToggleUi()
         {
-            if (_previewDarkBtn == null || _previewLightBtn == null) return;
-            Brush on = _owner._accent, off = _owner._btnSecondaryBg;
-            Brush onFg = _owner._btnPrimaryFg, offFg = _owner._btnSecondaryFg;
-            if (_previewDark)
+            bool dark = _owner.IsDarkMode;
+            string icon = dark ? "🌙" : "☀️";
+            string tip = dark ? "当前深色背景，点击切换为浅色" : "当前浅色背景，点击切换为深色";
+            if (_previewThemeBtn != null)
             {
-                _previewDarkBtn.Background = on; _previewDarkBtn.Foreground = onFg;
-                _previewLightBtn.Background = off; _previewLightBtn.Foreground = offFg;
+                _previewThemeBtn.Content = new Emoji.Wpf.TextBlock { Text = icon, VerticalAlignment = VerticalAlignment.Center, FontSize = 14 };
+                _previewThemeBtn.ToolTip = tip;
             }
-            else
+            if (_imgThemeToggleBtn != null)
             {
-                _previewLightBtn.Background = on; _previewLightBtn.Foreground = onFg;
-                _previewDarkBtn.Background = off; _previewDarkBtn.Foreground = offFg;
+                _imgThemeToggleBtn.Content = new Emoji.Wpf.TextBlock { Text = icon, VerticalAlignment = VerticalAlignment.Center, FontSize = 14 };
+                _imgThemeToggleBtn.ToolTip = tip;
             }
         }
 

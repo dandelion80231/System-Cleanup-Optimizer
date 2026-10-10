@@ -605,7 +605,9 @@ namespace CpqSystemTool
             return BuildBrushFrom(settings, dark);
         }
 
-        private void ThemeToggle_Click(object sender, RoutedEventArgs e)
+        /// <summary>手动切换深浅主题（主窗口右上角 🌙 按钮与「自定义背景」弹窗内的深浅切换按钮共用）：
+        /// 翻转主题 + 换壳色/清缓存/重建当前页；背景（图片/纯色/渐变/网格）按新主题自动换对应深浅套。</summary>
+        public void ToggleTheme()
         {
             _isDarkMode = !_isDarkMode;
             _userOverrodeTheme = true; // 标记用户手动切换，不再自动跟随系统
@@ -618,6 +620,11 @@ namespace CpqSystemTool
             // 用保存的 key 重建当前页（_activeNavKey 在 Navigate 中更新）；
             // 耗时操作运行中时挂起（操作锁「转空闲」通知后重建），不打断进行中的日志/勾选显示
             RebuildCurrentPageForTheme();
+        }
+
+        private void ThemeToggle_Click(object sender, RoutedEventArgs e)
+        {
+            ToggleTheme();
         }
 
         /// <summary>耗时操作运行中发生的主题变更挂起标志：待操作结束（OperationLock 转空闲）再重建当前页，
