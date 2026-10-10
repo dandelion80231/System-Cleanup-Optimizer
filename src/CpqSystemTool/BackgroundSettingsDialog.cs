@@ -71,6 +71,7 @@ namespace CpqSystemTool
         private Border _baseSwatch;
         private TextBox _baseHexBox;
         private bool _editingMeshBase;   // 网格模式编辑目标：true=网格底色（色轮/HEX/滑块直接写底色），false=选中的光斑（默认）
+        private TextBlock _baseEditHint;   // 底色编辑提示行（仅编辑底色时可见）
 
         // 色阶生成器（Shades / Tints / Tones）
         private Border _sttCard;
@@ -1682,6 +1683,7 @@ namespace CpqSystemTool
                 UpdateColor(_currentColor, true);
                 RefreshBlobList();
                 UpdateEditLabel();
+                UpdateMeshBaseUi();
                 e.Handled = true;
             };
 
@@ -1700,6 +1702,7 @@ namespace CpqSystemTool
                 _currentColor = BackgroundSettings.ParseColor(blob.Color);
                 UpdateColor(_currentColor, true); // 同步 RGB/HEX/明度滑块
                 RefreshBlobList();
+                UpdateMeshBaseUi();
             };
             row.Children.Add(colorBox);
 
@@ -3143,6 +3146,7 @@ namespace CpqSystemTool
                 _editingMeshBase = false;
                 _selectedBlob = _settings.Blobs[0];
                 _selectedStop = null;
+                UpdateMeshBaseUi();
                 _currentColor = BackgroundSettings.ParseColor(_selectedBlob.Color);
                 UpdateColor(_currentColor, true);
                 RefreshBlobList();
@@ -3371,6 +3375,7 @@ namespace CpqSystemTool
                 _hasEditedAfterShow = true;
                 RefreshPreview();
                 UpdateEditLabel();
+                UpdateMeshBaseUi();
             };
             baseRow.Children.Add(_baseSwatch);
             _baseHexBox = new TextBox
@@ -3420,6 +3425,17 @@ namespace CpqSystemTool
             };
             baseRow.Children.Add(basePickBtn);
             sp.Children.Add(baseRow);
+            // 点底色色块进入「底色编辑」后的当场可见反馈（提示行 + 色块 accent 描边）：
+            // 之前的反馈只在滚出屏幕的颜色卡（「正在编辑」标签/色轮）上，底色行本身无变化，用户以为"点了没反应"。
+            _baseEditHint = new TextBlock
+            {
+                Text = "正在编辑网格底色：色轮 / HEX / 滑块 现在直接改底色（点光斑行或随机光斑可切回编辑光斑）",
+                Foreground = _owner._accent,
+                FontSize = 11,
+                Margin = new Thickness(0, 0, 0, 4),
+                Visibility = Visibility.Collapsed
+            };
+            sp.Children.Add(_baseEditHint);
 
             // 「预设模板」按钮区已删除：与「预设色板」卡片（功能4，4列网格+色块预览）同源同 12 套、
             // 网格模式下点击行为等价（ApplyPaletteToCurrentMode 的网格分支就是 ApplyPreset），
@@ -3761,10 +3777,14 @@ namespace CpqSystemTool
             {
                 var baseHex = _settings.GetMeshBaseColor(_previewDark);   // 「分别编辑浅色套」：显示活动套底色
                 _baseSwatch.Background = MakeColorBrush(baseHex);
+                // 编辑底色时的选中态：accent 2px 描边（同停靠点选中行风格），平时 1px 普通边框
+                _baseSwatch.BorderBrush = _editingMeshBase ? _owner._accent : _owner._panelBorder;
+                _baseSwatch.BorderThickness = new Thickness(_editingMeshBase ? 2 : 1);
                 if (!_baseHexBox.IsKeyboardFocused && _baseHexBox.Text != baseHex)
                     _baseHexBox.Text = baseHex;
             }
             finally { _isUpdating = false; }
+            if (_baseEditHint != null) _baseEditHint.Visibility = _editingMeshBase ? Visibility.Visible : Visibility.Collapsed;
         }
 
         // ===================== 色阶生成器（Shades / Tints / Tones） =====================
