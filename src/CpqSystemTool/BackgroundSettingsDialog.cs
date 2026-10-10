@@ -66,7 +66,7 @@ namespace CpqSystemTool
         private TextBox _cssBox;
         private TextBlock _cssStatus;
 
-        // 网格专属卡片：底色 + 预设模板
+        // 网格专属卡片：底色（预设统一走「预设色板」卡片，旧「预设模板」按钮区已删）
         private Border _meshCard;
         private Border _baseSwatch;
         private TextBox _baseHexBox;
@@ -830,7 +830,7 @@ namespace CpqSystemTool
             _listCard.Child = listSp;
             editPanel.Children.Add(_listCard);
 
-            // 网格专属卡片：底色（Base color）+ 预设模板，仅网格模式可见
+            // 网格专属卡片：底色（Base color），仅网格模式可见（预设模板已并入「预设色板」卡片）
             BuildMeshCard(editPanel);
 
             editScroll.Content = editPanel;
@@ -3303,7 +3303,7 @@ namespace CpqSystemTool
             }
         }
 
-        // ===================== 网格底色 + 预设模板 =====================
+        // ===================== 网格底色（预设模板已并入「预设色板」卡片） =====================
 
         private void BuildMeshCard(StackPanel parent)
         {
@@ -3319,7 +3319,7 @@ namespace CpqSystemTool
             var sp = new StackPanel();
             sp.Children.Add(new TextBlock
             {
-                Text = "网格底色 & 预设模板",
+                Text = "网格底色",
                 FontWeight = FontWeights.SemiBold,
                 Foreground = _owner._textMain,
                 Margin = new Thickness(0, 0, 0, 8)
@@ -3393,33 +3393,9 @@ namespace CpqSystemTool
             baseRow.Children.Add(basePickBtn);
             sp.Children.Add(baseRow);
 
-            // 预设模板
-            sp.Children.Add(new TextBlock
-            {
-                Text = "预设模板（点击应用）:",
-                Foreground = _owner._textDim,
-                FontSize = 11,
-                Margin = new Thickness(0, 6, 0, 4)
-            });
-            var presetWrap = new WrapPanel { Orientation = Orientation.Horizontal };
-            foreach (var p in BackgroundSettings.GetMeshPresets())
-            {
-                var btn = new Button
-                {
-                    Content = p.Name,
-                    Height = 26,
-                    MinWidth = 56,
-                    Margin = new Thickness(0, 0, 6, 6),
-                    Padding = new Thickness(8, 2, 8, 2),
-                    Background = _owner._btnSecondaryBg,
-                    Foreground = _owner._btnSecondaryFg,
-                    BorderThickness = new Thickness(0)
-                };
-                btn.Click += (s, e) => ApplyPreset(p);
-                presetWrap.Children.Add(btn);
-            }
-            sp.Children.Add(presetWrap);
-
+            // 「预设模板」按钮区已删除：与「预设色板」卡片（功能4，4列网格+色块预览）同源同 12 套、
+            // 网格模式下点击行为等价（ApplyPaletteToCurrentMode 的网格分支就是 ApplyPreset），
+            // 保留新版卡片作为唯一预设入口，避免两处重复。
             _meshCard.Child = sp;
             parent.Children.Add(_meshCard);
         }
