@@ -487,10 +487,14 @@ namespace CpqSystemTool
             dualGrid.Children.Add(hsvPanel);
             lowerControls.Children.Add(dualGrid);
 
-            // 右列：颜色格式 / 对比度（Grid 垂直撑满，底部与色轮底部对齐）
+            // 右列：颜色格式 / 对比度。
+            // 「点底色后右列塌缩」验证：中间行 Star→Auto——Star 行在父容器（Auto 行）里反复重测时
+            // 高度不稳定（点底色/切套触发卡片重排后，Star 行可能塌到 0，右列 3 个子元素随之「消失」，
+            // 表现为颜色卡右半大灰框）。改 Auto 后右列高度=自然高度，重排稳定；
+            // 代价：「对比度」文本不再贴卡片底（右列比左列矮时，其下方留白在卡片底部）。
             rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 标题
-            rightCol.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 中部填空，把对比度推到底部
-            rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 对比度（与色轮底部对齐）
+            rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 4 个格式行（自然高度，行内铺满）
+            rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 对比度
 
             var infoTitle = new TextBlock { Text = "颜色格式 / 对比度", FontWeight = FontWeights.SemiBold, Foreground = _owner._textMain, Margin = new Thickness(0, 0, 0, 6) };
             Grid.SetRow(infoTitle, 0);
