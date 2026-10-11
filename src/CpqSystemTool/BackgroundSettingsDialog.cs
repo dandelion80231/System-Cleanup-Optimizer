@@ -267,10 +267,38 @@ namespace CpqSystemTool
             {
                 TextWrapping = TextWrapping.Wrap,
                 FontSize = 12.0,
-                Foreground = _owner._textDim,
-                Margin = new Thickness(0, 0, 0, 12)
+                Foreground = _owner._textDim
             };
-            editPanel.Children.Add(_modeHint);
+            // 「深浅背景切换」行上移到模式提示同一行（用户：往上挪更整齐；原在颜色卡内 editLabel 下方）
+            _dlToggleRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0) };
+            _dlToggleRow.Children.Add(new TextBlock { Text = "深浅背景:", Foreground = _owner._textDim, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+            // 单按钮（同主窗口右上角 🌙）：点一下深浅套同翻，共用 _owner.ToggleTheme 切换逻辑
+            _previewThemeBtn = new Button
+            {
+                Content = new Emoji.Wpf.TextBlock { Text = "🌙", VerticalAlignment = VerticalAlignment.Center, FontSize = 14 },
+                Width = 36, Height = 26, Margin = new Thickness(0, 0, 6, 0),
+                Background = _owner._btnSecondaryBg, Foreground = _owner._textDim, BorderThickness = new Thickness(0),
+                ToolTip = "切换深浅背景（与主窗口右上角按钮共用同一切换逻辑）"
+            };
+            _previewThemeBtn.Click += (s, e) => { SetPreviewSet(!_previewDark); };
+            _dlToggleRow.Children.Add(_previewThemeBtn);
+            _dlSyncBtn = new Button
+            {
+                Content = new Emoji.Wpf.TextBlock { Text = "⧉ 同步深色→浅色", VerticalAlignment = VerticalAlignment.Center },
+                Height = 26, Width = 130,
+                Padding = new Thickness(4, 0, 4, 0),
+                Background = _owner._btnSecondaryBg, Foreground = _owner._btnSecondaryFg, BorderThickness = new Thickness(0)
+            };
+            _dlSyncBtn.Click += (s, e) => SyncDarkToLight();
+            _dlToggleRow.Visibility = Visibility.Collapsed;   // 初值收起，SyncModeUi 按模式恢复
+            // WrapPanel：宽屏时深浅行与提示并排（红框位置）；窗口窄时自动换到下一行，不裁切
+            var hintRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 12) };
+            _modeHint.Margin = new Thickness(0, 0, 0, 0);
+            _modeHint.VerticalAlignment = VerticalAlignment.Center;
+            hintRow.Children.Add(_modeHint);
+            _dlToggleRow.VerticalAlignment = VerticalAlignment.Center;
+            hintRow.Children.Add(_dlToggleRow);
+            editPanel.Children.Add(hintRow);
 
             // 颜色选择区（纯色/渐变/网格共用）
             _colorCard = new Border
@@ -295,30 +323,6 @@ namespace CpqSystemTool
             };
             colorSp.Children.Add(_editLabel);
 
-            // 「深浅背景切换」：深色套/浅色套 预览切换 + 一键同步（仅非图片模式显示，SyncModeUi 控制）
-            _dlToggleRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
-            _dlToggleRow.Children.Add(new TextBlock { Text = "深浅背景:", Foreground = _owner._textDim, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
-            // 单按钮（同主窗口右上角 🌙）：点一下深浅套同翻，共用 _owner.ToggleTheme 切换逻辑
-            _previewThemeBtn = new Button
-            {
-                Content = new Emoji.Wpf.TextBlock { Text = "🌙", VerticalAlignment = VerticalAlignment.Center, FontSize = 14 },
-                Width = 36, Height = 26, Margin = new Thickness(0, 0, 6, 0),
-                Background = _owner._btnSecondaryBg, Foreground = _owner._textDim, BorderThickness = new Thickness(0),
-                ToolTip = "切换深浅背景（与主窗口右上角按钮共用同一切换逻辑）"
-            };
-            _previewThemeBtn.Click += (s, e) => { SetPreviewSet(!_previewDark); };
-            _dlToggleRow.Children.Add(_previewThemeBtn);
-            _dlSyncBtn = new Button
-            {
-                Content = new Emoji.Wpf.TextBlock { Text = "⧉ 同步深色→浅色", VerticalAlignment = VerticalAlignment.Center },
-                Height = 26, Width = 130,
-                Padding = new Thickness(4, 0, 4, 0),
-                Background = _owner._btnSecondaryBg, Foreground = _owner._btnSecondaryFg, BorderThickness = new Thickness(0)
-            };
-            _dlSyncBtn.Click += (s, e) => SyncDarkToLight();
-            _dlToggleRow.Children.Add(_dlSyncBtn);
-            colorSp.Children.Add(_dlToggleRow);
-
             // 颜色编辑区：两行结构
             //   行0：左=色轮，右=颜色格式/对比度面板（两列底部对齐）
             //   行1：HEX / RGB / 明度控件（跨两列，位于色轮下方）
@@ -333,7 +337,9 @@ namespace CpqSystemTool
             // 色轮下方控件的顶部间距：色轮 wheelGrid 底部边距已置 0，这里用 22 维持
             // 与之前（wheelGrid 10 + 本行 12 = 22）一致的整体视觉间距，同时确保右列对比度文本
             // 能与色轮圆底边精确对齐（rightCol 拉伸对齐的是 leftTop 底边 = 色轮圆底边）。
-            var lowerControls = new StackPanel { Margin = new Thickness(0, 22, 0, 0) };
+            // 「往上挪一下更整齐」：HEX/底色行/滑块行整体上提——原 22px 顶边距在「对比度」行与 HEX 行
+            // 之间留了一条空白带，收窄到 10px（色轮底部对齐关系不受影响，对齐的是 rightCol 与 leftTop）
+            var lowerControls = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
 
             // 左列：色轮
             var wheelTitle = new TextBlock
