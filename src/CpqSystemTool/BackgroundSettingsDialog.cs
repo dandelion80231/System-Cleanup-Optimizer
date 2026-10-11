@@ -292,19 +292,11 @@ namespace CpqSystemTool
             _dlSyncBtn.Click += (s, e) => SyncDarkToLight();
             _dlToggleRow.Children.Add(_dlSyncBtn);   // 修复（回归）：上移时漏了把同步按钮加进行内，导致按钮不可见
             _dlToggleRow.Visibility = Visibility.Collapsed;   // 初值收起，SyncModeUi 按模式恢复
-            // 「往上移动，与上一行放在一起」：提示在左列（长提示折行到自己列内），深浅行右侧同行固定，
-            // 不再因提示过长换到下一行（旧 WrapPanel 在线性/径向模式提示较长时会掉行）
-            var hintRow = new Grid { Margin = new Thickness(0, 0, 0, 12) };
-            hintRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            hintRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            _modeHint.Margin = new Thickness(0, 0, 16, 0);
-            _modeHint.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(_modeHint, 0);
-            hintRow.Children.Add(_modeHint);
-            _dlToggleRow.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(_dlToggleRow, 1);
-            hintRow.Children.Add(_dlToggleRow);
-            editPanel.Children.Add(hintRow);
+            // 「往上挪」：深浅行挪到标题行（与「背景类型」下拉同行、右侧紧挨，随 modePanel 右对齐），
+            // 不再占用编辑区顶部一行；提示回到编辑区顶部
+            modePanel.Children.Add(_dlToggleRow);
+            _modeHint.Margin = new Thickness(0, 0, 0, 12);
+            editPanel.Children.Add(_modeHint);
 
             // 颜色选择区（纯色/渐变/网格共用）
             _colorCard = new Border
