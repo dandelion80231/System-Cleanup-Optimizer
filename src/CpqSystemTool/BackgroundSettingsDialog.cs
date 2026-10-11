@@ -3061,13 +3061,14 @@ namespace CpqSystemTool
         // 旧版固定 240px 定宽 + 复制按钮下一行右对齐，在右列 ~153px 宽里溢出、按钮掉到「对比度」行错位）。
         private Grid MakeReadOnlyFormatBox(string label)
         {
-            const double labelWidth = 42;   // CMYK: 4 字母+冒号
+            const double labelWidth = 50;   // 「CMYK:」最长标签（4 字母+冒号）一行容下——42px 时折成两行，
+            // 该行变高、视觉与其他三行不齐（用户：复制没有完全对齐）；加宽并 NoWrap 双保险
             var row = new Grid { Margin = new Thickness(0, 0, 0, 4) };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var lbl = new TextBlock { Text = label + ":", Width = labelWidth, Foreground = _owner._textMain, VerticalAlignment = VerticalAlignment.Center };
+            var lbl = new TextBlock { Text = label + ":", Width = labelWidth, TextWrapping = TextWrapping.NoWrap, Foreground = _owner._textMain, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(lbl, 0);
             row.Children.Add(lbl);
 
