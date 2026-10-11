@@ -488,15 +488,13 @@ namespace CpqSystemTool
             _sSlider.ValueChanged += (s, e) => { if (!_isUpdating) { _currentSat = _sSlider.Value / 100.0; UpdateColor(HsvToRgb(_currentHue, _currentSat, _currentValue), true, false); } };
             _valSlider.ValueChanged += (s, e) => { if (!_isUpdating) { _currentValue = _valSlider.Value / 100.0; UpdateColor(HsvToRgb(_currentHue, _currentSat, _currentValue), true, false); } };
 
-            var dualGrid = new Grid { Margin = new Thickness(0, 0, 0, 0) };
-            dualGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            dualGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
-            dualGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            Grid.SetColumn(rgbPanel, 0);
-            Grid.SetColumn(hsvPanel, 2);
-            dualGrid.Children.Add(rgbPanel);
-            dualGrid.Children.Add(hsvPanel);
-            lowerControls.Children.Add(dualGrid);
+            // RGB/HSV 纵向堆叠（用户：把 HSV 放在 RGB 后面——两组是唯一能单独调整的坐标，
+            // 上下顺序更顺；滑条随卡片全宽，比并排窄列更好细调）。联动逻辑不变。
+            var dualStack = new StackPanel { Margin = new Thickness(0, 0, 0, 0) };
+            dualStack.Children.Add(rgbPanel);
+            hsvPanel.Margin = new Thickness(0, 10, 0, 0);
+            dualStack.Children.Add(hsvPanel);
+            lowerControls.Children.Add(dualStack);
 
             // 右列：颜色格式 / 对比度。
             // 「点底色后右列塌缩」验证：中间行 Star→Auto——Star 行在父容器（Auto 行）里反复重测时
