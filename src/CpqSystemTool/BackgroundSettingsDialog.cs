@@ -66,8 +66,8 @@ namespace CpqSystemTool
         private TextBox _cssBox;
         private TextBlock _cssStatus;
 
-        // 网格专属卡片：底色（预设统一走「预设色板」卡片，旧「预设模板」按钮区已删）
-        private Border _meshCard;
+        // 网格底色行（并入颜色卡 HEX 行下方；预设统一走「预设色板」卡片）
+        private StackPanel _meshBaseRow;
         private Border _baseSwatch;
         private TextBox _baseHexBox;
         private bool _editingMeshBase;   // 网格模式编辑目标：true=网格底色（色轮/HEX/滑块直接写底色），false=选中的光斑（默认）
@@ -423,6 +423,8 @@ namespace CpqSystemTool
             hexCopyBtn.Click += (s, e) => CopyText(BackgroundSettings.ColorToHex(_currentColor), hexCopyBtn);
             hexRow.Children.Add(hexCopyBtn);
             lowerControls.Children.Add(hexRow);
+            // 网格底色行：紧跟 HEX 行下方（仅网格模式可见）——选色与底色确认同屏
+            BuildMeshBaseRow(lowerControls);
 
             // 双列布局：左 RGB 列 / 右 HSV 列（H 色相 / S 饱和 / V 明度），两列是同一颜色的两套坐标、
             // 实时互相联动（改任意一列，另一列 + HEX + 色轮指示器同步）。色轮保留在上排作 2D 快选。
@@ -714,10 +716,6 @@ namespace CpqSystemTool
 
             _imageCard.Child = imgRoot;
             editPanel.Children.Add(_imageCard);
-
-            // 网格底色卡上移到颜色卡正下方：选色（色轮/HEX/滑块）与底色确认同屏完成
-            // （原来在滚动区最底部，点底色色块后要看反馈要滚上去，来回滚动——用户指出位置不合理）
-            BuildMeshCard(editPanel);
 
             // 和谐色（颜色组合 + 调色板）：显示在颜色编辑区下方（原位置）
             BuildHarmonyCard(editPanel);
@@ -1111,8 +1109,17 @@ namespace CpqSystemTool
         private void AddStop_Click(object sender, RoutedEventArgs e)
         {
             var stops = ActiveStops();   // 「分别编辑浅色套」：新增停靠点落在活动套
-            var last = stops.LastOrDefault();
-            double off = last != null ? Math.Min(last.Offset + 0.2, 1.0) : 1.0;
+            // 修复：末点已在 100% 时旧实现把 off 钳成 1.0，新点与末点同位置（位置显示重复、预览点重叠）
+            var sortedStops = stops.OrderBy(x => x.Offset).ToList();
+            var last = sortedStops.LastOrDefault();
+            double off;
+            if (last == null) off = 0.0;
+            else if (last.Offset < 1.0 - 1e-6) off = Math.Min(last.Offset + 0.2, 1.0);
+            else
+            {
+                var prev = sortedStops.Count >= 2 ? sortedStops[sortedStops.Count - 2] : null;
+                off = prev != null ? (prev.Offset + last.Offset) / 2.0 : 0.5;
+            }
             var ns = new GradientStopSetting { Color = BackgroundSettings.ColorToHex(_currentColor), Offset = off };
             stops.Add(ns);
             stops.Sort((x, y) => x.Offset.CompareTo(y.Offset));
@@ -1420,8 +1427,8 @@ namespace CpqSystemTool
                     _cssBox.Text = BackgroundSettings.ToCssGradient(_settings.GetBlobs(_previewDark));
             }
 
-            // 网格专属卡片（底色 + 预设）：仅网格模式可见
-            SetVisibility(_meshCard, showBlobs);
+            // 网格底色行（并入颜色卡）：仅网格模式可见
+            SetVisibility(_meshBaseRow, showBlobs);
             if (showBlobs) UpdateMeshBaseUi();
             // 色阶生成器：非图片模式可见
             SetVisibility(_sttCard, showColor);
@@ -2279,6 +2286,7 @@ namespace CpqSystemTool
                 }
                 _hasEditedAfterShow = true;
                 UpdateStopRow(_draggingStop);
+                UpdateEditLabel();   // 拖动停靠点时「位置 X%」必须实时更新（旧实现只在改色/切模式刷新，拖动后标签停在旧值）
                 RefreshOverlayHandles();
                 RefreshPreview();
                 return;
@@ -2648,8 +2656,14 @@ namespace CpqSystemTool
                     var activeStops = _settings.GetStops(_previewDark);
                     int n = Math.Max(0, activeStops.IndexOf(_selectedStop)) + 1;
                     int pct = (int)Math.Round(_selectedStop.Offset * 100);
+                    // 位置语义显式化：线性 0%=渐变起点 / 100%=终点；径向 0%=圆心 / 100%=圆环边缘
+                    bool radial = _settings.Mode == BackgroundMode.RadialGradient;
+                    string kindTxt = radial ? "半径位置" : "位置";
+                    string anchorTxt = radial
+                        ? (pct <= 0 ? "，圆心" : pct >= 100 ? "，圆环边缘" : "")
+                        : (pct <= 0 ? "，起点" : pct >= 100 ? "，终点" : "");
                     _editLabel.Text = string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                        "正在编辑：停靠点 #{0}（位置 {1}%）", n, pct);
+                        "正在编辑：停靠点 #{0}（{1} {2}%{3}）", n, kindTxt, pct, anchorTxt);
                 }
                 else
                     _editLabel.Text = "正在编辑：未选择停靠点";
@@ -3332,25 +3346,11 @@ namespace CpqSystemTool
 
         // ===================== 网格底色（预设模板已并入「预设色板」卡片） =====================
 
-        private void BuildMeshCard(StackPanel parent)
+        /// <summary>网格底色行（底色: [色块] [hex] [用当前色] + 编辑提示）：并入颜色卡 HEX 行下方，
+        /// 不再单开卡片（用户指出：只有一行，放在 HEX 旁边、选色与底色确认同屏才合理）。</summary>
+        private void BuildMeshBaseRow(StackPanel parent)
         {
-            _meshCard = new Border
-            {
-                Background = _owner._btnSecondaryBg,
-                BorderBrush = _owner._panelBorder,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(12),
-                Margin = new Thickness(0, 0, 0, 12)
-            };
-            var sp = new StackPanel();
-            sp.Children.Add(new TextBlock
-            {
-                Text = "网格底色",
-                FontWeight = FontWeights.SemiBold,
-                Foreground = _owner._textMain,
-                Margin = new Thickness(0, 0, 0, 8)
-            });
+            _meshBaseRow = new StackPanel { Margin = new Thickness(0, 0, 0, 4) };
 
             // 网格底色（Base color）
             var baseRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
@@ -3427,7 +3427,7 @@ namespace CpqSystemTool
                 RefreshPreview();
             };
             baseRow.Children.Add(basePickBtn);
-            sp.Children.Add(baseRow);
+            _meshBaseRow.Children.Add(baseRow);
             // 点底色色块进入「底色编辑」后的当场可见反馈（提示行 + 色块 accent 描边）：
             // 之前的反馈只在滚出屏幕的颜色卡（「正在编辑」标签/色轮）上，底色行本身无变化，用户以为"点了没反应"。
             _baseEditHint = new TextBlock
@@ -3438,13 +3438,11 @@ namespace CpqSystemTool
                 Margin = new Thickness(0, 0, 0, 4),
                 Visibility = Visibility.Collapsed
             };
-            sp.Children.Add(_baseEditHint);
+            _meshBaseRow.Children.Add(_baseEditHint);
 
-            // 「预设模板」按钮区已删除：与「预设色板」卡片（功能4，4列网格+色块预览）同源同 12 套、
-            // 网格模式下点击行为等价（ApplyPaletteToCurrentMode 的网格分支就是 ApplyPreset），
-            // 保留新版卡片作为唯一预设入口，避免两处重复。
-            _meshCard.Child = sp;
-            parent.Children.Add(_meshCard);
+            // 「预设模板」按钮区已在早前合并中删除：预设统一走「预设色板」卡片（避免两处重复）。
+            _meshBaseRow.Visibility = _settings.Mode == BackgroundMode.MeshGradient ? Visibility.Visible : Visibility.Collapsed;
+            parent.Children.Add(_meshBaseRow);
         }
 
         // ===================== 深浅背景切换（非图片模式：深/浅两套色 + 预览套切换 + 一键同步） =====================
