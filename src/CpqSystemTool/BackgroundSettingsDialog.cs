@@ -68,10 +68,6 @@ namespace CpqSystemTool
 
         // 网格底色行（并入颜色卡 HEX 行下方；预设统一走「预设色板」卡片）
         private StackPanel _meshBaseRow;
-        // 诊断（点底色后卡片塌缩排查）：颜色卡右列/底部滑块区提为字段，点击时抓高度/显隐状态写日志
-        private System.Windows.Controls.Grid _colorGrid;
-        private System.Windows.Controls.Grid _formatCol;
-        private System.Windows.Controls.StackPanel _lowerControls;
         private Border _baseSwatch;
         private TextBox _baseHexBox;
         private bool _editingMeshBase;   // 网格模式编辑目标：true=网格底色（色轮/HEX/滑块直接写底色），false=选中的光斑（默认）
@@ -328,7 +324,7 @@ namespace CpqSystemTool
             // 颜色编辑区：两行结构
             //   行0：左=色轮，右=颜色格式/对比度面板（两列底部对齐）
             //   行1：HEX / RGB / 明度控件（跨两列，位于色轮下方）
-            var colorGrid = _colorGrid = new Grid();
+            var colorGrid = new Grid();
             // MaxWidth=300 防御：左列 Auto 一旦超过卡片宽会把 Star 右列挤成 0（本次塌缩根因的兜底保险）
             colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MaxWidth = 261 });
             colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -344,13 +340,13 @@ namespace CpqSystemTool
             leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var rightCol = _formatCol = new Grid { VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(16, 0, 0, 0) };
+            var rightCol = new Grid { VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(16, 0, 0, 0) };
             // 色轮下方控件的顶部间距：色轮 wheelGrid 底部边距已置 0，这里用 22 维持
             // 与之前（wheelGrid 10 + 本行 12 = 22）一致的整体视觉间距，同时确保右列对比度文本
             // 能与色轮圆底边精确对齐（rightCol 拉伸对齐的是 leftTop 底边 = 色轮圆底边）。
             // 「这个还是没有挪」：HEX 行与上方（色轮/对比度）之间的空白带归零——
             // 10px 顶边距仍被看成一条空白带（实测截图约 30px 视觉间隙，含行高留白），直接 0 贴顶
-            var lowerControls = _lowerControls = new StackPanel { Margin = new Thickness(0, 0, 0, 0) };
+            var lowerControls = new StackPanel { Margin = new Thickness(0, 0, 0, 0) };
 
             // 左列：色轮
             var wheelTitle = new TextBlock
@@ -3413,30 +3409,6 @@ namespace CpqSystemTool
                 RefreshPreview();
                 UpdateEditLabel();
                 UpdateMeshBaseUi();
-                try
-                {
-                    var timer = new System.Windows.Threading.DispatcherTimer
-                    { Interval = TimeSpan.FromMilliseconds(200) };
-                    int tick = 0;
-                    timer.Tick += (ts, te) =>
-                    {
-                        tick++;
-                        var L = new List<string>();
-                        L.Add("=== t=" + (tick * 200) + "ms " + DateTime.Now.ToString("HH:mm:ss") + " ===");
-                        L.Add("colorGrid: H=" + _colorGrid.ActualHeight + " col0=" + _colorGrid.ColumnDefinitions[0].ActualWidth + " col1=" + _colorGrid.ColumnDefinitions[1].ActualWidth);
-                        L.Add("右列 formatCol: H=" + _formatCol.ActualHeight + " W=" + _formatCol.ActualWidth + " Vis=" + _formatCol.Visibility);
-                        foreach (var c in _formatCol.Children)
-                        {
-                            var fe = c as System.Windows.FrameworkElement;
-                            L.Add("  child " + c.GetType().Name + ": H=" + (fe != null ? fe.ActualHeight.ToString(System.Globalization.CultureInfo.InvariantCulture) : "-") + " W=" + (fe != null ? fe.ActualWidth.ToString(System.Globalization.CultureInfo.InvariantCulture) : "-") + " Vis=" + ((System.Windows.UIElement)c).Visibility);
-                        }
-                        L.Add("lowerControls: H=" + _lowerControls.ActualHeight + " W=" + _lowerControls.ActualWidth + " Vis=" + _lowerControls.Visibility);
-                        File.AppendAllLines(@"D:\电脑桌面\cpq-tool\诊断.log", L);
-                        if (tick >= 6) timer.Stop();
-                    };
-                    timer.Start();   // 不在此处 Stop：Tick 里 tick>=6 时自动停（Start+立即 Stop 会导致采样永不触发）
-                }
-                catch { }
             };
             baseRow.Children.Add(_baseSwatch);
             _baseHexBox = new TextBox
