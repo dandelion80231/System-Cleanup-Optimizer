@@ -540,9 +540,12 @@ namespace CpqSystemTool
 
             _contrastText = new Emoji.Wpf.TextBlock
             {
-                TextWrapping = TextWrapping.Wrap,
+                // 定高两行（标签行 + 数值行），不换行：原 Wrap 布局下换行数随对比值动态变化（2↔3 行），
+                // 第三行溢出右列最后一行、画到下方滑块区「HSV」标题上（用户截图的重叠）。
+                TextWrapping = TextWrapping.NoWrap,
                 FontSize = 11.0,
                 Foreground = _owner._textDim,
+                MinHeight = 34,
                 Margin = new Thickness(0, 0, 0, 0)
             };
             Grid.SetRow(_contrastText, 2);
@@ -1891,7 +1894,7 @@ namespace CpqSystemTool
             var textOnBg = _owner._textMain != null ? _owner._textMain.Color : Colors.White;
             double ratio = ContrastRatio(c, textOnBg);
             string verdict = ratio >= 7.0 ? "极佳" : ratio >= 4.5 ? "合格" : ratio >= 3.0 ? "可接受" : "不及格（文字可能难读）";   // 去掉 AAA/AA/A 评级前缀（用户：与后面的中文评价重复，无意义）
-            _contrastText.Text = $"对比度（对主文字）{ratio:F2}:1 — {verdict}";
+            _contrastText.Text = $"对比度（对主文字）\n{ratio:F2}:1 — {verdict}";   // 定两行，高度稳定
             // 性能优化：低对比度提示色是常量，原来每次 UpdateColor（拖拽时每帧）都 new 一支笔刷。
             _contrastText.Foreground = ratio >= 4.5 ? _owner._successGreen ?? _owner._textDim : LowContrastBrush;
 
