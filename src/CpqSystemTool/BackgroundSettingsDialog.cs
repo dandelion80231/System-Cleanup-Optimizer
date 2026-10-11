@@ -292,12 +292,17 @@ namespace CpqSystemTool
             _dlSyncBtn.Click += (s, e) => SyncDarkToLight();
             _dlToggleRow.Children.Add(_dlSyncBtn);   // 修复（回归）：上移时漏了把同步按钮加进行内，导致按钮不可见
             _dlToggleRow.Visibility = Visibility.Collapsed;   // 初值收起，SyncModeUi 按模式恢复
-            // WrapPanel：宽屏时深浅行与提示并排（红框位置）；窗口窄时自动换到下一行，不裁切
-            var hintRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 12) };
-            _modeHint.Margin = new Thickness(0, 0, 0, 0);
+            // 「往上移动，与上一行放在一起」：提示在左列（长提示折行到自己列内），深浅行右侧同行固定，
+            // 不再因提示过长换到下一行（旧 WrapPanel 在线性/径向模式提示较长时会掉行）
+            var hintRow = new Grid { Margin = new Thickness(0, 0, 0, 12) };
+            hintRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            hintRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            _modeHint.Margin = new Thickness(0, 0, 16, 0);
             _modeHint.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(_modeHint, 0);
             hintRow.Children.Add(_modeHint);
             _dlToggleRow.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(_dlToggleRow, 1);
             hintRow.Children.Add(_dlToggleRow);
             editPanel.Children.Add(hintRow);
 
@@ -1596,6 +1601,10 @@ namespace CpqSystemTool
 
             row.Children.Add(new TextBlock { Text = "位置:", Foreground = _owner._textMain, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
             var slider = new Slider { Minimum = 0, Maximum = 1, Width = 100, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) };
+            // 修复（「位置 0% 不对」根因）：滑块初值必须同步停靠点实际 offset——旧实现初值恒 0，
+            // 所有「位置」滑块都停在 0%；且一碰滑块就把停靠点位置覆写成 0（改一下就坏了位置）。
+            // 在挂 ValueChanged 之前赋值 → 不触发事件、不污染 _hasEditedAfterShow。
+            slider.Value = stop.Offset;
             slider.ValueChanged += (s, e) =>
             {
                 if (_isUpdating) return;
@@ -1646,7 +1655,7 @@ namespace CpqSystemTool
                 hex.Text = stop.Color;
 
             var slider = (Slider)row.Children[3];
-            if (!slider.IsMouseCaptureWithin)
+            if (!slider.IsMouseCaptureWithin && !slider.IsMouseOver)
                 slider.Value = stop.Offset;
 
             UpdateEditLabel();
