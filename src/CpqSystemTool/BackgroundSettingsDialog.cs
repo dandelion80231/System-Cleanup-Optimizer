@@ -2325,8 +2325,12 @@ namespace CpqSystemTool
             {
                 double dxc = pos2.X / w - _settings.LinearCenterX;
                 double dyc = pos2.Y / h - _settings.LinearCenterY;
-                _settings.GradientAngle = Math.Atan2(-dyc, dxc) * 180.0 / Math.PI;   // 标准约定：90°=上（屏幕 y 向下）
-                _linearAngleRad = _settings.GradientAngle * Math.PI / 180.0;
+                double angDeg = Math.Atan2(-dyc, dxc) * 180.0 / Math.PI;   // 标准约定：90°=上（屏幕 y 向下）
+                // 45° 吸附（gradients.app 惯例）：距 45° 倍数 3° 以内时锁定，方便对正
+                double snap = Math.Round(angDeg / 45.0) * 45.0;
+                if (Math.Abs(angDeg - snap) < 3.0) angDeg = snap;
+                _settings.GradientAngle = angDeg;
+                _linearAngleRad = angDeg * Math.PI / 180.0;
                 _hasEditedAfterShow = true;
                 SyncGeometryBoxes();
                 RefreshOverlayHandles();
@@ -2454,11 +2458,43 @@ namespace CpqSystemTool
                 Stroke = AxisStrokeBrush,
                 StrokeThickness = 2,
                 StrokeDashArray = new DoubleCollection { 5, 4 },
+                IsHitTestVisible = false   // 纯显示；命中交给下方 16px 隐形走廊
+            };
+            _previewOverlay.Children.Add(axis);
+            _gradientOverlayItems.Add(axis);
+
+            // 「直接拖虚线 = 旋转」（Figma/gradients.app 惯例）：虚线上叠加 16px 隐形命中走廊——
+            // 线身任何位置一抓就能转（角度=中心到鼠标的向量），不必精确点端点小圆。
+            var axisHit = new Line
+            {
+                X1 = sx, Y1 = sy, X2 = ex, Y2 = ey,
+                Stroke = Brushes.Transparent,
+                StrokeThickness = 16,
                 Cursor = Cursors.SizeAll,
                 IsHitTestVisible = true
             };
-            // 拖轴线本体 = 平移渐变中心
-            axis.MouseLeftButtonDown += (s2, e2) =>
+            axisHit.MouseLeftButtonDown += (s2, e2) =>
+            {
+                _draggingLineEnd = true;   // 旋转分支
+                _previewOverlay.CaptureMouse();
+                e2.Handled = true;
+            };
+            _previewOverlay.Children.Add(axisHit);
+            _gradientOverlayItems.Add(axisHit);
+
+            // 中心点 = 平移渐变中心（轴线改为旋转后，平移的独立句柄；同径向模式圆心点）
+            var cDot = new Ellipse
+            {
+                Width = 14, Height = 14,
+                StrokeThickness = 2,
+                Cursor = Cursors.SizeAll,
+                IsHitTestVisible = true,
+                Fill = _owner._accent,
+                Stroke = Brushes.White
+            };
+            Canvas.SetLeft(cDot, cx * w - 7);
+            Canvas.SetTop(cDot, cy * h - 7);
+            cDot.MouseLeftButtonDown += (s2, e2) =>
             {
                 _draggingLineCenter = true;
                 _dragStartMouse = e2.GetPosition(_previewOverlay);
@@ -2466,8 +2502,8 @@ namespace CpqSystemTool
                 _previewOverlay.CaptureMouse();
                 e2.Handled = true;
             };
-            _previewOverlay.Children.Add(axis);
-            _gradientOverlayItems.Add(axis);
+            _previewOverlay.Children.Add(cDot);
+            _gradientOverlayItems.Add(cDot);
 
             foreach (var stop in _settings.GetStops(_previewDark).OrderBy(x => x.Offset))   // 停点圆点跟活动套
             {
@@ -2502,12 +2538,7 @@ namespace CpqSystemTool
                 _gradientOverlayItems.Add(dot);
             }
 
-            // 旋转句柄：只保留一个（终点/100% 端外侧，用户：两端各一个冗余）——
-            // 旧实现曾画在停点圆之前，默认 0%/100% 停点恰好盖住端点圆导致抓不到旋转；
-            // 现：单个 accent 句柄在线终点外侧 16px（与停点圆分离不重叠），拖它绕中心旋转。
-            // 0% 端不设旋转句柄：轴线对称，任一端旋转等价。
-            double offX = dx * (16.0 / w), offY = dy * (16.0 / h);
-            _gradientOverlayItems.Add(AddDot((cx + 0.5 * dx + offX) * w, (cy + 0.5 * dy + offY) * h, _owner._accent, (s, e) => { _draggingLineEnd = true; _previewOverlay.CaptureMouse(); e.Handled = true; }));
+            // 旋转 = 拖上方虚线命中走廊（含 45° 吸附）；停点圆 = 改位置；中心点 = 平移。不再单独画旋转小圆。
         }
 
         private Ellipse AddDot(double x, double y, Brush stroke, MouseButtonEventHandler down)
