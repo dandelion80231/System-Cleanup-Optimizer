@@ -330,7 +330,11 @@ namespace CpqSystemTool
             colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            var leftTop = new StackPanel();
+            // 左列改 Grid：标题 + 色轮 + 底部「HEX/底色」区（底部对齐，填满右列撑高的空白带）
+            var leftTop = new Grid();
+            leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            leftTop.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             var rightCol = new Grid { VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(16, 0, 0, 0) };
             // 色轮下方控件的顶部间距：色轮 wheelGrid 底部边距已置 0，这里用 22 维持
             // 与之前（wheelGrid 10 + 本行 12 = 22）一致的整体视觉间距，同时确保右列对比度文本
@@ -347,6 +351,7 @@ namespace CpqSystemTool
                 Foreground = _owner._textMain,
                 Margin = new Thickness(0, 0, 0, 8)
             };
+            Grid.SetRow(wheelTitle, 0);
             leftTop.Children.Add(wheelTitle);
 
             // 色轮容器：用 Grid 把 Image 和指示器 Canvas 叠在一起，并用 EllipseGeometry 真正裁成圆形
@@ -395,6 +400,7 @@ namespace CpqSystemTool
             // 和色标记层：和谐规则的小圆点（UpdateHarmonyWheelDots 填充），叠在指示器之上
             _harmonyOverlay = new Canvas { Width = 180, Height = 180, IsHitTestVisible = false };
             wheelGrid.Children.Add(_harmonyOverlay);
+            Grid.SetRow(wheelGrid, 1);
             leftTop.Children.Add(wheelGrid);
 
             // HEX + RGB
@@ -426,9 +432,16 @@ namespace CpqSystemTool
             };
             hexCopyBtn.Click += (s, e) => CopyText(BackgroundSettings.ColorToHex(_currentColor), hexCopyBtn);
             hexRow.Children.Add(hexCopyBtn);
-            lowerControls.Children.Add(hexRow);
+            // 「这个还是没有挪」真正根因：右列（标题+4 格式行+对比度）比左列（色轮）高，
+            // Grid 行 0 按右列高度，色轮下方永远留一条空白带——margin 归零也消不掉。
+            // 现在把 HEX 行（网格模式 + 底色行）放到左列底部（Bottom 对齐填满空白带），
+            // 与右列「对比度」行同底，HEX 上移到位，空白带被内容填满。
+            var leftBottom = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom };
+            Grid.SetRow(leftBottom, 2);
+            leftTop.Children.Add(leftBottom);
+            leftBottom.Children.Add(hexRow);
             // 网格底色行：紧跟 HEX 行下方（仅网格模式可见）——选色与底色确认同屏
-            BuildMeshBaseRow(lowerControls);
+            BuildMeshBaseRow(leftBottom);
 
             // 双列布局：左 RGB 列 / 右 HSV 列（H 色相 / S 饱和 / V 明度），两列是同一颜色的两套坐标、
             // 实时互相联动（改任意一列，另一列 + HEX + 色轮指示器同步）。色轮保留在上排作 2D 快选。
