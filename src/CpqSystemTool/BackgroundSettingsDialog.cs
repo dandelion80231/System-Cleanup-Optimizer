@@ -3427,7 +3427,7 @@ namespace CpqSystemTool
                         foreach (var c in _formatCol.Children)
                         {
                             var fe = c as System.Windows.FrameworkElement;
-                            L.Add("  child " + c.GetType().Name + ": H=" + (fe != null ? fe.ActualHeight.ToString(System.Globalization.CultureInfo.InvariantCulture) : "-") + " W=" + (fe != null ? fe.ActualWidth.ToString(System.Globalization.CultureInfo.InvariantCulture) : "-") + " Vis=" + c.Visibility);
+                            L.Add("  child " + c.GetType().Name + ": H=" + (fe != null ? fe.ActualHeight.ToString(System.Globalization.CultureInfo.InvariantCulture) : "-") + " W=" + (fe != null ? fe.ActualWidth.ToString(System.Globalization.CultureInfo.InvariantCulture) : "-") + " Vis=" + ((System.Windows.UIElement)c).Visibility);
                         }
                         L.Add("lowerControls: H=" + _lowerControls.ActualHeight + " W=" + _lowerControls.ActualWidth + " Vis=" + _lowerControls.Visibility);
                         File.AppendAllLines(@"D:\电脑桌面\cpq-tool\诊断.log", L);
