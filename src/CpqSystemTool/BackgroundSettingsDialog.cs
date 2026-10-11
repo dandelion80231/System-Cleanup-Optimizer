@@ -69,6 +69,7 @@ namespace CpqSystemTool
         // 网格底色行（并入颜色卡 HEX 行下方；预设统一走「预设色板」卡片）
         private StackPanel _meshBaseRow;
         // 诊断（点底色后卡片塌缩排查）：颜色卡右列/底部滑块区提为字段，点击时抓高度/显隐状态写日志
+        private System.Windows.Controls.Grid _colorGrid;
         private System.Windows.Controls.Grid _formatCol;
         private System.Windows.Controls.StackPanel _lowerControls;
         private Border _baseSwatch;
@@ -327,7 +328,7 @@ namespace CpqSystemTool
             // 颜色编辑区：两行结构
             //   行0：左=色轮，右=颜色格式/对比度面板（两列底部对齐）
             //   行1：HEX / RGB / 明度控件（跨两列，位于色轮下方）
-            var colorGrid = new Grid();
+            var colorGrid = _colorGrid = new Grid();
             colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -3413,14 +3414,24 @@ namespace CpqSystemTool
                 UpdateMeshBaseUi();
                 try
                 {
-                    var lines = new List<string>();
-                    lines.Add("=== 点底色 " + DateTime.Now.ToString("HH:mm:ss") + " ===");
-                    lines.Add("_colorCard: H=" + _colorCard.ActualHeight + " W=" + _colorCard.ActualWidth + " Vis=" + _colorCard.Visibility);
-                    lines.Add("_formatCol(右列): H=" + _formatCol.ActualHeight + " Vis=" + _formatCol.Visibility + " Children=" + _formatCol.Children.Count);
-                    lines.Add("_lowerControls(滑块区): H=" + _lowerControls.ActualHeight + " Vis=" + _lowerControls.Visibility + " Children=" + _lowerControls.Children.Count);
-                    lines.Add("_meshBaseRow: H=" + _meshBaseRow.ActualHeight + " Vis=" + _meshBaseRow.Visibility);
-                    lines.Add("_hexBox: H=" + _hexBox.ActualHeight + " Vis=" + _hexBox.Visibility + " parent=" + (_hexBox.Parent != null ? _hexBox.Parent.GetType().Name : "null"));
-                    File.AppendAllLines(@"D:\电脑桌面\cpq-tool\诊断.log", lines);
+                    var timer = new System.Windows.Threading.DispatcherTimer
+                    { Interval = TimeSpan.FromMilliseconds(300) };
+                    int tick = 0;
+                    timer.Tick += (ts, te) =>
+                    {
+                        tick++;
+                        var L = new List<string>();
+                        L.Add("=== t=" + (tick * 300) + "ms " + DateTime.Now.ToString("HH:mm:ss") + " ===");
+                        L.Add("colorGrid: H=" + _colorGrid.ActualHeight + " col0=" + _colorGrid.ColumnDefinitions[0].ActualWidth + " col1=" + _colorGrid.ColumnDefinitions[1].ActualWidth);
+                        L.Add("右列 formatCol: H=" + _formatCol.ActualHeight + " W=" + _formatCol.ActualWidth + " Vis=" + _formatCol.Visibility);
+                        foreach (var c in _formatCol.Children)
+                            L.Add("  child " + c.GetType().Name + ": H=" + ((System.Windows.FrameworkElement)c).ActualHeight + " W=" + ((System.Windows.FrameworkElement)c).ActualWidth + " Vis=" + c.Visibility);
+                        L.Add("lowerControls: H=" + _lowerControls.ActualHeight + " W=" + _lowerControls.ActualWidth + " Vis=" + _lowerControls.Visibility);
+                        File.AppendAllLines(@"D:\电脑桌面\cpq-tool\诊断.log", L);
+                        if (tick >= 4) timer.Stop();
+                    };
+                    timer.Start();
+                    timer.Stop();
                 }
                 catch { }
             };
