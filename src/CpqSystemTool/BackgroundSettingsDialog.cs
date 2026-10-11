@@ -2502,12 +2502,11 @@ namespace CpqSystemTool
                 _gradientOverlayItems.Add(dot);
             }
 
-            // 旋转句柄（拖两端圆点绕中心旋转）：沿轴线向外 12px 偏移 + 画在停点圆之后（最顶层）。
-            // 修复「默认不能拖动旋转」：旧实现端点圆画在停点圆之前，默认 0%/100% 两个停点恰在线端，
-            // 16px 停点圆把 12px 端点圆完全盖住 → 只能拖停点（改位置），永远抓不到旋转句柄。
-            // 外移后：停点圆在线端（拖=改位置），accent 端点圆在线端外侧（拖=旋转），互不遮挡。
-            double offX = dx * (12.0 / w), offY = dy * (12.0 / h);
-            _gradientOverlayItems.Add(AddDot((cx - 0.5 * dx - offX) * w, (cy - 0.5 * dy - offY) * h, _owner._accent, (s, e) => { _draggingLineEnd = true; _previewOverlay.CaptureMouse(); e.Handled = true; }));
+            // 旋转句柄：只保留一个（终点/100% 端外侧，用户：两端各一个冗余）——
+            // 旧实现曾画在停点圆之前，默认 0%/100% 停点恰好盖住端点圆导致抓不到旋转；
+            // 现：单个 accent 句柄在线终点外侧 16px（与停点圆分离不重叠），拖它绕中心旋转。
+            // 0% 端不设旋转句柄：轴线对称，任一端旋转等价。
+            double offX = dx * (16.0 / w), offY = dy * (16.0 / h);
             _gradientOverlayItems.Add(AddDot((cx + 0.5 * dx + offX) * w, (cy + 0.5 * dy + offY) * h, _owner._accent, (s, e) => { _draggingLineEnd = true; _previewOverlay.CaptureMouse(); e.Handled = true; }));
         }
 
