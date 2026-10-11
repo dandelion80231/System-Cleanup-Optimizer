@@ -723,8 +723,8 @@ namespace CpqSystemTool
             bigPreviewHost.Child = bigGrid;
             // 「深浅背景切换」（图片模式）：补一个与主窗口右上角同款单按钮——弹窗模态期间主窗按钮点不了，
             // 共用 _owner.ToggleTheme：点一下主窗主题翻转，大预览随新主题换 深色图/浅色图。
-            var imgDlRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
-            imgDlRow.Children.Add(new TextBlock { Text = "深浅背景:", Foreground = _owner._textDim, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+            // 去掉「深浅背景:」标签 + 按钮靠右（与非图片模式一致：仅图标、置于最右，与主窗口右上角深浅图标统一）
+            var imgDlRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8), HorizontalAlignment = HorizontalAlignment.Right };
             _imgThemeToggleBtn = new Button
             {
                 Content = new Emoji.Wpf.TextBlock { Text = "🌙", VerticalAlignment = VerticalAlignment.Center, FontSize = 14 },
