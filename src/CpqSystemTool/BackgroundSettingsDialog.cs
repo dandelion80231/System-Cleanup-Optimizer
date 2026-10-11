@@ -2469,10 +2469,6 @@ namespace CpqSystemTool
             _previewOverlay.Children.Add(axis);
             _gradientOverlayItems.Add(axis);
 
-            // 两端圆点 = 绕中心旋转角度
-            _gradientOverlayItems.Add(AddDot(sx, sy, Brushes.White, (s, e) => { _draggingLineEnd = true; _previewOverlay.CaptureMouse(); e.Handled = true; }));
-            _gradientOverlayItems.Add(AddDot(ex, ey, Brushes.White, (s, e) => { _draggingLineEnd = true; _previewOverlay.CaptureMouse(); e.Handled = true; }));
-
             foreach (var stop in _settings.GetStops(_previewDark).OrderBy(x => x.Offset))   // 停点圆点跟活动套
             {
                 double t = stop.Offset;
@@ -2505,21 +2501,30 @@ namespace CpqSystemTool
                 _previewOverlay.Children.Add(dot);
                 _gradientOverlayItems.Add(dot);
             }
+
+            // 旋转句柄（拖两端圆点绕中心旋转）：沿轴线向外 12px 偏移 + 画在停点圆之后（最顶层）。
+            // 修复「默认不能拖动旋转」：旧实现端点圆画在停点圆之前，默认 0%/100% 两个停点恰在线端，
+            // 16px 停点圆把 12px 端点圆完全盖住 → 只能拖停点（改位置），永远抓不到旋转句柄。
+            // 外移后：停点圆在线端（拖=改位置），accent 端点圆在线端外侧（拖=旋转），互不遮挡。
+            double offX = dx * (12.0 / w), offY = dy * (12.0 / h);
+            _gradientOverlayItems.Add(AddDot((cx - 0.5 * dx - offX) * w, (cy - 0.5 * dy - offY) * h, _owner._accent, (s, e) => { _draggingLineEnd = true; _previewOverlay.CaptureMouse(); e.Handled = true; }));
+            _gradientOverlayItems.Add(AddDot((cx + 0.5 * dx + offX) * w, (cy + 0.5 * dy + offY) * h, _owner._accent, (s, e) => { _draggingLineEnd = true; _previewOverlay.CaptureMouse(); e.Handled = true; }));
         }
 
         private Ellipse AddDot(double x, double y, Brush stroke, MouseButtonEventHandler down)
         {
+            // 16px + 透明填充整圆可命中 + SizeAll 光标：旋转句柄要比停点圆（16px）好抓、意图明确
             var dot = new Ellipse
             {
-                Width = 12, Height = 12,
+                Width = 16, Height = 16,
                 StrokeThickness = 2,
-                Cursor = Cursors.Hand,
+                Cursor = Cursors.SizeAll,
                 IsHitTestVisible = true,
                 Fill = Brushes.Transparent,
                 Stroke = stroke
             };
-            Canvas.SetLeft(dot, x - 6);
-            Canvas.SetTop(dot, y - 6);
+            Canvas.SetLeft(dot, x - 8);
+            Canvas.SetTop(dot, y - 8);
             dot.MouseLeftButtonDown += down;
             _previewOverlay.Children.Add(dot);
             return dot;
