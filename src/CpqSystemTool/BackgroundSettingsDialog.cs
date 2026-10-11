@@ -335,9 +335,9 @@ namespace CpqSystemTool
             // 色轮下方控件的顶部间距：色轮 wheelGrid 底部边距已置 0，这里用 22 维持
             // 与之前（wheelGrid 10 + 本行 12 = 22）一致的整体视觉间距，同时确保右列对比度文本
             // 能与色轮圆底边精确对齐（rightCol 拉伸对齐的是 leftTop 底边 = 色轮圆底边）。
-            // 「往上挪一下更整齐」：HEX/底色行/滑块行整体上提——原 22px 顶边距在「对比度」行与 HEX 行
-            // 之间留了一条空白带，收窄到 10px（色轮底部对齐关系不受影响，对齐的是 rightCol 与 leftTop）
-            var lowerControls = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+            // 「这个还是没有挪」：HEX 行与上方（色轮/对比度）之间的空白带归零——
+            // 10px 顶边距仍被看成一条空白带（实测截图约 30px 视觉间隙，含行高留白），直接 0 贴顶
+            var lowerControls = new StackPanel { Margin = new Thickness(0, 0, 0, 0) };
 
             // 左列：色轮
             var wheelTitle = new TextBlock
@@ -398,7 +398,7 @@ namespace CpqSystemTool
             leftTop.Children.Add(wheelGrid);
 
             // HEX + RGB
-            var hexRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+            var hexRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
             hexRow.Children.Add(new TextBlock { Text = "HEX:", Foreground = _owner._textMain, VerticalAlignment = VerticalAlignment.Center, Width = 36 });
             _hexBox = new TextBox
             {
