@@ -526,9 +526,10 @@ namespace CpqSystemTool
             _rowHsl.VerticalAlignment = VerticalAlignment.Center;
             _rowHsv.VerticalAlignment = VerticalAlignment.Center;
             _rowCmyk.VerticalAlignment = VerticalAlignment.Center;
+            // 可单独调整的两组（RGB/HSV，下方有滑块）排前面相邻；HSL/CMYK 只读展示靠后
             Grid.SetRow(_rowRgb, 0);
-            Grid.SetRow(_rowHsl, 1);
-            Grid.SetRow(_rowHsv, 2);
+            Grid.SetRow(_rowHsv, 1);
+            Grid.SetRow(_rowHsl, 2);
             Grid.SetRow(_rowCmyk, 3);
             formatGrid.Children.Add(_rowRgb);
             formatGrid.Children.Add(_rowHsl);
