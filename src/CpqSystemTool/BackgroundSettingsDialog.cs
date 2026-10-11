@@ -151,7 +151,7 @@ namespace CpqSystemTool
         // HEX 颜色输入校验：#RGB / #RRGGBB / 8 位，'#' 可省略（底色输入框用，防止中间态输入被误解析）
         private static readonly Regex HexColorPattern = new Regex(
             @"^#?(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$", RegexOptions.Compiled);
-        private StackPanel _rowRgb, _rowHsl, _rowHsv, _rowCmyk;   // 颜色格式只读显示块（标签+文本框+复制按钮）
+        private Grid _rowRgb, _rowHsl, _rowHsv, _rowCmyk;   // 颜色格式只读显示块（标签+文本框+复制按钮，单行）
         private TextBlock _contrastText;        // 对比度检查提示
 
         public BackgroundSettings ResultSettings => _settings;
@@ -3057,21 +3057,22 @@ namespace CpqSystemTool
             _harmonyFeedbackTimer.Start();
         }
 
-        // 颜色格式只读块：标签+只读框在同一行，复制按钮放在下一行并右对齐。
-        // 所有格式框统一以 CMYK 最长内容（30 字符）定宽，避免过长或过短。
-        private StackPanel MakeReadOnlyFormatBox(string label)
+        // 颜色格式只读块：标签 + 只读框 + 复制按钮 单行（用户：复制要与输入框一行对齐；
+        // 旧版固定 240px 定宽 + 复制按钮下一行右对齐，在右列 ~153px 宽里溢出、按钮掉到「对比度」行错位）。
+        private Grid MakeReadOnlyFormatBox(string label)
         {
             const double labelWidth = 42;   // CMYK: 4 字母+冒号
-            const double boxWidth = 240;    // 容纳 "100.0%, 100.0%, 100.0%, 100.0%"（30 字符），留少量余量
+            var row = new Grid { Margin = new Thickness(0, 0, 0, 4) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            // 整行容器：垂直排列；HorizontalAlignment=Left 让容器按内容宽度收缩，
-            // 复制按钮右对齐时才能贴到文本框右缘，而不是贴到父 Grid 单元格右缘。
-            var root = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 4) };
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(new TextBlock { Text = label + ":", Width = labelWidth, Foreground = _owner._textMain, VerticalAlignment = VerticalAlignment.Center });
+            var lbl = new TextBlock { Text = label + ":", Width = labelWidth, Foreground = _owner._textMain, VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(lbl, 0);
+            row.Children.Add(lbl);
+
             var box = new TextBox
             {
-                Width = boxWidth,
                 IsReadOnly = true,
                 Background = _owner._inputBg,
                 Foreground = _owner._inputFg,
@@ -3079,29 +3080,30 @@ namespace CpqSystemTool
                 VerticalContentAlignment = VerticalAlignment.Center,
                 FontFamily = new FontFamily("Consolas")
             };
+            Grid.SetColumn(box, 1);
             row.Children.Add(box);
-            root.Children.Add(row);
 
             var copy = new Button
             {
                 Content = "复制",
                 Width = 32,
                 Height = 22,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 4, 0, 0),
+                Margin = new Thickness(4, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
                 Background = _owner._btnSecondaryBg,
                 Foreground = _owner._btnSecondaryFg,
                 BorderThickness = new Thickness(0)
             };
             copy.Click += (sender, args) => CopyText(box.Text, copy);
-            root.Children.Add(copy);
+            Grid.SetColumn(copy, 2);
+            row.Children.Add(copy);
 
             // 把 TextBox 挂在 Tag 上，SetFmt 可直接取，避免硬编码视觉树索引。
-            root.Tag = box;
-            return root;
+            row.Tag = box;
+            return row;
         }
 
-        private static void SetFmt(StackPanel block, string text)
+        private static void SetFmt(Grid block, string text)
         {
             // block.Tag 由 MakeReadOnlyFormatBox 设为对应 TextBox
             if (block != null && block.Tag is TextBox box) box.Text = text;
