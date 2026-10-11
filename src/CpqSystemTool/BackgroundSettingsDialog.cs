@@ -331,10 +331,14 @@ namespace CpqSystemTool
             colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             // 左列改 Grid：标题 + 色轮 + 底部「HEX/底色」区（底部对齐，填满右列撑高的空白带）
+            // 第 3 行必须用 Auto（不能用 Star）：Star 行会跟随右列（颜色格式/对比度）高度，
+            // 右列内容在任何刷新瞬间变矮（切深浅套/点底色触发重排）时，Star 行塌到 0，
+            // HEX/底色行随之「消失」、卡片塌成大灰框——用户截图「点击底色后空白一大块」即此级联。
+            // Auto 后左列高度=自然高度，卡片高度稳定取两列较高者，无反馈环。
             var leftTop = new Grid();
             leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            leftTop.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var rightCol = new Grid { VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(16, 0, 0, 0) };
             // 色轮下方控件的顶部间距：色轮 wheelGrid 底部边距已置 0，这里用 22 维持
             // 与之前（wheelGrid 10 + 本行 12 = 22）一致的整体视觉间距，同时确保右列对比度文本
