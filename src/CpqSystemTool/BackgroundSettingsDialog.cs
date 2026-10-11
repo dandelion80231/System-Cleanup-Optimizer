@@ -290,6 +290,7 @@ namespace CpqSystemTool
                 Background = _owner._btnSecondaryBg, Foreground = _owner._btnSecondaryFg, BorderThickness = new Thickness(0)
             };
             _dlSyncBtn.Click += (s, e) => SyncDarkToLight();
+            _dlToggleRow.Children.Add(_dlSyncBtn);   // 修复（回归）：上移时漏了把同步按钮加进行内，导致按钮不可见
             _dlToggleRow.Visibility = Visibility.Collapsed;   // 初值收起，SyncModeUi 按模式恢复
             // WrapPanel：宽屏时深浅行与提示并排（红框位置）；窗口窄时自动换到下一行，不裁切
             var hintRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 12) };
