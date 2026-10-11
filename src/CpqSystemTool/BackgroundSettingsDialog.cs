@@ -3415,13 +3415,13 @@ namespace CpqSystemTool
                 try
                 {
                     var timer = new System.Windows.Threading.DispatcherTimer
-                    { Interval = TimeSpan.FromMilliseconds(300) };
+                    { Interval = TimeSpan.FromMilliseconds(200) };
                     int tick = 0;
                     timer.Tick += (ts, te) =>
                     {
                         tick++;
                         var L = new List<string>();
-                        L.Add("=== t=" + (tick * 300) + "ms " + DateTime.Now.ToString("HH:mm:ss") + " ===");
+                        L.Add("=== t=" + (tick * 200) + "ms " + DateTime.Now.ToString("HH:mm:ss") + " ===");
                         L.Add("colorGrid: H=" + _colorGrid.ActualHeight + " col0=" + _colorGrid.ColumnDefinitions[0].ActualWidth + " col1=" + _colorGrid.ColumnDefinitions[1].ActualWidth);
                         L.Add("右列 formatCol: H=" + _formatCol.ActualHeight + " W=" + _formatCol.ActualWidth + " Vis=" + _formatCol.Visibility);
                         foreach (var c in _formatCol.Children)
@@ -3431,10 +3431,9 @@ namespace CpqSystemTool
                         }
                         L.Add("lowerControls: H=" + _lowerControls.ActualHeight + " W=" + _lowerControls.ActualWidth + " Vis=" + _lowerControls.Visibility);
                         File.AppendAllLines(@"D:\电脑桌面\cpq-tool\诊断.log", L);
-                        if (tick >= 4) timer.Stop();
+                        if (tick >= 6) timer.Stop();
                     };
-                    timer.Start();
-                    timer.Stop();
+                    timer.Start();   // 不在此处 Stop：Tick 里 tick>=6 时自动停（Start+立即 Stop 会导致采样永不触发）
                 }
                 catch { }
             };
