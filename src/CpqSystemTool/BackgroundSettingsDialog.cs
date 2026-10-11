@@ -296,6 +296,18 @@ namespace CpqSystemTool
             // 「往上挪」：深浅行挪到标题行（与「背景类型」下拉同行、右侧紧挨，随 modePanel 右对齐），
             // 不再占用编辑区顶部一行；提示回到编辑区顶部
             modePanel.Children.Add(_dlToggleRow);
+            // 图片模式的深浅切换按钮：同样放标题行最右（用户：全页图标都在最右，位置保持一致）；
+            // 仅图片模式显示（SyncModeUi），大预览上方不再单独占一行
+            _imgThemeToggleBtn = new Button
+            {
+                Content = new Emoji.Wpf.TextBlock { Text = "🌙", VerticalAlignment = VerticalAlignment.Center, FontSize = 14 },
+                Width = 36, Height = 26,
+                Background = _owner._btnSecondaryBg, Foreground = _owner._textDim, BorderThickness = new Thickness(0),
+                ToolTip = "切换深浅背景（与主窗口右上角按钮共用同一切换逻辑）",
+                Visibility = Visibility.Collapsed
+            };
+            _imgThemeToggleBtn.Click += (s, e) => { _owner.ToggleTheme(); RefreshImageModePreviews(); UpdateDlToggleUi(); };
+            modePanel.Children.Add(_imgThemeToggleBtn);
             _modeHint.Margin = new Thickness(0, 0, 0, 12);
             editPanel.Children.Add(_modeHint);
 
@@ -721,24 +733,10 @@ namespace CpqSystemTool
             };
             bigGrid.Children.Add(_imgBigPlaceholder);
             bigPreviewHost.Child = bigGrid;
-            // 「深浅背景切换」（图片模式）：补一个与主窗口右上角同款单按钮——弹窗模态期间主窗按钮点不了，
-            // 共用 _owner.ToggleTheme：点一下主窗主题翻转，大预览随新主题换 深色图/浅色图。
-            // 去掉「深浅背景:」标签 + 按钮靠右（与非图片模式一致：仅图标、置于最右，与主窗口右上角深浅图标统一）
-            var imgDlRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8), HorizontalAlignment = HorizontalAlignment.Right };
-            _imgThemeToggleBtn = new Button
-            {
-                Content = new Emoji.Wpf.TextBlock { Text = "🌙", VerticalAlignment = VerticalAlignment.Center, FontSize = 14 },
-                Width = 36, Height = 26,
-                Background = _owner._btnSecondaryBg, Foreground = _owner._textDim, BorderThickness = new Thickness(0),
-                ToolTip = "切换深浅背景（与主窗口右上角按钮共用同一切换逻辑）"
-            };
-            _imgThemeToggleBtn.Click += (s, e) => { _owner.ToggleTheme(); RefreshImageModePreviews(); UpdateDlToggleUi(); };
-            imgDlRow.Children.Add(_imgThemeToggleBtn);
-            var bigWrap = new StackPanel();
-            bigWrap.Children.Add(imgDlRow);
-            bigWrap.Children.Add(bigPreviewHost);
-            Grid.SetColumn(bigWrap, 1);
-            imgRoot.Children.Add(bigWrap);
+            // 图片模式深浅切换按钮已上移到标题行最右（_imgThemeToggleBtn，与非图片模式图标同位置），
+            // 大预览上方不再单独占一行
+            Grid.SetColumn(bigPreviewHost, 1);
+            imgRoot.Children.Add(bigPreviewHost);
             UpdateDlToggleUi();
 
             _imageCard.Child = imgRoot;
@@ -1464,6 +1462,7 @@ namespace CpqSystemTool
             SetVisibility(_paletteCard, showColor);
             _editingMeshBase = false;   // 切模式时编辑目标复位为光斑（底色编辑仅网格模式有意义）
             if (_dlToggleRow != null) SetVisibility(_dlToggleRow, _settings.Mode != BackgroundMode.Image);
+            if (_imgThemeToggleBtn != null) SetVisibility(_imgThemeToggleBtn, _settings.Mode == BackgroundMode.Image);
             UpdateDlToggleUi();
 
             // 刷新列表以反映自动选中的停靠点/光斑高亮
