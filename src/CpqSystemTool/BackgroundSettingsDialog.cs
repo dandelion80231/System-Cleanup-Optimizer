@@ -1890,7 +1890,7 @@ namespace CpqSystemTool
             // 5 种模式都成立，且永不出现「自己比自己」。
             var textOnBg = _owner._textMain != null ? _owner._textMain.Color : Colors.White;
             double ratio = ContrastRatio(c, textOnBg);
-            string verdict = ratio >= 7.0 ? "AAA 级（极佳）" : ratio >= 4.5 ? "AA 级（合格）" : ratio >= 3.0 ? "A 级（可接受）" : "不及格（文字可能难读）";
+            string verdict = ratio >= 7.0 ? "极佳" : ratio >= 4.5 ? "合格" : ratio >= 3.0 ? "可接受" : "不及格（文字可能难读）";   // 去掉 AAA/AA/A 评级前缀（用户：与后面的中文评价重复，无意义）
             _contrastText.Text = $"对比度（对主文字）{ratio:F2}:1 — {verdict}";
             // 性能优化：低对比度提示色是常量，原来每次 UpdateColor（拖拽时每帧）都 new 一支笔刷。
             _contrastText.Foreground = ratio >= 4.5 ? _owner._successGreen ?? _owner._textDim : LowContrastBrush;
