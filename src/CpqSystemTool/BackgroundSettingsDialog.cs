@@ -330,7 +330,7 @@ namespace CpqSystemTool
             //   行1：HEX / RGB / 明度控件（跨两列，位于色轮下方）
             var colorGrid = _colorGrid = new Grid();
             // MaxWidth=300 防御：左列 Auto 一旦超过卡片宽会把 Star 右列挤成 0（本次塌缩根因的兜底保险）
-            colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MaxWidth = 300 });
+            colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MaxWidth = 261 });
             colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -3495,7 +3495,7 @@ namespace CpqSystemTool
                 FontSize = 11,
                 Margin = new Thickness(0, 0, 0, 4),
                 TextWrapping = TextWrapping.Wrap,
-                MaxWidth = 330,   // 根因修复：无限宽单行会撑爆左列 Auto 宽度，把右列（颜色格式/对比度）挤到 0（点底色提示出现即塌）
+                MaxWidth = 260,   // 根因修复：限宽换行（不限会撑爆左列 Auto 宽度把右列挤到 0）；260≈左列自然宽，右列保持原始宽度
                 Visibility = Visibility.Collapsed
             };
             _meshBaseRow.Children.Add(_baseEditHint);
