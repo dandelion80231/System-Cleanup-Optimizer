@@ -69,7 +69,7 @@ namespace CpqSystemTool
         // 网格底色行（并入颜色卡 HEX 行下方；预设统一走「预设色板」卡片）
         private StackPanel _meshBaseRow;
         // 诊断（点底色后卡片塌缩排查）：颜色卡右列/底部滑块区提为字段，点击时抓高度/显隐状态写日志
-        private System.Windows.Grid _formatCol;
+        private System.Windows.Controls.Grid _formatCol;
         private System.Windows.Controls.StackPanel _lowerControls;
         private Border _baseSwatch;
         private TextBox _baseHexBox;
