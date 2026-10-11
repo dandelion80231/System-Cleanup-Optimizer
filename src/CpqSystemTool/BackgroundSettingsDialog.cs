@@ -3425,7 +3425,10 @@ namespace CpqSystemTool
                         L.Add("colorGrid: H=" + _colorGrid.ActualHeight + " col0=" + _colorGrid.ColumnDefinitions[0].ActualWidth + " col1=" + _colorGrid.ColumnDefinitions[1].ActualWidth);
                         L.Add("右列 formatCol: H=" + _formatCol.ActualHeight + " W=" + _formatCol.ActualWidth + " Vis=" + _formatCol.Visibility);
                         foreach (var c in _formatCol.Children)
-                            L.Add("  child " + c.GetType().Name + ": H=" + ((System.Windows.FrameworkElement)c).ActualHeight + " W=" + ((System.Windows.FrameworkElement)c).ActualWidth + " Vis=" + c.Visibility);
+                        {
+                            var fe = c as System.Windows.FrameworkElement;
+                            L.Add("  child " + c.GetType().Name + ": H=" + (fe != null ? fe.ActualHeight.ToString(System.Globalization.CultureInfo.InvariantCulture) : "-") + " W=" + (fe != null ? fe.ActualWidth.ToString(System.Globalization.CultureInfo.InvariantCulture) : "-") + " Vis=" + c.Visibility);
+                        }
                         L.Add("lowerControls: H=" + _lowerControls.ActualHeight + " W=" + _lowerControls.ActualWidth + " Vis=" + _lowerControls.Visibility);
                         File.AppendAllLines(@"D:\电脑桌面\cpq-tool\诊断.log", L);
                         if (tick >= 4) timer.Stop();
