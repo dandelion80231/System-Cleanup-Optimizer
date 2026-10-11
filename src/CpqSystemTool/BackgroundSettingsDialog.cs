@@ -329,7 +329,8 @@ namespace CpqSystemTool
             //   行0：左=色轮，右=颜色格式/对比度面板（两列底部对齐）
             //   行1：HEX / RGB / 明度控件（跨两列，位于色轮下方）
             var colorGrid = _colorGrid = new Grid();
-            colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            // MaxWidth=300 防御：左列 Auto 一旦超过卡片宽会把 Star 右列挤成 0（本次塌缩根因的兜底保险）
+            colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MaxWidth = 300 });
             colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -494,7 +495,7 @@ namespace CpqSystemTool
             // 表现为颜色卡右半大灰框）。改 Auto 后右列高度=自然高度，重排稳定；
             // 代价：「对比度」文本不再贴卡片底（右列比左列矮时，其下方留白在卡片底部）。
             rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 标题
-            rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 4 个格式行（自然高度，行内铺满）
+            rightCol.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 中部填空，把对比度推到底部（塌缩根因是列宽，恢复原设计）
             rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 对比度
 
             var infoTitle = new TextBlock { Text = "颜色格式 / 对比度", FontWeight = FontWeights.SemiBold, Foreground = _owner._textMain, Margin = new Thickness(0, 0, 0, 6) };
@@ -3493,6 +3494,8 @@ namespace CpqSystemTool
                 Foreground = _owner._accent,
                 FontSize = 11,
                 Margin = new Thickness(0, 0, 0, 4),
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = 330,   // 根因修复：无限宽单行会撑爆左列 Auto 宽度，把右列（颜色格式/对比度）挤到 0（点底色提示出现即塌）
                 Visibility = Visibility.Collapsed
             };
             _meshBaseRow.Children.Add(_baseEditHint);
