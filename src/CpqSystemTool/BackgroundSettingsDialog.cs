@@ -270,18 +270,9 @@ namespace CpqSystemTool
                 Foreground = _owner._textDim
             };
             // 「深浅背景切换」行上移到模式提示同一行（用户：往上挪更整齐；原在颜色卡内 editLabel 下方）
+            // 「不需要『深浅背景:』描述 + 太阳图标放最右」：无标签，顺序 = [⧉ 同步深色→浅色] [☀️/🌙 切换]，
+            // 切换图标与主窗口标题栏右上角深浅图标同位置（全页图标都在最右侧，统一美观）
             _dlToggleRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0) };
-            _dlToggleRow.Children.Add(new TextBlock { Text = "深浅背景:", Foreground = _owner._textDim, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
-            // 单按钮（同主窗口右上角 🌙）：点一下深浅套同翻，共用 _owner.ToggleTheme 切换逻辑
-            _previewThemeBtn = new Button
-            {
-                Content = new Emoji.Wpf.TextBlock { Text = "🌙", VerticalAlignment = VerticalAlignment.Center, FontSize = 14 },
-                Width = 36, Height = 26, Margin = new Thickness(0, 0, 6, 0),
-                Background = _owner._btnSecondaryBg, Foreground = _owner._textDim, BorderThickness = new Thickness(0),
-                ToolTip = "切换深浅背景（与主窗口右上角按钮共用同一切换逻辑）"
-            };
-            _previewThemeBtn.Click += (s, e) => { SetPreviewSet(!_previewDark); };
-            _dlToggleRow.Children.Add(_previewThemeBtn);
             _dlSyncBtn = new Button
             {
                 Content = new Emoji.Wpf.TextBlock { Text = "⧉ 同步深色→浅色", VerticalAlignment = VerticalAlignment.Center },
@@ -290,7 +281,17 @@ namespace CpqSystemTool
                 Background = _owner._btnSecondaryBg, Foreground = _owner._btnSecondaryFg, BorderThickness = new Thickness(0)
             };
             _dlSyncBtn.Click += (s, e) => SyncDarkToLight();
-            _dlToggleRow.Children.Add(_dlSyncBtn);   // 修复（回归）：上移时漏了把同步按钮加进行内，导致按钮不可见
+            _dlToggleRow.Children.Add(_dlSyncBtn);
+            // 单按钮（同主窗口右上角 🌙）：点一下深浅套同翻，共用 _owner.ToggleTheme 切换逻辑；放最右
+            _previewThemeBtn = new Button
+            {
+                Content = new Emoji.Wpf.TextBlock { Text = "🌙", VerticalAlignment = VerticalAlignment.Center, FontSize = 14 },
+                Width = 36, Height = 26, Margin = new Thickness(8, 0, 0, 0),
+                Background = _owner._btnSecondaryBg, Foreground = _owner._textDim, BorderThickness = new Thickness(0),
+                ToolTip = "切换深浅背景（与主窗口右上角按钮共用同一切换逻辑）"
+            };
+            _previewThemeBtn.Click += (s, e) => { SetPreviewSet(!_previewDark); };
+            _dlToggleRow.Children.Add(_previewThemeBtn);   // 最右侧
             _dlToggleRow.Visibility = Visibility.Collapsed;   // 初值收起，SyncModeUi 按模式恢复
             // 「往上挪」：深浅行挪到标题行（与「背景类型」下拉同行、右侧紧挨，随 modePanel 右对齐），
             // 不再占用编辑区顶部一行；提示回到编辑区顶部
