@@ -3757,21 +3757,11 @@ namespace CpqSystemTool
             var sp = new StackPanel();
             // 修复（标题过长被截断）：原 30 字描述在弹窗默认宽下显示不全且不换行。
             // 精简为主标题 + 短副标题两行，副标题设 TextWrapping=Wrap 双保险（窄窗也能折行不裁切）。
-            sp.Children.Add(new TextBlock
-            {
-                Text = "预设色板",
-                FontWeight = FontWeights.SemiBold,
-                Foreground = _owner._textMain,
-                Margin = new Thickness(0, 0, 0, 2)
-            });
-            sp.Children.Add(new TextBlock
-            {
-                Text = "点击应用到当前模式（纯色=底色 / 渐变=停靠点 / 网格=光斑）",
-                FontSize = 11,
-                Foreground = _owner._textDim,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 6)
-            });
+            // 标题行 =「预设色板」+ 括号说明（用户：括号内容足够描述，放在标题后一行即可，删独立提示行省一行）
+            var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+            titleRow.Children.Add(new TextBlock { Text = "预设色板", FontWeight = FontWeights.SemiBold, Foreground = _owner._textMain, VerticalAlignment = VerticalAlignment.Center });
+            titleRow.Children.Add(new TextBlock { Text = "（纯色=底色 / 渐变=停靠点 / 网格=光斑）", FontSize = 11, Foreground = _owner._textDim, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) });
+            sp.Children.Add(titleRow);
             // 修复（列数不匀）：原 WrapPanel 按可用宽度自动换行，12 套排成 4/3/3/2 每行列数不一致（用户指出）。
             // 改固定 4列×3行 Grid，每列等宽、每行等高；每格内部「名称在上 + 4 色块在下」堆叠，
             // 列宽由 Grid 均分保证整齐，弹窗缩放时仍保持 4 列。
