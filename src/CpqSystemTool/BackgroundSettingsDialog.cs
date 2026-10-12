@@ -40,6 +40,7 @@ namespace CpqSystemTool
         private StackPanel _blobPanel;
         private TextBox _angleBox;
         private TextBox _centerXBox, _centerYBox, _radiusXBox, _radiusYBox;
+        private StackPanel _angleGroup;   // 几何行「角度: [45]°」组（仅线性模式显示；径向不需要角度）
         private Button _addStopBtn, _addBlobBtn;
         private Button _applyBtn, _saveBtn, _cancelBtn;
         private TextBlock _modeHint;
@@ -776,15 +777,18 @@ namespace CpqSystemTool
             geoSp.Children.Add(geoTitle);
 
             // 几何参数合并一行（用户：角度/中心 X/Y 显示在同一行）：角度组并入中心行前端，不独立占行
-            _angleBox = new TextBox { Width = 60, Background = _owner._inputBg, Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center };
+            _angleBox = new TextBox { Width = 48, Background = _owner._inputBg,   // 收窄（用户：足够显示即可） Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center };
             // 修复：几何输入统一钳制。角度归一化到 [-360,360] 后再用（超出部分无意义），
             // 中心/半径也必须钳制，否则 0 或负半径会让 RadialGradientBrush 构造抛异常。
             _angleBox.TextChanged += (s, e) => TryParseBox(_angleBox, v => _settings.GradientAngle = ClampAngle(v), () => RefreshPreview());
 
             var centerRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-            centerRow.Children.Add(new TextBlock { Text = "角度:", Foreground = _owner._textMain, Width = 50, VerticalAlignment = VerticalAlignment.Center });
-            centerRow.Children.Add(_angleBox);
-            centerRow.Children.Add(new TextBlock { Text = "°", Foreground = _owner._textDim, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 16, 0) });
+            // 角度组（仅线性模式显示；径向渐变无角度概念——用户：径向不需要角度）：整组可隐藏
+            _angleGroup = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 16, 0) };
+            _angleGroup.Children.Add(new TextBlock { Text = "角度:", Foreground = _owner._textMain, Width = 40, VerticalAlignment = VerticalAlignment.Center });
+            _angleGroup.Children.Add(_angleBox);
+            _angleGroup.Children.Add(new TextBlock { Text = "°", Foreground = _owner._textDim, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) });
+            centerRow.Children.Add(_angleGroup);
             centerRow.Children.Add(new TextBlock { Text = "中心 X:", Foreground = _owner._textMain, Width = 50, VerticalAlignment = VerticalAlignment.Center });
             _centerXBox = new TextBox { Width = 50, Background = _owner._inputBg, Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center };
             _centerXBox.TextChanged += (s, e) => TryParseBox(_centerXBox, v => SetCenterX(Clamp(v, 0, 1)), () => RefreshPreview());
@@ -1034,6 +1038,8 @@ namespace CpqSystemTool
         // ---- 事件处理 ----
 
         private void ModeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            FitModeComboWidth();
         {
             if (_isInitializing) return;
             if (_modeCombo.SelectedItem is ComboBoxItem item && item.Tag is BackgroundMode newMode)
@@ -1430,9 +1436,10 @@ namespace CpqSystemTool
                 _lightOpacityVal.Text = _settings.LightOpacity.ToString("P0");
             }
 
+            FitModeComboWidth();
             SetVisibility(_geometryCard, showAngle || showRadial);
-            SetVisibility(_angleBox.Parent as StackPanel, showAngle);
-            SetVisibility(_centerXBox.Parent as StackPanel, showAngle || showRadial);
+            if (_angleGroup != null) SetVisibility(_angleGroup, showAngle);   // 角度组仅线性（径向无角度）
+            SetVisibility(_centerXBox.Parent as StackPanel, showAngle || showRadial);   // 中心 X/Y 行：线性+径向都显示
             SetVisibility(_radiusXBox.Parent as StackPanel, showRadial);
             SetVisibility(_stopPanel, showStops);
             _addStopBtn.Visibility = showStops ? Visibility.Visible : Visibility.Collapsed;
@@ -3118,6 +3125,13 @@ namespace CpqSystemTool
             if (_cssStatus == null) return;
             _cssStatus.Text = msg;
             _cssStatus.Visibility = string.IsNullOrEmpty(msg) ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        // 下拉框宽度贴合当前选项文字（用户：背景类型下拉过宽——按字数 2/4 字自适应）
+        private void FitModeComboWidth()
+        {
+            var txt = (_modeCombo.SelectedItem as ComboBoxItem)?.Content as string;
+            if (txt != null) _modeCombo.Width = txt.Length * 12.0 + 40;
         }
 
         private static void SetFmt(Grid block, string text)
