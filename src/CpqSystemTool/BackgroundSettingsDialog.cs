@@ -1637,20 +1637,8 @@ namespace CpqSystemTool
             // 所有「位置」滑块都停在 0%；且一碰滑块就把停靠点位置覆写成 0（改一下就坏了位置）。
             // 在挂 ValueChanged 之前赋值 → 不触发事件、不污染 _hasEditedAfterShow。
             slider.Value = stop.Offset;
-            slider.ValueChanged += (s, e) =>
-            {
-                if (_isUpdating) return;
-                stop.Offset = slider.Value;
-                _isUpdating = true;
-                try { posVal.Text = (stop.Offset * 100).ToString("F0") + "%"; }
-                finally { _isUpdating = false; }
-                _hasEditedAfterShow = true;
-                RefreshPreview();
-                UpdateEditLabel();
-            };
-            row.Children.Add(slider);
 
-            // 百分比显示/输入框（用户：拖动停靠点没有精确数字，只能看预览猜）
+            // 百分比显示/输入框（用户：拖动停靠点没有精确数字，只能看预览猜）——先于 ValueChanged lambda 声明
             var posVal = new TextBox
             {
                 Width = 44,
@@ -1682,7 +1670,20 @@ namespace CpqSystemTool
                     UpdateEditLabel();
                 }
             };
+            row.Children.Add(slider);
             row.Children.Add(posVal);
+
+            slider.ValueChanged += (s, e) =>
+            {
+                if (_isUpdating) return;
+                stop.Offset = slider.Value;
+                _isUpdating = true;
+                try { posVal.Text = (stop.Offset * 100).ToString("F0") + "%"; }
+                finally { _isUpdating = false; }
+                _hasEditedAfterShow = true;
+                RefreshPreview();
+                UpdateEditLabel();
+            };
 
             var del = new Button
             {
