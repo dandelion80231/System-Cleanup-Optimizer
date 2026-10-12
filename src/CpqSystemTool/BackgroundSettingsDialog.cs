@@ -339,7 +339,10 @@ namespace CpqSystemTool
             //   行1：HEX / RGB / 明度控件（跨两列，位于色轮下方）
             var colorGrid = new Grid();
             // MaxWidth=300 防御：左列 Auto 一旦超过卡片宽会把 Star 右列挤成 0（本次塌缩根因的兜底保险）
-            colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MaxWidth = 210 });   // 左列按色轮自然宽收窄，右列（格式/对比度）加宽恢复完整显示
+            // 左列固定 205（综合布局预算）：Auto+MaxWidth 会随模式内容（网格底色行 212px）在 205/210 间波动，
+            // 右列宽度跟着 199/204 跳动 → 网格模式 HSV/HSL（18 字符 ≈122px）被截 1 字符。固定 205 后
+            // 右列恒 204（409-205），所有背景类型的宽度预算一致，不会再「改了这个其他页面又出错」。
+            colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(205) });
             colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // 色轮/颜色格式（含 HEX 行、对比度）
             colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // RGB/HSV 滑块区
@@ -3091,7 +3094,7 @@ namespace CpqSystemTool
                 BorderBrush = _owner._panelBorder,
                 VerticalContentAlignment = VerticalAlignment.Center,
                 FontFamily = new FontFamily("Consolas"),
-                FontSize = 11.5   // 12pt 时 CMYK 17 字符放不进 120px 输入框；11.5pt ≈ 116px 完整显示
+                FontSize = 11   // 右列恒定 204 预算：输入框 122px；11pt 时 HSV/HSL 18 字符 ≈ 117px 全模式完整
             };
             Grid.SetColumn(box, 1);
             row.Children.Add(box);
@@ -3443,7 +3446,7 @@ namespace CpqSystemTool
             baseRow.Children.Add(new TextBlock { Text = "底色:", Foreground = _owner._textMain, Width = 40, VerticalAlignment = VerticalAlignment.Center });
             _baseSwatch = new Border
             {
-                Width = 28,
+                Width = 24,   // 底色行总宽预算 205（左列固定）：40+24+6+60+6+56 = 192
                 Height = 20,
                 CornerRadius = new CornerRadius(3),
                 Cursor = Cursors.Hand,
@@ -3469,7 +3472,7 @@ namespace CpqSystemTool
             baseRow.Children.Add(_baseSwatch);
             _baseHexBox = new TextBox
             {
-                Width = 64,   // 左列收窄到 210 后 80 会溢出底色行；64 够 #RRGGBB
+                Width = 60,   // 底色行总宽 192 < 205（#RRGGBB 最长 9 字符 ≈ 54px 够放）
 
                 Background = _owner._inputBg,
                 Foreground = _owner._inputFg,
@@ -3502,6 +3505,7 @@ namespace CpqSystemTool
             {
                 Content = "用当前色",
                 Height = 24,
+                Width = 56,
                 Margin = new Thickness(6, 0, 0, 0),
                 Background = _owner._btnSecondaryBg,
                 Foreground = _owner._btnSecondaryFg,
