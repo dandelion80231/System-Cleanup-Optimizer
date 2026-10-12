@@ -430,7 +430,7 @@ namespace CpqSystemTool
             hexRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             hexRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             hexRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var hexLbl = new TextBlock { Text = "HEX:", Foreground = _owner._textMain, VerticalAlignment = VerticalAlignment.Center, Width = 46 };
+            var hexLbl = new TextBlock { Text = "HEX:", Foreground = _owner._textMain, VerticalAlignment = VerticalAlignment.Center, Width = 40 };
             Grid.SetColumn(hexLbl, 0);
             hexRow.Children.Add(hexLbl);
             _hexBox = new TextBox
@@ -449,7 +449,7 @@ namespace CpqSystemTool
             {
                 Content = "复制",
                 Height = 22,
-                Width = 28,
+                Width = 26,
                 FontSize = 11,
                 Margin = new Thickness(4, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -3075,7 +3075,7 @@ namespace CpqSystemTool
         // 旧版固定 240px 定宽 + 复制按钮下一行右对齐，在右列 ~153px 宽里溢出、按钮掉到「对比度」行错位）。
         private Grid MakeReadOnlyFormatBox(string label)
         {
-            const double labelWidth = 46;   // 「CMYK:」一行容下且省宽给输入框（右列 199px 预算：46+复制28+输入框~120）
+            const double labelWidth = 40;   // 标签列收紧（CMYK: 33px 实测够）：省 6px 给输入框，HSV/HSL 18 字符（119px）完整
             // 该行变高、视觉与其他三行不齐（用户：复制没有完全对齐）；加宽并 NoWrap 双保险
             var row = new Grid { Margin = new Thickness(0, 0, 0, 4) };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -3102,7 +3102,7 @@ namespace CpqSystemTool
             var copy = new Button
             {
                 Content = "复制",
-                Width = 28,
+                Width = 26,
                 Height = 22,
                 FontSize = 11,
                 Margin = new Thickness(4, 0, 0, 0),
