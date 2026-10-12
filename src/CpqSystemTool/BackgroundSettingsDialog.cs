@@ -3184,6 +3184,8 @@ namespace CpqSystemTool
                 Content = "复制为 CSS",
                 Height = 28,
                 Width = 90,
+                ContentAlignment = ContentAlignment.Left,   // 按钮内文字左对齐（原来居中，文字左缘比卡片标题深 17px，视觉错位）
+                Padding = new Thickness(0, 0, 0, 0),
                 Margin = new Thickness(0, 0, 8, 0),
                 Background = _owner._accent,
                 Foreground = _owner._btnPrimaryFg,
@@ -3197,6 +3199,8 @@ namespace CpqSystemTool
                 Content = "粘贴 CSS 导入",
                 Height = 28,
                 Width = 110,
+                ContentAlignment = ContentAlignment.Left,   // 同上：文字贴按钮左缘，与卡片左缘一条线
+                Padding = new Thickness(0, 0, 0, 0),
                 Margin = new Thickness(0, 0, 8, 0),
                 Background = _owner._accent,
                 Foreground = _owner._btnPrimaryFg,
@@ -3210,6 +3214,8 @@ namespace CpqSystemTool
                 Content = new Emoji.Wpf.TextBlock { Text = "🎲 随机光斑", VerticalAlignment = VerticalAlignment.Center },
                 Height = 28,
                 Width = 100,
+                ContentAlignment = ContentAlignment.Left,
+                Padding = new Thickness(0, 0, 0, 0),
                 Background = _owner._btnSecondaryBg,
                 Foreground = _owner._btnSecondaryFg,
                 BorderThickness = new Thickness(0)
@@ -3258,6 +3264,8 @@ namespace CpqSystemTool
                 Content = "导出 SVG",
                 Height = 28,
                 Width = 90,
+                ContentAlignment = ContentAlignment.Left,
+                Padding = new Thickness(0, 0, 0, 0),
                 Margin = new Thickness(0, 0, 0, 0),
                 Background = _owner._btnSecondaryBg,
                 Foreground = _owner._btnSecondaryFg,
