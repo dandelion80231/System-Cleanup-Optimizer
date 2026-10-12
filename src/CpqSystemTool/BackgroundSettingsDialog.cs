@@ -541,13 +541,12 @@ namespace CpqSystemTool
 
             _contrastText = new Emoji.Wpf.TextBlock
             {
-                // 换行完整显示（用户：上一版显示是全的，综合两版）+ MinHeight=34 兜住两行高度——
-                // 最多 2 行（「1.00:1 — 不及格（文字可能难读）」也是 2 行），行高稳定不溢出到下方滑块区。
-                TextWrapping = TextWrapping.Wrap,
-                FontSize = 11.0,
+                // 与上面 5 行格式行视觉统一（用户：行间距/字号感觉奇怪）：字号 12（同标签列）、
+                // 单行 NoWrap（右列 204px 放得下 100px 文案，无需换行；旧 MinHeight=34 预留两行是行距不齐的根源）。
+                TextWrapping = TextWrapping.NoWrap,
+                FontSize = 12.0,
                 Foreground = _owner._textDim,
-                MinHeight = 34,
-                Margin = new Thickness(0, 0, 0, 0)
+                Margin = new Thickness(0, 8, 0, 0)   // 与格式行行距一致的顶部间距
             };
             // HEX 行 = 右列第 5 行、对比度 = 右列第 6 行（与 4 个格式行同列同宽）：
             // 5 个「复制」按钮同一竖线（卡片右缘），「对比度」左缘与标签列对齐
