@@ -789,7 +789,7 @@ namespace CpqSystemTool
             _angleGroup.Children.Add(_angleBox);
             _angleGroup.Children.Add(new TextBlock { Text = "°", Foreground = _owner._textDim, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) });
             centerRow.Children.Add(_angleGroup);
-            centerRow.Children.Add(new TextBlock { Text = "中心 X:", Foreground = _owner._textMain, Width = 26, VerticalAlignment = VerticalAlignment.Center });   // 26px 列宽（两组 中心/半径 标签同宽对齐）
+            centerRow.Children.Add(new TextBlock { Text = "中心 X:", Foreground = _owner._textMain, Width = 36, VerticalAlignment = VerticalAlignment.Center });   // 36px（「中心 X:」5 字符，26 会把 X: 截掉）
             _centerXBox = new TextBox { Width = 50, Background = _owner._inputBg, Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center };
             _centerXBox.TextChanged += (s, e) => TryParseBox(_centerXBox, v => SetCenterX(Clamp(v, 0, 1)), () => RefreshPreview());
             centerRow.Children.Add(_centerXBox);
@@ -801,7 +801,7 @@ namespace CpqSystemTool
 
             // 「四个参数一行」（用户）：半径组不再独立占行，追加进中心行（组间 16px 间距，标签 26px 同宽对齐）
             var radiusRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(16, 0, 0, 0) };
-            radiusRow.Children.Add(new TextBlock { Text = "半径 X:", Foreground = _owner._textMain, Width = 26, VerticalAlignment = VerticalAlignment.Center });
+            radiusRow.Children.Add(new TextBlock { Text = "半径 X:", Foreground = _owner._textMain, Width = 36, VerticalAlignment = VerticalAlignment.Center });
             _radiusXBox = new TextBox { Width = 50, Background = _owner._inputBg, Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center };
             // 修复：半径原样写入，输入 0/负数/超大值会让 RadialGradientBrush 构造抛异常，
             // 而异常被 RefreshPreview 的 catch 静默吞掉，预览停在旧图且无任何提示。这里统一钳制到 [0.01, 10]。
