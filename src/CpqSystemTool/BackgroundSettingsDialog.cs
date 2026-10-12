@@ -353,9 +353,8 @@ namespace CpqSystemTool
             // HEX/底色行随之「消失」、卡片塌成大灰框——用户截图「点击底色后空白一大块」即此级联。
             // Auto 后左列高度=自然高度，卡片高度稳定取两列较高者，无反馈环。
             var leftTop = new Grid();
-            leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            leftTop.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });   // 第 3 行 Star 填空（右列加了 HEX/对比度后比色轮列高，防色轮下空带；宽度塌缩根因已修，Star 安全）
+            leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // 色轮（标题已删，直接 row0）
+            leftTop.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });   // Star 填空（右列更高时防色轮下空带）
             var rightCol = new Grid { VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(16, 0, 0, 0) };
             // 色轮下方控件的顶部间距：色轮 wheelGrid 底部边距已置 0，这里用 22 维持
             // 与之前（wheelGrid 10 + 本行 12 = 22）一致的整体视觉间距，同时确保右列对比度文本
@@ -364,22 +363,12 @@ namespace CpqSystemTool
             // 10px 顶边距仍被看成一条空白带（实测截图约 30px 视觉间隙，含行高留白），直接 0 贴顶
             var lowerControls = new StackPanel { Margin = new Thickness(0, 0, 0, 0) };
 
-            // 左列：色轮
-            var wheelTitle = new TextBlock
-            {
-                Text = "色轮",
-                FontWeight = FontWeights.SemiBold,
-                Foreground = _owner._textMain,
-                Margin = new Thickness(0, 0, 0, 8)
-            };
-            Grid.SetRow(wheelTitle, 0);
-            leftTop.Children.Add(wheelTitle);
-
+            // 左列：色轮（删「色轮」标题——用户：省下的行高给色轮圆，180→200 适当变大）
             // 色轮容器：用 Grid 把 Image 和指示器 Canvas 叠在一起，并用 EllipseGeometry 真正裁成圆形
             var wheelGrid = new Grid
             {
-                Width = 180,
-                Height = 180,
+                Width = 200,   // 色轮 180→200（删标题后空间变大，用户：适当放大）
+                Height = 200,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 // 注意：这里底部不留边距。若留 10px，leftTop 会比色轮圆底边高出 10px，
                 // 而右列 rightCol 按 VerticalAlignment=Stretch 对齐到 leftTop 底边，
@@ -389,8 +378,8 @@ namespace CpqSystemTool
             };
             _wheelHost = new Border
             {
-                Width = 180,
-                Height = 180,
+                Width = 200,
+                Height = 200,
                 CornerRadius = new CornerRadius(90),
                 BorderThickness = new Thickness(0),
                 Background = Brushes.Transparent,
@@ -398,14 +387,14 @@ namespace CpqSystemTool
                 // 用 EllipseGeometry 裁剪才能确保色轮内容严格圆形
                 Clip = new EllipseGeometry(new Rect(0, 0, 180, 180))
             };
-            _wheelImage = new Image { Width = 180, Height = 180, IsHitTestVisible = false, Stretch = Stretch.Fill };
+            _wheelImage = new Image { Width = 200, Height = 200, IsHitTestVisible = false, Stretch = Stretch.Fill };
             _wheelHost.Child = _wheelImage;
             _wheelHost.MouseLeftButtonDown += WheelHost_MouseLeftButtonDown;
             _wheelHost.MouseMove += WheelHost_MouseMove;
             _wheelHost.MouseLeftButtonUp += WheelHost_MouseLeftButtonUp;
             wheelGrid.Children.Add(_wheelHost);
 
-            _wheelOverlay = new Canvas { Width = 180, Height = 180, IsHitTestVisible = false };
+            _wheelOverlay = new Canvas { Width = 200, Height = 200, IsHitTestVisible = false };
             _wheelIndicator = new Ellipse
             {
                 Width = 10,
@@ -419,9 +408,9 @@ namespace CpqSystemTool
             wheelGrid.Children.Add(_wheelOverlay);
 
             // 和色标记层：和谐规则的小圆点（UpdateHarmonyWheelDots 填充），叠在指示器之上
-            _harmonyOverlay = new Canvas { Width = 180, Height = 180, IsHitTestVisible = false };
+            _harmonyOverlay = new Canvas { Width = 200, Height = 200, IsHitTestVisible = false };
             wheelGrid.Children.Add(_harmonyOverlay);
-            Grid.SetRow(wheelGrid, 1);
+            Grid.SetRow(wheelGrid, 0);   // 标题行已删，色轮升 row0
             leftTop.Children.Add(wheelGrid);
 
             // HEX 行（并入右列「颜色格式 / 对比度」第 5 行，与 4 个格式行同列同宽）：
@@ -465,7 +454,7 @@ namespace CpqSystemTool
             // 现在把 HEX 行（网格模式 + 底色行）放到左列底部（Bottom 对齐填满空白带），
             // 与右列「对比度」行同底，HEX 上移到位，空白带被内容填满。
             var leftBottom = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom };
-            Grid.SetRow(leftBottom, 2);
+            Grid.SetRow(leftBottom, 1);
             leftTop.Children.Add(leftBottom);
             // hexRow 已上移到「HEX + 对比度」跨列单行（见 _contrastText 组装处）；左列底部只留网格底色行
             // 网格底色行：紧跟 HEX 行下方（仅网格模式可见）——选色与底色确认同屏
@@ -1984,7 +1973,7 @@ namespace CpqSystemTool
             // 像素与选取完全无关 → 首绘后永久复用（32,400 次 HsvToRgb 只跑一次）。
             if (_wheelBitmap != null && _wheelRenderedValue.Equals(WheelBrightness)) return;
 
-            int w = 180, h = 180;
+            int w = 200, h = 200;   // 位图与控件同步 180→200（缓存尺寸变更自动重分配）
             // 复用位图与像素数组：尺寸不变时不重新分配，避免每次重绘产生 129,600 字节垃圾。
             if (_wheelBitmap == null || _wheelBmpW != w || _wheelBmpH != h)
             {
