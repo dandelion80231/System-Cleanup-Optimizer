@@ -562,6 +562,7 @@ namespace CpqSystemTool
             Grid.SetColumn(_contrastText, 1);
             hexContrastRow.Children.Add(_contrastText);
             Grid.SetRow(hexContrastRow, 1);
+            Grid.SetColumnSpan(hexContrastRow, 2);   // 跨整卡宽——不设 Span 会落 col0（210px），对比度格只剩 ~30px
             colorGrid.Children.Add(hexContrastRow);
 
             Grid.SetRow(leftTop, 0); Grid.SetColumn(leftTop, 0);
@@ -3073,7 +3074,7 @@ namespace CpqSystemTool
         // 旧版固定 240px 定宽 + 复制按钮下一行右对齐，在右列 ~153px 宽里溢出、按钮掉到「对比度」行错位）。
         private Grid MakeReadOnlyFormatBox(string label)
         {
-            const double labelWidth = 50;   // 「CMYK:」最长标签（4 字母+冒号）一行容下——42px 时折成两行，
+            const double labelWidth = 46;   // 「CMYK:」一行容下且省宽给输入框（右列 199px 预算：46+复制28+输入框~120）
             // 该行变高、视觉与其他三行不齐（用户：复制没有完全对齐）；加宽并 NoWrap 双保险
             var row = new Grid { Margin = new Thickness(0, 0, 0, 4) };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -3091,7 +3092,8 @@ namespace CpqSystemTool
                 Foreground = _owner._inputFg,
                 BorderBrush = _owner._panelBorder,
                 VerticalContentAlignment = VerticalAlignment.Center,
-                FontFamily = new FontFamily("Consolas")
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 11.5   // 12pt 时 CMYK 17 字符放不进 120px 输入框；11.5pt ≈ 116px 完整显示
             };
             Grid.SetColumn(box, 1);
             row.Children.Add(box);
@@ -3099,8 +3101,9 @@ namespace CpqSystemTool
             var copy = new Button
             {
                 Content = "复制",
-                Width = 32,
+                Width = 28,
                 Height = 22,
+                FontSize = 11,
                 Margin = new Thickness(4, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 Background = _owner._btnSecondaryBg,
