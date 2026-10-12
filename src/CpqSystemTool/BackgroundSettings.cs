@@ -381,6 +381,15 @@ namespace CpqSystemTool
                 System.Diagnostics.Debug.WriteLine("[BackgroundSettings.FromJson] 解析失败，已回退默认值。JSON 长度=" + (json == null ? -1 : json.Length));
             }
             s.EnsureGradientStops();
+            // 默认值迁移（f307f7e 把径向默认半径 0.5→1.0 只对新设置生效；存量 json 仍存旧默认 0.5，
+            // 打开弹窗显示的还是 0.5——用户：「为什么半径还是显示的 0.5」）：
+            // 半径仍为旧默认指纹（X、Y 都是 0.5 = 用户从未显式设置过半径）时，迁到新默认 1.0；
+            // 显式设过其他值的不受影响。
+            if (s.RadialRadiusX == 0.5 && s.RadialRadiusY == 0.5)
+            {
+                s.RadialRadiusX = 1.0;
+                s.RadialRadiusY = 1.0;
+            }
             s.EnsureMeshBlobs();
             return s;
         }
