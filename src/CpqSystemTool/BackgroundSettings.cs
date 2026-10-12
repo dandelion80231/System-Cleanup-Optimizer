@@ -89,8 +89,10 @@ namespace CpqSystemTool
         public double GradientAngle { get; set; } = 45.0;
         public double RadialCenterX { get; set; } = 0.5;
         public double RadialCenterY { get; set; } = 0.5;
-        public double RadialRadiusX { get; set; } = 0.5;
-        public double RadialRadiusY { get; set; } = 0.5;
+        // 默认 1.0（半径=整屏宽/高，光覆盖全屏；旧默认 0.5 = 光圆半径半屏宽，宽屏下四角大面积落边色，用户指出 1 更合理）
+        // 归一化语义：0.5 = 半径为视口宽/高的一半（RelativeToBoundingBox）；CSS 导出按 ×100% 换算
+        public double RadialRadiusX { get; set; } = 1.0;
+        public double RadialRadiusY { get; set; } = 1.0;
 
         // ---- 线性渐变中心（0.0~1.0，相对画布）----
         // 与 RadialCenter 平行：线性渐变允许「整体平移位置 + 旋转角度」二者兼得。
