@@ -863,11 +863,13 @@ namespace CpqSystemTool
             _blobPanel = new StackPanel();
             listSp.Children.Add(_blobPanel);
 
-            // 功能3：网格 CSS 导入/导出卡片（仅网格模式可见）
-            BuildCssCard(listSp);
-
             _listCard.Child = listSp;
             editPanel.Children.Add(_listCard);
+
+            // 功能3：CSS 导入/导出卡片 = 独立卡片（与「颜色停靠点」卡同级）。
+            // 旧实现 BuildCssCard(listSp) 把它嵌进停靠点卡内部——多套一层卡片框（用户指认），
+            // 整卡缩进深一级，卡片内标题/输入框/按钮行永远比停靠色块多一层 padding，怎么调都对不齐。
+            BuildCssCard(editPanel);
 
 
 
