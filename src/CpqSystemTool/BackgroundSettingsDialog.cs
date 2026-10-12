@@ -775,17 +775,16 @@ namespace CpqSystemTool
             var geoTitle = new TextBlock { Text = "几何参数", FontWeight = FontWeights.SemiBold, Foreground = _owner._textMain, Margin = new Thickness(0, 0, 0, 8) };
             geoSp.Children.Add(geoTitle);
 
-            var angleRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-            angleRow.Children.Add(new TextBlock { Text = "角度:", Foreground = _owner._textMain, Width = 50, VerticalAlignment = VerticalAlignment.Center });
+            // 几何参数合并一行（用户：角度/中心 X/Y 显示在同一行）：角度组并入中心行前端，不独立占行
             _angleBox = new TextBox { Width = 60, Background = _owner._inputBg, Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center };
             // 修复：几何输入统一钳制。角度归一化到 [-360,360] 后再用（超出部分无意义），
             // 中心/半径也必须钳制，否则 0 或负半径会让 RadialGradientBrush 构造抛异常。
             _angleBox.TextChanged += (s, e) => TryParseBox(_angleBox, v => _settings.GradientAngle = ClampAngle(v), () => RefreshPreview());
-            angleRow.Children.Add(_angleBox);
-            angleRow.Children.Add(new TextBlock { Text = "°", Foreground = _owner._textDim, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) });
-            geoSp.Children.Add(angleRow);
 
             var centerRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+            centerRow.Children.Add(new TextBlock { Text = "角度:", Foreground = _owner._textMain, Width = 50, VerticalAlignment = VerticalAlignment.Center });
+            centerRow.Children.Add(_angleBox);
+            centerRow.Children.Add(new TextBlock { Text = "°", Foreground = _owner._textDim, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 16, 0) });
             centerRow.Children.Add(new TextBlock { Text = "中心 X:", Foreground = _owner._textMain, Width = 50, VerticalAlignment = VerticalAlignment.Center });
             _centerXBox = new TextBox { Width = 50, Background = _owner._inputBg, Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center };
             _centerXBox.TextChanged += (s, e) => TryParseBox(_centerXBox, v => SetCenterX(Clamp(v, 0, 1)), () => RefreshPreview());
@@ -2081,7 +2080,7 @@ namespace CpqSystemTool
                 // 修复：原来只写 Debug 输出，参数非法时预览静默停在旧图、用户完全无感知。
                 // 现在把错误同时写到窗口底部的状态条，让用户看得见。
                 System.Diagnostics.Debug.WriteLine("[BgDlg] preview error: " + ex.Message);
-                if (_cssStatus != null) _cssStatus.Text = "预览刷新失败（参数可能超出范围）：" + ex.Message;
+                SetCssStatus("预览刷新失败（参数可能超出范围）：" + ex.Message);
             }
             RefreshOverlayHandles();
         }
@@ -3113,6 +3112,14 @@ namespace CpqSystemTool
             return row;
         }
 
+        // CSS 状态行：非空显示、空隐藏（空 TextBlock 仍占一行高，留白即按钮下「多余空行」）
+        private void SetCssStatus(string msg)
+        {
+            if (_cssStatus == null) return;
+            _cssStatus.Text = msg;
+            _cssStatus.Visibility = string.IsNullOrEmpty(msg) ? Visibility.Collapsed : Visibility.Visible;
+        }
+
         private static void SetFmt(Grid block, string text)
         {
             // block.Tag 由 MakeReadOnlyFormatBox 设为对应 TextBox
@@ -3251,7 +3258,7 @@ namespace CpqSystemTool
                 RefreshBlobList();
                 RefreshPreview();
                 UpdateEditLabel();
-                if (_cssStatus != null) _cssStatus.Text = "已随机生成 " + _settings.Blobs.Count + " 个光斑。";
+                SetCssStatus("已随机生成 " + _settings.Blobs.Count + " 个光斑。");
             };
             cssBtnRow.Children.Add(randMeshBtn);
 
@@ -3288,7 +3295,9 @@ namespace CpqSystemTool
             {
                 FontSize = 11.0,
                 Foreground = _owner._textDim,
-                TextWrapping = TextWrapping.Wrap
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 4, 0, 0),
+                Visibility = Visibility.Collapsed   // 无状态不占行（空 TextBlock 仍占行高 = 按钮下多余空行）
             };
             cssSp.Children.Add(_cssStatus);
 
@@ -3320,11 +3329,11 @@ namespace CpqSystemTool
                 }
                 if (_cssBox != null) _cssBox.Text = css;
                 Clipboard.SetText(css); // 按钮点击在 UI 线程（STA），可直接写入剪贴板
-                if (_cssStatus != null) _cssStatus.Text = "已复制" + (_previewDark ? "" : "（浅色套）") + " " + note + "到剪贴板。";
+                SetCssStatus("已复制" + (_previewDark ? "" : "（浅色套）") + " " + note + "到剪贴板。");
             }
             catch (Exception ex)
             {
-                if (_cssStatus != null) _cssStatus.Text = "复制失败：" + ex.Message;
+                SetCssStatus("复制失败：" + ex.Message);
             }
         }
 
@@ -3358,10 +3367,10 @@ namespace CpqSystemTool
                         RefreshStopList();
                         RefreshPreview();
                         UpdateEditLabel();
-                        if (_cssStatus != null) _cssStatus.Text = "已导入线性渐变：" + stp.Count + " 个停靠点，角度 " + ang.ToString("F0") + "°（写入" + (_previewDark ? "深色" : "浅色") + "套）。";
+                        SetCssStatus("已导入线性渐变：" + stp.Count + " 个停靠点，角度 " + ang.ToString("F0") + "°（写入" + (_previewDark ? "深色" : "浅色") + "套）。");
                         return;
                     }
-                    if (_cssStatus != null) _cssStatus.Text = "linear-gradient 解析失败：颜色须为 #hex/rgb/rgba/hsla，停靠点位置可选。";
+                    SetCssStatus("linear-gradient 解析失败：颜色须为 #hex/rgb/rgba/hsla，停靠点位置可选。");
                     return;
                 }
                 if (radialCount == 1 && !hasRC)
@@ -3388,16 +3397,16 @@ namespace CpqSystemTool
                         RefreshStopList();
                         RefreshPreview();
                         UpdateEditLabel();
-                        if (_cssStatus != null) _cssStatus.Text = "已导入径向渐变：" + stp.Count + " 个停靠点（写入" + (_previewDark ? "深色" : "浅色") + "套）。";
+                        SetCssStatus("已导入径向渐变：" + stp.Count + " 个停靠点（写入" + (_previewDark ? "深色" : "浅色") + "套）。");
                         return;
                     }
-                    if (_cssStatus != null) _cssStatus.Text = "radial-gradient 解析失败：支持「N% N% at A% B%」几何前缀 + #hex/rgb/hsla 停靠点。";
+                    SetCssStatus("radial-gradient 解析失败：支持「N% N% at A% B%」几何前缀 + #hex/rgb/hsla 停靠点。");
                     return;
                 }
                 var blobs = BackgroundSettings.ParseCssGradient(css);
                 if (blobs == null)
                 {
-                    if (_cssStatus != null) _cssStatus.Text = "未识别到有效的 radial-gradient 层，请检查 CSS 格式（示例：radial-gradient(at 20% 30%, hsla(180,80%,50%,0.8) 0%, hsla(180,80%,50%,0) 100%)）。";
+                    SetCssStatus("未识别到有效的 radial-gradient 层，请检查 CSS 格式（示例：radial-gradient(at 20% 30%, hsla(180,80%,50%,0.8) 0%, hsla(180,80%,50%,0) 100%)）。");
                     return;
                 }
                 _settings.Blobs = blobs;
@@ -3413,14 +3422,13 @@ namespace CpqSystemTool
                 // 可无损往返；外部 CSS（gradients.app 等）无注释，半径按 0.5 还原——给用户一条
                 // 明确提示，避免「导入后光斑尺寸莫名变了」的困惑。
                 bool hasRadiusHint = Regex.IsMatch(css, @"/\*\s*r:[\d.]+\s*\*/", RegexOptions.IgnoreCase);
-                if (_cssStatus != null)
-                    _cssStatus.Text = hasRadiusHint
-                        ? "已导入 " + blobs.Count + " 个光斑（半径来自本工具注释，无损往返）。"
-                        : "已导入 " + blobs.Count + " 个光斑（外部 CSS 不含半径信息，已按默认 0.5 还原尺寸）。";
+                SetCssStatus(hasRadiusHint
+                    ? "已导入 " + blobs.Count + " 个光斑（半径来自本工具注释，无损往返）。"
+                    : "已导入 " + blobs.Count + " 个光斑（外部 CSS 不含半径信息，已按默认 0.5 还原尺寸）。");
             }
             catch (Exception ex)
             {
-                if (_cssStatus != null) _cssStatus.Text = "导入失败：" + ex.Message;
+                SetCssStatus("导入失败：" + ex.Message);
             }
         }
 
@@ -3971,7 +3979,7 @@ namespace CpqSystemTool
             {
                 if (_settings.Mode != BackgroundMode.MeshGradient || _settings.Blobs == null || _settings.Blobs.Count == 0)
                 {
-                    if (_cssStatus != null) _cssStatus.Text = "SVG 导出仅支持网格渐变模式，且至少需有 1 个光斑。";
+                    SetCssStatus("SVG 导出仅支持网格渐变模式，且至少需有 1 个光斑。");
                     return;
                 }
                 var dlg = new SaveFileDialog
@@ -3986,12 +3994,12 @@ namespace CpqSystemTool
                 {
                     var svg = BackgroundSettings.ToSvg(_settings.Blobs, _settings.MeshBaseColor);
                     AtomicFile.WriteFileAtomic(dlg.FileName, svg);
-                    if (_cssStatus != null) _cssStatus.Text = "已导出 SVG：" + dlg.FileName;
+                    SetCssStatus("已导出 SVG：" + dlg.FileName);
                 }
             }
             catch (Exception ex)
             {
-                if (_cssStatus != null) _cssStatus.Text = "导出失败：" + ex.Message;
+                SetCssStatus("导出失败：" + ex.Message);
             }
         }
     }
