@@ -3183,9 +3183,7 @@ namespace CpqSystemTool
             {
                 Content = "复制为 CSS",
                 Height = 28,
-                Width = 90,
-                HorizontalContentAlignment = HorizontalAlignment.Left,   // 按钮内文字左对齐（原来居中，文字左缘比卡片标题深 17px，视觉错位）
-                Padding = new Thickness(0, 0, 0, 0),
+                Padding = new Thickness(10, 0, 10, 0),   // 宽度随文字自适应（定宽 90 右侧空 30px 像截断）
                 Margin = new Thickness(0, 0, 8, 0),
                 Background = _owner._accent,
                 Foreground = _owner._btnPrimaryFg,
@@ -3198,9 +3196,7 @@ namespace CpqSystemTool
             {
                 Content = "粘贴 CSS 导入",
                 Height = 28,
-                Width = 110,
-                HorizontalContentAlignment = HorizontalAlignment.Left,   // 同上：文字贴按钮左缘，与卡片左缘一条线
-                Padding = new Thickness(0, 0, 0, 0),
+                Padding = new Thickness(10, 0, 10, 0),   // 同上
                 Margin = new Thickness(0, 0, 8, 0),
                 Background = _owner._accent,
                 Foreground = _owner._btnPrimaryFg,
@@ -3213,9 +3209,7 @@ namespace CpqSystemTool
             {
                 Content = new Emoji.Wpf.TextBlock { Text = "🎲 随机光斑", VerticalAlignment = VerticalAlignment.Center },
                 Height = 28,
-                Width = 100,
-                HorizontalContentAlignment = HorizontalAlignment.Left,
-                Padding = new Thickness(0, 0, 0, 0),
+                Padding = new Thickness(10, 0, 10, 0),
                 Background = _owner._btnSecondaryBg,
                 Foreground = _owner._btnSecondaryFg,
                 BorderThickness = new Thickness(0)
@@ -3263,9 +3257,7 @@ namespace CpqSystemTool
             {
                 Content = "导出 SVG",
                 Height = 28,
-                Width = 90,
-                HorizontalContentAlignment = HorizontalAlignment.Left,
-                Padding = new Thickness(0, 0, 0, 0),
+                Padding = new Thickness(10, 0, 10, 0),
                 Margin = new Thickness(0, 0, 0, 0),
                 Background = _owner._btnSecondaryBg,
                 Foreground = _owner._btnSecondaryFg,
