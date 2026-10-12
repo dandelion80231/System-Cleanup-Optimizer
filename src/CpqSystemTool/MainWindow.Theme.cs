@@ -495,10 +495,17 @@ namespace CpqSystemTool
                 double cx = s.LinearCenterX, cy = s.LinearCenterY;
                 // 标准角度约定（与 WPF Angle / CSS 一致：0°=右、90°=上）：屏幕 y 向下，方向向量 = (cos, -sin)
                 double dx = Math.Cos(ang), dy = -Math.Sin(ang);
+                // 轴线端点 = 视口四角在方向向量上的两个极值投影（CSS linear-gradient 语义）：
+                // 旧实现 中心±0.5·dir 按 1:1 半对角，宽屏下轴到不了 右上/左下 角点，
+                // 角区被 SpreadMethod.Pad 用端部停点色填出「三角」——停靠点拖到 100% 仍留一角。
+                // 新轴线贯穿角点，与 CSS 导出（45deg 等角度按整个矩形投影）一致。
+                double minP = Math.Min(0, Math.Min(dx, Math.Min(dy, dx + dy)));
+                double maxP = Math.Max(0, Math.Max(dx, Math.Max(dy, dx + dy)));
+                double pc = 0.5 * dx + 0.5 * dy;   // 中心在轴上的投影
                 var brush = new LinearGradientBrush
                 {
-                    StartPoint = new Point(cx - 0.5 * dx, cy - 0.5 * dy),
-                    EndPoint = new Point(cx + 0.5 * dx, cy + 0.5 * dy),
+                    StartPoint = new Point(cx + (minP - pc) * dx, cy + (minP - pc) * dy),
+                    EndPoint = new Point(cx + (maxP - pc) * dx, cy + (maxP - pc) * dy),
                     MappingMode = BrushMappingMode.RelativeToBoundingBox,
                     SpreadMethod = GradientSpreadMethod.Pad
                 };

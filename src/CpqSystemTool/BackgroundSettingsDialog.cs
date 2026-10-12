@@ -1641,11 +1641,48 @@ namespace CpqSystemTool
             {
                 if (_isUpdating) return;
                 stop.Offset = slider.Value;
+                _isUpdating = true;
+                try { posVal.Text = (stop.Offset * 100).ToString("F0") + "%"; }
+                finally { _isUpdating = false; }
                 _hasEditedAfterShow = true;
                 RefreshPreview();
                 UpdateEditLabel();
             };
             row.Children.Add(slider);
+
+            // 百分比显示/输入框（用户：拖动停靠点没有精确数字，只能看预览猜）
+            var posVal = new TextBox
+            {
+                Width = 44,
+                Background = _owner._inputBg,
+                Foreground = _owner._inputFg,
+                BorderBrush = _owner._panelBorder,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                TextAlignment = TextAlignment.Center,
+                FontSize = 11,
+                Margin = new Thickness(0, 0, 4, 0)
+            };
+            posVal.Text = (stop.Offset * 100).ToString("F0") + "%";
+            posVal.TextChanged += (s2, e2) =>
+            {
+                if (_isUpdating) return;
+                var txt = (posVal.Text ?? "").Replace("%", "").Trim();
+                if (double.TryParse(txt, out double pv))
+                {
+                    _isUpdating = true;
+                    try
+                    {
+                        slider.Value = Clamp(pv / 100.0, 0, 1);
+                        stop.Offset = slider.Value;
+                        posVal.Text = (stop.Offset * 100).ToString("F0") + "%";   // 规范化显示（越界钳制回写）
+                    }
+                    finally { _isUpdating = false; }
+                    _hasEditedAfterShow = true;
+                    RefreshPreview();
+                    UpdateEditLabel();
+                }
+            };
+            row.Children.Add(posVal);
 
             var del = new Button
             {
@@ -1688,7 +1725,19 @@ namespace CpqSystemTool
 
             var slider = (Slider)row.Children[3];
             if (!slider.IsMouseCaptureWithin && !slider.IsMouseOver)
-                slider.Value = stop.Offset;
+            {
+                _isUpdating = true;
+                try { slider.Value = stop.Offset; } finally { _isUpdating = false; }
+            }
+
+            // 百分比框（子元素 4）：不在键入时覆盖
+            if (row.Children.Count > 4 && row.Children[4] is TextBox posVal)
+                if (!posVal.IsKeyboardFocused)
+                {
+                    _isUpdating = true;
+                    try { posVal.Text = (stop.Offset * 100).ToString("F0") + "%"; }
+                    finally { _isUpdating = false; }
+                }
 
             UpdateEditLabel();
         }
@@ -2319,9 +2368,13 @@ namespace CpqSystemTool
                     double mbx = pos2.X / w - _settings.LinearCenterX;
                     double mby = pos2.Y / h - _settings.LinearCenterY;
                     double c = Math.Cos(_linearAngleRad), s = Math.Sin(_linearAngleRad);
-                    // 投影到渐变轴方向 dir=(c,-s)（标准约定 90°=上，屏幕 y 向下），offset = 投影长度 + 0.5
-                    double ux = mbx * c - mby * s;
-                    _draggingStop.Offset = Clamp(ux + 0.5, 0, 1);
+                    // 投影到渐变轴 dir=(c,-s)；offset = (鼠标绝对投影 − 轴起点) / 轴长（四角极值投影，
+                    // 与笔刷端点同公式——宽屏 45° 轴到角点，拖 100% = 填满整屏，不再留 Pad 色角）
+                    double dirX = c, dirY = -s;
+                    double minP = Math.Min(0, Math.Min(dirX, Math.Min(dirY, dirX + dirY)));
+                    double maxP = Math.Max(0, Math.Max(dirX, Math.Max(dirY, dirX + dirY)));
+                    double mP = (mbx + _settings.LinearCenterX) * dirX + (mby + _settings.LinearCenterY) * dirY;
+                    _draggingStop.Offset = Clamp((mP - minP) / Math.Max(1e-9, maxP - minP), 0, 1);
                 }
                 else if (_settings.Mode == BackgroundMode.RadialGradient)
                 {
@@ -2466,8 +2519,13 @@ namespace CpqSystemTool
             // 标准角度约定（与 WPF Angle / CSS 一致：0°=右、90°=上）：屏幕 y 向下，方向向量 = (cos, -sin)。
             // 旧实现用 +sin（90°=下），导致 45° 时 0% 停点画在上侧、与导出的 CSS 45deg 方向相反（所见≠所导）。
             double dx = Math.Cos(ang), dy = -Math.Sin(ang);
-            double sx = (cx - 0.5 * dx) * w, sy = (cy - 0.5 * dy) * h;   // 线起点 = 中心 - 0.5·方向
-            double ex = (cx + 0.5 * dx) * w, ey = (cy + 0.5 * dy) * h;   // 线终点 = 中心 + 0.5·方向
+            // 轴线端点 = 四角在 dir 上的极值投影（与笔刷端点同公式，CSS 语义：贯穿角点；
+            // 旧 0.5±半对角 在宽屏到不了角落，停靠点拖满仍留 Pad 色角）
+            double minP = Math.Min(0, Math.Min(dx, Math.Min(dy, dx + dy)));
+            double maxP = Math.Max(0, Math.Max(dx, Math.Max(dy, dx + dy)));
+            double pc = 0.5 * dx + 0.5 * dy;
+            double sx = (cx + (minP - pc) * dx) * w, sy = (cy + (minP - pc) * dy) * h;
+            double ex = (cx + (maxP - pc) * dx) * w, ey = (cy + (maxP - pc) * dy) * h;
 
             var axis = new Line
             {
