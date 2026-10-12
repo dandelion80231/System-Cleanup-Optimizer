@@ -2585,8 +2585,11 @@ namespace CpqSystemTool
             foreach (var stop in _settings.GetStops(_previewDark).OrderBy(x => x.Offset))   // 停点圆点跟活动套
             {
                 double t = stop.Offset;
-                double px = (cx + (t - 0.5) * dx) * w;
-                double py = (cy + (t - 0.5) * dy) * h;
+                // 圆点位置 = 轴线上投影值 minP + t·(maxP−minP) 对应的点（与轴线端点同公式——
+                // 旧公式 t±0.5 按半对角线，宽屏 45° 时圆点落不到角上，与已改的轴端点不一致）
+                double proj = minP + t * (maxP - minP);
+                double px = (cx + (proj - pc) * dx) * w;
+                double py = (cy + (proj - pc) * dy) * h;
                 var dot = new Ellipse
                 {
                     Width = 16, Height = 16,
