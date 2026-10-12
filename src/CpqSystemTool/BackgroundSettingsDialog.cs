@@ -339,7 +339,7 @@ namespace CpqSystemTool
             //   行1：HEX / RGB / 明度控件（跨两列，位于色轮下方）
             var colorGrid = new Grid();
             // MaxWidth=300 防御：左列 Auto 一旦超过卡片宽会把 Star 右列挤成 0（本次塌缩根因的兜底保险）
-            colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MaxWidth = 261 });
+            colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MaxWidth = 210 });   // 左列按色轮自然宽收窄，右列（格式/对比度）加宽恢复完整显示
             colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // 色轮/颜色格式
             colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // HEX + 对比度（同一行完全对齐，用户三连）
@@ -541,13 +541,12 @@ namespace CpqSystemTool
 
             _contrastText = new Emoji.Wpf.TextBlock
             {
-                // 单行（用户：一行就行）：NoWrap 保证不折行（原 Wrap 行数跳动会溢出到下方「HSV」标题上）；
-                // 右列 ~153px 容得下完整文案，超长极端值时省略号兜底。
-                TextWrapping = TextWrapping.NoWrap,
-                TextTrimming = TextTrimming.CharacterEllipsis,
+                // 换行完整显示（用户：上一版显示是全的，综合两版）+ MinHeight=34 兜住两行高度——
+                // 最多 2 行（「1.00:1 — 不及格（文字可能难读）」也是 2 行），行高稳定不溢出到下方滑块区。
+                TextWrapping = TextWrapping.Wrap,
                 FontSize = 11.0,
                 Foreground = _owner._textDim,
-                MinHeight = 18,
+                MinHeight = 34,
                 Margin = new Thickness(0, 0, 0, 0)
             };
             // 「HEX:#16E0BD + 复制 + 对比度(对主文字)10.10:1—极佳 完全对齐一行」：
@@ -1899,7 +1898,7 @@ namespace CpqSystemTool
             SetFmt(_rowHsl, $"{hL:F1}°, {sL * 100:F1}%, {lL * 100:F1}%");
             SetFmt(_rowHsv, $"{_currentHue:F1}°, {_currentSat * 100:F1}%, {_currentValue * 100:F1}%");
             BackgroundSettings.RgbToCmyk(c.R, c.G, c.B, out double cK, out double mK, out double yK, out double kK);
-            SetFmt(_rowCmyk, $"{cK * 100:F1}%, {mK * 100:F1}%, {yK * 100:F1}%, {kK * 100:F1}%");
+            SetFmt(_rowCmyk, $"{cK * 100:F0}%, {mK * 100:F0}%, {yK * 100:F0}%, {kK * 100:F0}%");   // 取整（右列变窄后 1 位小数放不下；CMYK 为参考值，1% 精度足够）
 
             // 修复（对比目标误导）：旧实现非纯色模式拿 SolidColor 当对比目标、纯色模式拿「自身」（恒 1.00:1「不及格」），
             // 且渐变/网格模式下 SolidColor 根本不参与渲染，作为对比目标无意义（默认态首停靠点=SolidColor=#16E0BD 时全撞 1.00:1）。
@@ -3469,7 +3468,8 @@ namespace CpqSystemTool
             baseRow.Children.Add(_baseSwatch);
             _baseHexBox = new TextBox
             {
-                Width = 80,
+                Width = 64,   // 左列收窄到 210 后 80 会溢出底色行；64 够 #RRGGBB
+
                 Background = _owner._inputBg,
                 Foreground = _owner._inputFg,
                 BorderBrush = _owner._panelBorder,
@@ -3523,7 +3523,7 @@ namespace CpqSystemTool
                 FontSize = 11,
                 Margin = new Thickness(0, 0, 0, 4),
                 TextWrapping = TextWrapping.Wrap,
-                MaxWidth = 260,   // 根因修复：限宽换行（不限会撑爆左列 Auto 宽度把右列挤到 0）；260≈左列自然宽，右列保持原始宽度
+                MaxWidth = 200,   // 贴左列新上限 210（限宽换行防撑爆列宽的根因修复保留）
                 Visibility = Visibility.Collapsed
             };
             _meshBaseRow.Children.Add(_baseEditHint);
