@@ -1040,7 +1040,6 @@ namespace CpqSystemTool
         private void ModeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             FitModeComboWidth();
-        {
             if (_isInitializing) return;
             if (_modeCombo.SelectedItem is ComboBoxItem item && item.Tag is BackgroundMode newMode)
             {
