@@ -380,12 +380,13 @@ namespace CpqSystemTool
             {
                 Width = 200,
                 Height = 200,
-                CornerRadius = new CornerRadius(90),
+                CornerRadius = new CornerRadius(100),
                 BorderThickness = new Thickness(0),
                 Background = Brushes.Transparent,
                 // 关键：CornerRadius 只影响 Border 自身背景/边框，不会裁剪子元素；
-                // 用 EllipseGeometry 裁剪才能确保色轮内容严格圆形
-                Clip = new EllipseGeometry(new Rect(0, 0, 180, 180))
+                // 用 EllipseGeometry 裁剪才能确保色轮内容严格圆形（色轮 200：裁剪框必须同步 200×200，
+                // 否则 180 的旧裁剪框把 200 色轮切歪成「椭圆」（用户截图形状异常））
+                Clip = new EllipseGeometry(new Rect(0, 0, 200, 200))
             };
             _wheelImage = new Image { Width = 200, Height = 200, IsHitTestVisible = false, Stretch = Stretch.Fill };
             _wheelHost.Child = _wheelImage;
@@ -1939,7 +1940,7 @@ namespace CpqSystemTool
         /// <summary>
         /// 统一返回色轮的圆心 (cx, cy) 与最大半径 maxR。
         /// 三处（渲染 / 取色 / 指示器定位）必须共用同一圆心，否则会与
-        /// Clip=EllipseGeometry(new Rect(0,0,180,180)) 的圆心 (90,90) 错位，导致色轮四周内缩、右侧不圆。
+        /// Clip=EllipseGeometry(new Rect(0,0,200,200)) 的圆心 (100,100) 错位，导致色轮四周内缩、右侧不圆。
         /// 圆心必须取 width/2.0（=90），禁止取 (width-1)/2（=89.5，会让列 x=0/x=179 整列留空、圆边缘内缩 1px）。
         /// </summary>
         private (double cx, double cy, double maxR) GetWheelGeometry(double width, double height)
@@ -1985,7 +1986,7 @@ namespace CpqSystemTool
             var wb = _wheelBitmap;
             byte[] pixels = _wheelPixels;
             int stride = w * 4;
-            // 色轮圆心/半径统一由 GetWheelGeometry 计算，确保与 Clip=EllipseGeometry(Rect(0,0,180,180)) 完全重合。
+            // 色轮圆心/半径统一由 GetWheelGeometry 计算，确保与 Clip=EllipseGeometry(Rect(0,0,200,200)) 完全重合。
             var (cx, cy, maxR) = GetWheelGeometry(w, h);
             for (int y = 0; y < h; y++)
             {
