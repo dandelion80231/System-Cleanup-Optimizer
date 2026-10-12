@@ -785,11 +785,11 @@ namespace CpqSystemTool
             var centerRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
             // 角度组（仅线性模式显示；径向渐变无角度概念——用户：径向不需要角度）：整组可隐藏
             _angleGroup = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 16, 0) };
-            _angleGroup.Children.Add(new TextBlock { Text = "角度:", Foreground = _owner._textMain, Width = 40, VerticalAlignment = VerticalAlignment.Center });
+            _angleGroup.Children.Add(new TextBlock { Text = "角度:", Foreground = _owner._textMain, Width = 26, VerticalAlignment = VerticalAlignment.Center });
             _angleGroup.Children.Add(_angleBox);
             _angleGroup.Children.Add(new TextBlock { Text = "°", Foreground = _owner._textDim, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) });
             centerRow.Children.Add(_angleGroup);
-            centerRow.Children.Add(new TextBlock { Text = "中心 X:", Foreground = _owner._textMain, Width = 50, VerticalAlignment = VerticalAlignment.Center });
+            centerRow.Children.Add(new TextBlock { Text = "中心 X:", Foreground = _owner._textMain, Width = 26, VerticalAlignment = VerticalAlignment.Center });   // 26px 列宽（两组 中心/半径 标签同宽对齐）
             _centerXBox = new TextBox { Width = 50, Background = _owner._inputBg, Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center };
             _centerXBox.TextChanged += (s, e) => TryParseBox(_centerXBox, v => SetCenterX(Clamp(v, 0, 1)), () => RefreshPreview());
             centerRow.Children.Add(_centerXBox);
@@ -799,8 +799,9 @@ namespace CpqSystemTool
             centerRow.Children.Add(_centerYBox);
             geoSp.Children.Add(centerRow);
 
-            var radiusRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-            radiusRow.Children.Add(new TextBlock { Text = "半径 X:", Foreground = _owner._textMain, Width = 50, VerticalAlignment = VerticalAlignment.Center });
+            // 「四个参数一行」（用户）：半径组不再独立占行，追加进中心行（组间 16px 间距，标签 26px 同宽对齐）
+            var radiusRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(16, 0, 0, 0) };
+            radiusRow.Children.Add(new TextBlock { Text = "半径 X:", Foreground = _owner._textMain, Width = 26, VerticalAlignment = VerticalAlignment.Center });
             _radiusXBox = new TextBox { Width = 50, Background = _owner._inputBg, Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center };
             // 修复：半径原样写入，输入 0/负数/超大值会让 RadialGradientBrush 构造抛异常，
             // 而异常被 RefreshPreview 的 catch 静默吞掉，预览停在旧图且无任何提示。这里统一钳制到 [0.01, 10]。
@@ -810,7 +811,7 @@ namespace CpqSystemTool
             _radiusYBox = new TextBox { Width = 50, Background = _owner._inputBg, Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center };
             _radiusYBox.TextChanged += (s, e) => TryParseBox(_radiusYBox, v => _settings.RadialRadiusY = ClampRadius(v), () => RefreshPreview());
             radiusRow.Children.Add(_radiusYBox);
-            geoSp.Children.Add(radiusRow);
+            centerRow.Children.Add(radiusRow);   // 并入中心行（不独立 Add radiusRow 到 geoSp）
 
             _geometryCard.Child = geoSp;
             editPanel.Children.Add(_geometryCard);
