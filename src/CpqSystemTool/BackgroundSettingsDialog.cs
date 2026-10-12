@@ -544,6 +544,8 @@ namespace CpqSystemTool
                 // 与上面 5 行格式行视觉统一（用户：行间距/字号感觉奇怪）：字号 12（同标签列）、
                 // 单行 NoWrap（右列 204px 放得下 100px 文案，无需换行；旧 MinHeight=34 预留两行是行距不齐的根源）。
                 TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,   // 兜底（正常文案 150px 内，极端值也不被硬裁）
+                ToolTip = "与窗口主题主文字色的对比度（WCAG 评级：≥7 极佳 / ≥4.5 合格 / ≥3 可接受）",
                 FontSize = 12.0,
                 Foreground = _owner._textDim,
                 Margin = new Thickness(0, 8, 0, 0)   // 与格式行行距一致的顶部间距
@@ -1897,8 +1899,8 @@ namespace CpqSystemTool
             // 5 种模式都成立，且永不出现「自己比自己」。
             var textOnBg = _owner._textMain != null ? _owner._textMain.Color : Colors.White;
             double ratio = ContrastRatio(c, textOnBg);
-            string verdict = ratio >= 7.0 ? "极佳" : ratio >= 4.5 ? "合格" : ratio >= 3.0 ? "可接受" : "不及格（文字可能难读）";   // 去掉 AAA/AA/A 评级前缀（用户：与后面的中文评价重复，无意义）
-            _contrastText.Text = $"对比度（对主文字）{ratio:F2}:1 — {verdict}";   // 单行
+            string verdict = ratio >= 7.0 ? "极佳" : ratio >= 4.5 ? "合格" : ratio >= 3.0 ? "可接受" : "不及格";   // 短文案：括号注释移除（超长会裁右缘），完整评级说明在 Tooltip
+            _contrastText.Text = $"对比度 {ratio:F2}:1 — {verdict}";   // 短文案（「对主文字」说明挪到 Tooltip）
             // 性能优化：低对比度提示色是常量，原来每次 UpdateColor（拖拽时每帧）都 new 一支笔刷。
             _contrastText.Foreground = ratio >= 4.5 ? _owner._successGreen ?? _owner._textDim : LowContrastBrush;
 
