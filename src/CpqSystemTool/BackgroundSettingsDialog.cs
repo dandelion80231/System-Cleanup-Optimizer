@@ -3178,7 +3178,7 @@ namespace CpqSystemTool
                 Margin = new Thickness(0, 0, 0, 8)
             });
 
-            var cssBtnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+            var cssBtnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 6) };
             var copyCssBtn = new Button
             {
                 Content = "复制为 CSS",
@@ -3267,8 +3267,6 @@ namespace CpqSystemTool
             cssBtnRow.Children.Add(exportSvgBtn);
             _randMeshBtn = randMeshBtn;
             _exportSvgBtn = exportSvgBtn;
-            cssSp.Children.Add(cssBtnRow);
-
             _cssBox = new TextBox
             {
                 MinHeight = 60,
@@ -3283,7 +3281,7 @@ namespace CpqSystemTool
                 Margin = new Thickness(0, 0, 0, 4)
             };
             cssSp.Children.Add(_cssBox);
-
+            cssSp.Children.Add(cssBtnRow);   // 复制为 CSS / 粘贴 CSS 导入（网格模式含随机光斑/导出SVG）= 输入框下方的操作行，左对齐
             _cssStatus = new TextBlock
             {
                 FontSize = 11.0,
