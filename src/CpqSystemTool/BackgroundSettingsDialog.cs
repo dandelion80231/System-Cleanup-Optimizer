@@ -1895,12 +1895,12 @@ namespace CpqSystemTool
             _valVal.Text = ((int)Math.Round(_currentValue * 100)) + "%";
 
             // 同步颜色格式显示（RGB / HSL / HSV / CMYK）与对比度检查
-            SetFmt(_rowRgb, $"{c.R}, {c.G}, {c.B}");
+            SetFmt(_rowRgb, $"{c.R} {c.G} {c.B}");
             BackgroundSettings.RgbToHsl(c.R, c.G, c.B, out double hL, out double sL, out double lL);
-            SetFmt(_rowHsl, $"{hL:F1}°, {sL * 100:F1}%, {lL * 100:F1}%");
-            SetFmt(_rowHsv, $"{_currentHue:F1}°, {_currentSat * 100:F1}%, {_currentValue * 100:F1}%");
+            SetFmt(_rowHsl, $"{hL:F1}° {sL * 100:F1}% {lL * 100:F1}%");
+            SetFmt(_rowHsv, $"{_currentHue:F1}° {_currentSat * 100:F1}% {_currentValue * 100:F1}%");
             BackgroundSettings.RgbToCmyk(c.R, c.G, c.B, out double cK, out double mK, out double yK, out double kK);
-            SetFmt(_rowCmyk, $"{cK * 100:F0}%, {mK * 100:F0}%, {yK * 100:F0}%, {kK * 100:F0}%");   // 取整（右列变窄后 1 位小数放不下；CMYK 为参考值，1% 精度足够）
+            SetFmt(_rowCmyk, $"{cK * 100:F0}% {mK * 100:F0}% {yK * 100:F0}% {kK * 100:F0}%");   // 紧凑（去逗号省宽）   // 取整（右列变窄后 1 位小数放不下；CMYK 为参考值，1% 精度足够）
 
             // 修复（对比目标误导）：旧实现非纯色模式拿 SolidColor 当对比目标、纯色模式拿「自身」（恒 1.00:1「不及格」），
             // 且渐变/网格模式下 SolidColor 根本不参与渲染，作为对比目标无意义（默认态首停靠点=SolidColor=#16E0BD 时全撞 1.00:1）。
