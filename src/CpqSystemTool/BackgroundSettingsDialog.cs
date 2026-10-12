@@ -230,7 +230,7 @@ namespace CpqSystemTool
             // ★ 始终白底黑字，避开深色模式 _inputBg/_inputFg 在 ComboBox 上不可靠的问题。
             _modeCombo = new ComboBox
             {
-                Width = 140,
+                Width = 96,   // 最长项「线性/径向/网格渐变」4 字 ≈ 48px + 下拉箭头/边距；140 过宽（用户指出）
                 VerticalContentAlignment = VerticalAlignment.Center,
                 Background = Brushes.White,
                 Foreground = Brushes.Black,
