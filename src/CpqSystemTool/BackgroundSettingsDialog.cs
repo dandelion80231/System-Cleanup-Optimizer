@@ -777,7 +777,7 @@ namespace CpqSystemTool
             geoSp.Children.Add(geoTitle);
 
             // 几何参数合并一行（用户：角度/中心 X/Y 显示在同一行）：角度组并入中心行前端，不独立占行
-            _angleBox = new TextBox { Width = 48, Background = _owner._inputBg,   // 收窄（用户：足够显示即可） Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center };
+            _angleBox = new TextBox { Width = 48, Foreground = _owner._inputFg, Background = _owner._inputBg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center };   // 收窄（用户：足够显示即可）
             // 修复：几何输入统一钳制。角度归一化到 [-360,360] 后再用（超出部分无意义），
             // 中心/半径也必须钳制，否则 0 或负半径会让 RadialGradientBrush 构造抛异常。
             _angleBox.TextChanged += (s, e) => TryParseBox(_angleBox, v => _settings.GradientAngle = ClampAngle(v), () => RefreshPreview());
