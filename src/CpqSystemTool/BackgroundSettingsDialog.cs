@@ -341,8 +341,7 @@ namespace CpqSystemTool
             // MaxWidth=300 防御：左列 Auto 一旦超过卡片宽会把 Star 右列挤成 0（本次塌缩根因的兜底保险）
             colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MaxWidth = 210 });   // 左列按色轮自然宽收窄，右列（格式/对比度）加宽恢复完整显示
             colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // 色轮/颜色格式
-            colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // HEX + 对比度（同一行完全对齐，用户三连）
+            colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // 色轮/颜色格式（含 HEX 行、对比度）
             colorGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // RGB/HSV 滑块区
 
             // 左列改 Grid：标题 + 色轮 + 底部「HEX/底色」区（底部对齐，填满右列撑高的空白带）
@@ -353,7 +352,7 @@ namespace CpqSystemTool
             var leftTop = new Grid();
             leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            leftTop.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });   // 第 3 行 Star 填空（右列加了 HEX/对比度后比色轮列高，防色轮下空带；宽度塌缩根因已修，Star 安全）
             var rightCol = new Grid { VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(16, 0, 0, 0) };
             // 色轮下方控件的顶部间距：色轮 wheelGrid 底部边距已置 0，这里用 22 维持
             // 与之前（wheelGrid 10 + 本行 12 = 22）一致的整体视觉间距，同时确保右列对比度文本
@@ -422,12 +421,17 @@ namespace CpqSystemTool
             Grid.SetRow(wheelGrid, 1);
             leftTop.Children.Add(wheelGrid);
 
-            // HEX + RGB
-            var hexRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
-            hexRow.Children.Add(new TextBlock { Text = "HEX:", Foreground = _owner._textMain, VerticalAlignment = VerticalAlignment.Center, Width = 36 });
+            // HEX 行（并入右列「颜色格式 / 对比度」第 5 行，与 4 个格式行同列同宽）：
+            // 单行 Grid = [HEX: 标签 46][输入框 弹性][复制 28]——5 行「复制」按钮全部同一竖线（用户三连对齐）。
+            var hexRow = new Grid { Margin = new Thickness(0, 0, 0, 4) };
+            hexRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            hexRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            hexRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var hexLbl = new TextBlock { Text = "HEX:", Foreground = _owner._textMain, VerticalAlignment = VerticalAlignment.Center, Width = 46 };
+            Grid.SetColumn(hexLbl, 0);
+            hexRow.Children.Add(hexLbl);
             _hexBox = new TextBox
             {
-                Width = 90,
                 Background = _owner._inputBg,
                 Foreground = _owner._inputFg,
                 BorderBrush = _owner._panelBorder,
@@ -436,20 +440,22 @@ namespace CpqSystemTool
             };
             _hexBox.TextChanged += HexBox_TextChanged;
             _hexBox.LostFocus += HexBox_LostFocus;
+            Grid.SetColumn(_hexBox, 1);
             hexRow.Children.Add(_hexBox);
-            // 复制 HEX 按钮紧跟 HEX 输入框
             var hexCopyBtn = new Button
             {
                 Content = "复制",
-                Height = 26,
-                Width = 48,
-                Margin = new Thickness(6, 0, 0, 0),
+                Height = 22,
+                Width = 28,
+                FontSize = 11,
+                Margin = new Thickness(4, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 Background = _owner._btnSecondaryBg,
                 Foreground = _owner._btnSecondaryFg,
                 BorderThickness = new Thickness(0)
             };
             hexCopyBtn.Click += (s, e) => CopyText(BackgroundSettings.ColorToHex(_currentColor), hexCopyBtn);
+            Grid.SetColumn(hexCopyBtn, 2);
             hexRow.Children.Add(hexCopyBtn);
             // 「这个还是没有挪」真正根因：右列（标题+4 格式行+对比度）比左列（色轮）高，
             // Grid 行 0 按右列高度，色轮下方永远留一条空白带——margin 归零也消不掉。
@@ -505,8 +511,9 @@ namespace CpqSystemTool
             // 表现为颜色卡右半大灰框）。改 Auto 后右列高度=自然高度，重排稳定；
             // 代价：「对比度」文本不再贴卡片底（右列比左列矮时，其下方留白在卡片底部）。
             rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 标题
-            rightCol.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 4 个格式行铺满色轮列高
-            // 对比度文本不再在右列最后一行：挪到下方「HEX + 对比度」跨列单行（用户：HEX/#16E0BD/复制/对比度 完全对齐一行）
+            rightCol.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 4 个格式行铺满
+            rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 第 5 行：HEX（与 4 格式行同列同宽 → 复制按钮同一竖线）
+            rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 第 6 行：对比度（左缘对齐标签列）
 
             var infoTitle = new TextBlock { Text = "颜色格式 / 对比度", FontWeight = FontWeights.SemiBold, Foreground = _owner._textMain, Margin = new Thickness(0, 0, 0, 6) };
             Grid.SetRow(infoTitle, 0);
@@ -549,21 +556,12 @@ namespace CpqSystemTool
                 MinHeight = 34,
                 Margin = new Thickness(0, 0, 0, 0)
             };
-            // 「HEX:#16E0BD + 复制 + 对比度(对主文字)10.10:1—极佳 完全对齐一行」：
-            // 新跨列行 = 左格 HEX 组（标签+输入框+复制）| 右格 对比度文本，同一行垂直居中
-            var hexContrastRow = new Grid { Margin = new Thickness(0, 2, 0, 4) };
-            hexContrastRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            hexContrastRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            hexRow.Margin = new Thickness(0, 0, 0, 0);
-            hexRow.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(hexRow, 0);
-            hexContrastRow.Children.Add(hexRow);
-            _contrastText.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(_contrastText, 1);
-            hexContrastRow.Children.Add(_contrastText);
-            Grid.SetRow(hexContrastRow, 1);
-            Grid.SetColumnSpan(hexContrastRow, 2);   // 跨整卡宽——不设 Span 会落 col0（210px），对比度格只剩 ~30px
-            colorGrid.Children.Add(hexContrastRow);
+            // HEX 行 = 右列第 5 行、对比度 = 右列第 6 行（与 4 个格式行同列同宽）：
+            // 5 个「复制」按钮同一竖线（卡片右缘），「对比度」左缘与标签列对齐
+            Grid.SetRow(hexRow, 2);
+            rightCol.Children.Add(hexRow);
+            Grid.SetRow(_contrastText, 3);
+            rightCol.Children.Add(_contrastText);
 
             Grid.SetRow(leftTop, 0); Grid.SetColumn(leftTop, 0);
             Grid.SetRow(rightCol, 0); Grid.SetColumn(rightCol, 1);
@@ -571,7 +569,7 @@ namespace CpqSystemTool
             colorGrid.Children.Add(rightCol);
 
             // 行1：HEX / RGB / 明度控件（跨两列，位于色轮下方）
-            Grid.SetRow(lowerControls, 2);
+            Grid.SetRow(lowerControls, 1);
             Grid.SetColumn(lowerControls, 0);
             Grid.SetColumnSpan(lowerControls, 2);
             colorGrid.Children.Add(lowerControls);
