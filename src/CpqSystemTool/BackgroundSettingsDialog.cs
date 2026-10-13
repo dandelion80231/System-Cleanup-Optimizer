@@ -358,7 +358,7 @@ namespace CpqSystemTool
             leftTop.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });   // Star 填空（右列更高时防色轮下空带）
             // 上移 24px（=「正在编辑」行高：12pt 文本 + 8px 下边距）：面板顶缘对齐左列顶（提示/编辑行），
             // 底部自然留白、页面更舒展（用户：颜色格式行与停靠点同一行、下面有一定间距）
-            var rightCol = new Grid { VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(16, -24, 0, 4) };   // Top：面板自然高度（用户：对比度与下方 HSV 之间留一点间距，不再拉满卡片贴死）
+            var rightCol = new Grid { VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(16, -24, 0, 5) };   // 下边距 5px：行距每行小约 1px（5 行共 5px 让给底部），对比度与下方留一点间距（用户：只缩小 1px 级，别乱调）
             // 色轮下方控件的顶部间距：色轮 wheelGrid 底部边距已置 0，这里用 22 维持
             // 与之前（wheelGrid 10 + 本行 12 = 22）一致的整体视觉间距，同时确保右列对比度文本
             // 能与色轮圆底边精确对齐（rightCol 拉伸对齐的是 leftTop 底边 = 色轮圆底边）。
@@ -507,7 +507,7 @@ namespace CpqSystemTool
             // 表现为颜色卡右半大灰框）。改 Auto 后右列高度=自然高度，重排稳定；
             // 代价：「对比度」文本不再贴卡片底（右列比左列矮时，其下方留白在卡片底部）。
             rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 标题
-            rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 格式行自然高度（不再拉满）
+            rightCol.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 4 个格式行铺满
             rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 第 5 行：HEX（与 4 格式行同列同宽 → 复制按钮同一竖线）
             rightCol.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });            // 第 6 行：对比度（左缘对齐标签列）
 
@@ -515,12 +515,12 @@ namespace CpqSystemTool
             Grid.SetRow(infoTitle, 0);
             rightCol.Children.Add(infoTitle);
 
-            // 4 个格式行固定行距 4px（用户：行距稍微小一点；不再 Star 拉满铺空白）
-            var formatGrid = new Grid { VerticalAlignment = VerticalAlignment.Top };
-            formatGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            formatGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            formatGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            formatGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            // 4 个格式行 Star 均匀铺满（行距 = 剩余空间 ÷ 行；面板底部 5px 让出后每行自然小约 1px——用户要求的「缩小 1px 级」）
+            var formatGrid = new Grid { VerticalAlignment = VerticalAlignment.Stretch };
+            formatGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            formatGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            formatGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            formatGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             _rowRgb = MakeReadOnlyFormatBox("RGB");
             _rowHsl = MakeReadOnlyFormatBox("HSL");
             _rowHsv = MakeReadOnlyFormatBox("HSV");
@@ -530,9 +530,7 @@ namespace CpqSystemTool
             _rowHsl.VerticalAlignment = VerticalAlignment.Center;
             _rowHsv.VerticalAlignment = VerticalAlignment.Center;
             _rowCmyk.VerticalAlignment = VerticalAlignment.Center;
-            _rowHsv.Margin = new Thickness(0, 4, 0, 0);   // 固定 4px 行距（首行贴标题不加）
-            _rowHsl.Margin = new Thickness(0, 4, 0, 0);
-            _rowCmyk.Margin = new Thickness(0, 4, 0, 0);
+
             // 可单独调整的两组（RGB/HSV，下方有滑块）排前面相邻；HSL/CMYK 只读展示靠后
             Grid.SetRow(_rowRgb, 0);
             Grid.SetRow(_rowHsv, 1);
