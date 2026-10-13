@@ -131,8 +131,8 @@ namespace CpqSystemTool
                 GradientAngle = 135.0,
                 Stops = new List<GradientStopSetting>
                 {
-                    new GradientStopSetting { Color = "#16E0BD", Offset = 0.0 },
-                    new GradientStopSetting { Color = "#10151C", Offset = 1.0 }
+                    new GradientStopSetting { Color = "#16E0BD", Offset = 0.1 },
+                    new GradientStopSetting { Color = "#4B7285", Offset = 0.9 }   // 默认深色 V≈52%（旧 #10151C V≈11% 近纯黑——用户：默认 V 应≥50）；偏移 0.1/0.9（0/1 贴边圆点看不见——用户）
                 }
             };
         }
@@ -390,6 +390,11 @@ namespace CpqSystemTool
                 s.RadialRadiusX = 1.0;
                 s.RadialRadiusY = 1.0;
             }
+            // 默认停靠点套迁移（用户：默认 0%/100% 圆点贴边看不见 + 默认深色 #10151C 太暗）：
+            // 完整默认指纹 = 恰好 2 点 + 偏移 {0,1} + 颜色 {#16E0BD,#10151C} → 重写为新默认套（#16E0BD@0.1 + #4B7285@0.9）；
+            // 用户改过任一停靠点（颜色或位置）的不迁移。深浅两套同规则。
+            MigrateDefaultStops(s.Stops);
+            MigrateDefaultStops(s.LightStops);
             s.EnsureMeshBlobs();
             return s;
         }
@@ -601,13 +606,30 @@ namespace CpqSystemTool
         }
 
         /// <summary>确保渐变至少有两个停靠点。</summary>
+        /// <summary>默认套迁移：恰好 2 停靠点 + 偏移 {0,1} + 颜色 {#16E0BD,#10151C}（从未动过的旧默认套）
+        /// → 新默认套（#16E0BD@0.1 + #4B7285@0.9）；任一停靠点被用户改过则不动。</summary>
+        private static void MigrateDefaultStops(List<GradientStopSetting> stops)
+        {
+            if (stops == null || stops.Count != 2) return;
+            double o0 = stops[0].Offset, o1 = stops[1].Offset;
+            bool offDef = (Math.Abs(o0) < 1e-6 && Math.Abs(o1 - 1.0) < 1e-6) || (Math.Abs(o0 - 1.0) < 1e-6 && Math.Abs(o1) < 1e-6);
+            if (!offDef) return;
+            string c0 = (stops[0].Color ?? "").ToUpperInvariant(), c1 = (stops[1].Color ?? "").ToUpperInvariant();
+            bool light0 = c0 == "#16E0BD", light1 = c1 == "#16E0BD";
+            if (!((light0 && c1 == "#10151C") || (light1 && c0 == "#10151C"))) return;
+            stops[0].Color = light0 ? "#16E0BD" : "#4B7285";
+            stops[0].Offset = light0 ? 0.1 : 0.9;
+            stops[1].Color = light1 ? "#16E0BD" : "#4B7285";
+            stops[1].Offset = light1 ? 0.1 : 0.9;
+        }
+
         public void EnsureGradientStops()
         {
             if (Stops == null) Stops = new List<GradientStopSetting>();
             if (Stops.Count == 0)
             {
-                Stops.Add(new GradientStopSetting { Color = "#16E0BD", Offset = 0.0 });
-                Stops.Add(new GradientStopSetting { Color = "#10151C", Offset = 1.0 });
+                Stops.Add(new GradientStopSetting { Color = "#16E0BD", Offset = 0.1 });
+                Stops.Add(new GradientStopSetting { Color = "#4B7285", Offset = 0.9 });   // 同 CreateDefaultLinear
             }
             else if (Stops.Count == 1)
             {
@@ -617,10 +639,10 @@ namespace CpqSystemTool
                 // 现改为：首点（Offset≈0）→ 补 1.0；尾点（Offset≈1）→ 补 0.0；中间点 → 两端各补不对称中点。
                 double o = Stops[0].Offset;
                 double fill;
-                if (o < 0.5) fill = 1.0;
-                else if (o > 0.5) fill = 0.0;
-                else { // o == 0.5 中间点：补 0.0 与 1.0 两个端点（下面补第二点，第三点靠用户/预设）
-                    fill = 0.0;
+                if (o < 0.5) fill = 0.9;
+                else if (o > 0.5) fill = 0.1;
+                else { // o == 0.5 中间点：补 0.1 端点（下面补第二点，另一端靠用户/预设）
+                    fill = 0.1;
                 }
                 Stops.Add(new GradientStopSetting { Color = Stops[0].Color, Offset = fill });
                 Stops = Stops.OrderBy(x => x.Offset).ToList();

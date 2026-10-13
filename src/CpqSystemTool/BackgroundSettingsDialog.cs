@@ -2567,7 +2567,7 @@ namespace CpqSystemTool
                 Cursor = Cursors.SizeAll,
                 IsHitTestVisible = true,
                 Fill = _owner._accent,
-                Stroke = Brushes.White
+                Stroke = AutoStroke(GradientColorAt(0.5))   // 自动对比描边（亮场景白描边看不见）
             };
             Canvas.SetLeft(cDot, cx * w - 7);
             Canvas.SetTop(cDot, cy * h - 7);
@@ -2597,7 +2597,7 @@ namespace CpqSystemTool
                     Cursor = Cursors.SizeAll,
                     IsHitTestVisible = true,
                     Fill = MakeColorBrush(stop.Color),
-                    Stroke = stop == _selectedStop ? _owner._accent : Brushes.White,
+                    Stroke = stop == _selectedStop ? _owner._accent : AutoStroke(GradientColorAt(t)),
                     Opacity = 0.92
                 };
                 Canvas.SetLeft(dot, px - 8);
@@ -2670,7 +2670,7 @@ namespace CpqSystemTool
                 Cursor = Cursors.SizeAll,
                 IsHitTestVisible = true,
                 Fill = _owner._accent,
-                Stroke = Brushes.White
+                Stroke = AutoStroke(GradientColorAt(0.0))   // 自动对比描边
             };
             Canvas.SetLeft(center, cx - 7);
             Canvas.SetTop(center, cy - 7);
@@ -2684,7 +2684,7 @@ namespace CpqSystemTool
                 StrokeThickness = 2,
                 Cursor = Cursors.SizeWE,
                 IsHitTestVisible = true,
-                Fill = Brushes.White,
+                Fill = AutoStroke(GradientColorAt(1.0)),   // 边缘处底色上自动对比
                 Stroke = _owner._accent
             };
             Canvas.SetLeft(hx, cx + rx - 6);
@@ -2699,7 +2699,7 @@ namespace CpqSystemTool
                 StrokeThickness = 2,
                 Cursor = Cursors.SizeNS,
                 IsHitTestVisible = true,
-                Fill = Brushes.White,
+                Fill = AutoStroke(GradientColorAt(1.0)),
                 Stroke = _owner._accent
             };
             Canvas.SetLeft(hy, cx - 6);
@@ -2720,7 +2720,7 @@ namespace CpqSystemTool
                     Cursor = Cursors.SizeAll,
                     IsHitTestVisible = true,
                     Fill = MakeColorBrush(stop.Color),
-                    Stroke = stop == _selectedStop ? _owner._accent : Brushes.White,
+                    Stroke = stop == _selectedStop ? _owner._accent : AutoStroke(GradientColorAt(stop.Offset)),
                     Opacity = 0.92
                 };
                 Canvas.SetLeft(dot, px - 8);
@@ -3059,11 +3059,13 @@ namespace CpqSystemTool
                     IsHitTestVisible = false
                 };
                 _harmonyOverlay.Children.Add(spoke);
+                // 点落在色轮 (H=h, S=_currentSat, V=1) 像素上 → 按该像素亮度自动对比描边
+                Color under = HsvToRgb(h, _currentSat, 1.0);
                 var dot = new Ellipse
                 {
                     Width = 8,
                     Height = 8,
-                    Stroke = Brushes.White,
+                    Stroke = AutoStroke(under),
                     StrokeThickness = 1.5,
                     Fill = new SolidColorBrush(Color.FromArgb(0x80, palette[i].R, palette[i].G, palette[i].B)),
                     IsHitTestVisible = false
@@ -3182,6 +3184,35 @@ namespace CpqSystemTool
         }
 
         // CSS 状态行：非空显示、空隐藏（空 TextBlock 仍占一行高，留白即按钮下「多余空行」）
+        // ===== 手柄自动对比描边（用户：预览里停靠点圆/中心点白色描边在明亮场景看不清）=====
+        private static bool UnderIsDark(Color c) =>
+            (0.299 * c.R + 0.587 * c.G + 0.114 * c.B) < 128;
+        private static Brush AutoStroke(Color under) =>
+            UnderIsDark(under) ? Brushes.White : Brushes.Black;
+
+        // 轴线上 t 位置的渐变色（活动套停靠点插值，用于手柄描边自动对比选取）
+        private Color GradientColorAt(double t)
+        {
+            var stops = _settings.GetStops(_previewDark).OrderBy(x => x.Offset).ToList();
+            if (stops.Count == 0) return Colors.Black;
+            if (t <= stops[0].Offset) return BackgroundSettings.ParseColor(stops[0].Color);
+            if (t >= stops[stops.Count - 1].Offset) return BackgroundSettings.ParseColor(stops[stops.Count - 1].Color);
+            for (int i = 0; i + 1 < stops.Count; i++)
+            {
+                if (t >= stops[i].Offset && t <= stops[i + 1].Offset)
+                {
+                    double f = (t - stops[i].Offset) / Math.Max(1e-6, stops[i + 1].Offset - stops[i].Offset);
+                    var a = BackgroundSettings.ParseColor(stops[i].Color);
+                    var b = BackgroundSettings.ParseColor(stops[i + 1].Color);
+                    return Color.FromArgb(a.A,
+                        (byte)(a.R + (b.R - a.R) * f),
+                        (byte)(a.G + (b.G - a.G) * f),
+                        (byte)(a.B + (b.B - a.B) * f));
+                }
+            }
+            return BackgroundSettings.ParseColor(stops[stops.Count - 1].Color);
+        }
+
         private void SetCssStatus(string msg)
         {
             if (_cssStatus == null) return;
