@@ -130,7 +130,7 @@
           Condition="Exists('$(_SrcPkgSrc)')" />
     <!-- 智能外壳源码（v1.23 修订）：tools\cpq-shell 一并入包，「导出源码」= 完整源码披露 -->
     <ItemGroup>
-      <_SrcPkgShellFiles Include="$(_SrcPkgShell)\**\*" Exclude="$(_SrcPkgShell)\bin\**;**\*.exe;**\*.dll;**\*.pdb;$(_SrcPkgShell)\MainExeSha.generated.cs;$(_SrcPkgShell)\*.zero.cs" />
+      <_SrcPkgShellFiles Include="$(_SrcPkgShell)\**\*" Exclude="$(_SrcPkgShell)\bin\**;**\*.exe;**\*.dll;**\*.pdb;$(_SrcPkgShell)\MainExeSha.generated.cs;$(_SrcPkgShell)\ShellInfo.generated.cs;$(_SrcPkgShell)\*.zero.cs" />
     </ItemGroup>
     <Copy SourceFiles="@(_SrcPkgShellFiles)"
           DestinationFiles="@(_SrcPkgShellFiles->'$(_SrcPkgStage)tools\cpq-shell\%(RecursiveDir)%(Filename)%(Extension)')"
@@ -141,6 +141,10 @@
     <Copy SourceFiles="$(_SrcPkgRoot)\tools\cpq-shell\MainExeSha.zero.cs"
           DestinationFiles="$(_SrcPkgStage)tools\cpq-shell\MainExeSha.generated.cs"
           Condition="Exists('$(_SrcPkgRoot)\tools\cpq-shell\MainExeSha.zero.cs')" />
+    <!-- ShellInfo 生成文件归一化：同 SHA——披露包放 zero 模板（0.0.0.0），发版流程以实值生成文件编译外壳 -->
+    <Copy SourceFiles="$(_SrcPkgRoot)\tools\cpq-shell\ShellInfo.zero.cs"
+          DestinationFiles="$(_SrcPkgStage)tools\cpq-shell\ShellInfo.generated.cs"
+          Condition="Exists('$(_SrcPkgRoot)\tools\cpq-shell\ShellInfo.zero.cs')" />
     <Copy SourceFiles="$(_SrcPkgRoot)\README.md"
           DestinationFiles="$(_SrcPkgStage)README.md"
           Condition="Exists('$(_SrcPkgRoot)\README.md')" />
