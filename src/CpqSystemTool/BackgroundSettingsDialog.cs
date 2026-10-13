@@ -112,7 +112,8 @@ namespace CpqSystemTool
         private TextBox _valVal;              // 明度数值（可点击直接键入修改）
         private Border _colorCard;             // 颜色选择区外层卡片（用于整体显隐）
         private Canvas _wheelOverlay;          // 色轮上的当前颜色指示器容器
-        private Ellipse _wheelIndicator;       // 当前颜色在色轮上的位置指示器
+        private Ellipse _wheelIndicator;
+        private Ellipse _wheelIndicatorRing;   // 指示器外侧红色虚线圆（与停点圆同款）       // 当前颜色在色轮上的位置指示器
 
         // 色轮渲染缓存（性能优化）：复用同一个 WriteableBitmap 与其像素数组，避免每次重绘都
         // new 一个 180×180 的位图 + 129,600 字节数组（原实现每次重绘都全量重新分配）。
@@ -408,6 +409,16 @@ namespace CpqSystemTool
                 Fill = Brushes.Transparent,
                 IsHitTestVisible = false
             };
+            _wheelIndicatorRing = new Ellipse
+            {
+                Width = 14, Height = 14,
+                Stroke = new SolidColorBrush(Colors.Red),
+                StrokeThickness = 1.5,
+                StrokeDashArray = new DoubleCollection { 3, 2 },
+                Fill = Brushes.Transparent,
+                IsHitTestVisible = false
+            };
+            _wheelOverlay.Children.Add(_wheelIndicatorRing);
             _wheelOverlay.Children.Add(_wheelIndicator);
             wheelGrid.Children.Add(_wheelOverlay);
 
@@ -2094,11 +2105,14 @@ namespace CpqSystemTool
             double y = cy + r * Math.Sin(rad) - _wheelIndicator.Height / 2;
             Canvas.SetLeft(_wheelIndicator, x);
             Canvas.SetTop(_wheelIndicator, y);
+            Canvas.SetLeft(_wheelIndicatorRing, x + 2);
+            Canvas.SetTop(_wheelIndicatorRing, y + 2);
 
-            // 根据当前颜色亮度自动调整指示器描边，避免在极端明暗处看不清
-            byte lum = (byte)((_currentColor.R * 299 + _currentColor.G * 587 + _currentColor.B * 114) / 1000);
-            _wheelIndicator.Stroke = lum > 128 ? Brushes.Black : Brushes.White;
-            _wheelIndicator.Visibility = _settings.Mode == BackgroundMode.Image ? Visibility.Collapsed : Visibility.Visible;
+            // 指示器描边 = 轮盘该处像素（H/S/V=1）取反色（最大对比度，替代旧的 128 黑白阈值）
+            _wheelIndicator.Stroke = InvertBrush(HsvToRgb(_currentHue, _currentSat, 1.0));
+            var vis = _settings.Mode == BackgroundMode.Image ? Visibility.Collapsed : Visibility.Visible;
+            _wheelIndicator.Visibility = vis;
+            _wheelIndicatorRing.Visibility = vis;
         }
 
         private void RefreshPreview()
@@ -2562,19 +2576,17 @@ namespace CpqSystemTool
             _previewOverlay.Children.Add(axisHit);
             _gradientOverlayItems.Add(axisHit);
 
-            AddContrastRing(cx * w, cy * h, 14);
             // 中心点 = 平移渐变中心（轴线改为旋转后，平移的独立句柄；同径向模式圆心点）
             var cDot = new Ellipse
             {
-                Width = 14, Height = 14,
-                StrokeThickness = 2,
+                Width = 10, Height = 10,
+                StrokeThickness = 0,
                 Cursor = Cursors.SizeAll,
                 IsHitTestVisible = true,
-                Fill = _owner._accent,
-                Stroke = AutoStroke(GradientColorAt(0.5))   // 自动对比描边（亮场景白描边看不见）
+                Fill = new SolidColorBrush(Colors.Red)   // 小红色实心圆（用户指定，不做多层）
             };
-            Canvas.SetLeft(cDot, cx * w - 7);
-            Canvas.SetTop(cDot, cy * h - 7);
+            Canvas.SetLeft(cDot, cx * w - 5);
+            Canvas.SetTop(cDot, cy * h - 5);
             cDot.MouseLeftButtonDown += (s2, e2) =>
             {
                 _draggingLineCenter = true;
@@ -2594,7 +2606,7 @@ namespace CpqSystemTool
                 double proj = minP + t * (maxP - minP);
                 double px = (cx + (proj - pc) * dx) * w;
                 double py = (cy + (proj - pc) * dy) * h;
-                AddContrastRing(px, py, 16);
+                AddDotRing(px, py, 20);   // 外侧红色虚线圆（透明底色）
                 var dot = new Ellipse
                 {
                     Width = 16, Height = 16,
@@ -2602,7 +2614,7 @@ namespace CpqSystemTool
                     Cursor = Cursors.SizeAll,
                     IsHitTestVisible = true,
                     Fill = MakeColorBrush(stop.Color),
-                    Stroke = stop == _selectedStop ? _owner._accent : AutoStroke(GradientColorAt(t)),
+                    Stroke = InvertBrush(GradientColorAt(t)),   // 内实线圆描边 = 底色取反（最大对比度）
                     Opacity = 0.92
                 };
                 Canvas.SetLeft(dot, px - 8);
@@ -2668,18 +2680,16 @@ namespace CpqSystemTool
             _previewOverlay.Children.Add(ring);
             _gradientOverlayItems.Add(ring);
 
-            AddContrastRing(cx, cy, 14);
             var center = new Ellipse
             {
-                Width = 14, Height = 14,
-                StrokeThickness = 2,
+                Width = 10, Height = 10,
+                StrokeThickness = 0,
                 Cursor = Cursors.SizeAll,
                 IsHitTestVisible = true,
-                Fill = _owner._accent,
-                Stroke = AutoStroke(GradientColorAt(0.0))   // 自动对比描边
+                Fill = new SolidColorBrush(Colors.Red)   // 小红色实心圆（统一样式）
             };
-            Canvas.SetLeft(center, cx - 7);
-            Canvas.SetTop(center, cy - 7);
+            Canvas.SetLeft(center, cx - 5);
+            Canvas.SetTop(center, cy - 5);
             center.MouseLeftButtonDown += (s, e) => { _draggingRadialCenter = true; _previewOverlay.CaptureMouse(); e.Handled = true; };
             _previewOverlay.Children.Add(center);
             _gradientOverlayItems.Add(center);
@@ -2690,10 +2700,10 @@ namespace CpqSystemTool
                 StrokeThickness = 2,
                 Cursor = Cursors.SizeWE,
                 IsHitTestVisible = true,
-                Fill = AutoStroke(GradientColorAt(1.0)),   // 边缘处底色上自动对比
-                Stroke = _owner._accent
+                Fill = Brushes.Transparent,
+                Stroke = InvertBrush(GradientColorAt(1.0))   // 内实线圆 = 底色取反
             };
-            AddContrastRing(cx + rx, cy, 12);
+            AddDotRing(cx + rx, cy, 16);
             Canvas.SetLeft(hx, cx + rx - 6);
             Canvas.SetTop(hx, cy - 6);
             hx.MouseLeftButtonDown += (s, e) => { _draggingRadiusX = true; _previewOverlay.CaptureMouse(); e.Handled = true; };
@@ -2706,10 +2716,10 @@ namespace CpqSystemTool
                 StrokeThickness = 2,
                 Cursor = Cursors.SizeNS,
                 IsHitTestVisible = true,
-                Fill = AutoStroke(GradientColorAt(1.0)),
-                Stroke = _owner._accent
+                Fill = Brushes.Transparent,
+                Stroke = InvertBrush(GradientColorAt(1.0))
             };
-            AddContrastRing(cx, cy + ry, 12);
+            AddDotRing(cx, cy + ry, 16);
             Canvas.SetLeft(hy, cx - 6);
             Canvas.SetTop(hy, cy + ry - 6);
             hy.MouseLeftButtonDown += (s, e) => { _draggingRadiusY = true; _previewOverlay.CaptureMouse(); e.Handled = true; };
@@ -2721,7 +2731,7 @@ namespace CpqSystemTool
             {
                 double px = cx + stop.Offset * rx * K45;
                 double py = cy - stop.Offset * ry * K45;
-                AddContrastRing(px, py, 16);
+                AddDotRing(px, py, 20);
                 var dot = new Ellipse
                 {
                     Width = 16, Height = 16,
@@ -2729,7 +2739,7 @@ namespace CpqSystemTool
                     Cursor = Cursors.SizeAll,
                     IsHitTestVisible = true,
                     Fill = MakeColorBrush(stop.Color),
-                    Stroke = stop == _selectedStop ? _owner._accent : AutoStroke(GradientColorAt(stop.Offset)),
+                    Stroke = InvertBrush(GradientColorAt(stop.Offset)),
                     Opacity = 0.92
                 };
                 Canvas.SetLeft(dot, px - 8);
@@ -3070,11 +3080,13 @@ namespace CpqSystemTool
                 _harmonyOverlay.Children.Add(spoke);
                 // 点落在色轮 (H=h, S=_currentSat, V=1) 像素上 → 按该像素亮度自动对比描边
                 Color under = HsvToRgb(h, _currentSat, 1.0);
+                // 外侧红色虚线圆（透明底色，与预览区停点圆同款）
                 var hring = new Ellipse
                 {
                     Width = 12, Height = 12,
-                    Stroke = new SolidColorBrush(Color.FromArgb(0x80, 0, 0, 0)),
+                    Stroke = new SolidColorBrush(Colors.Red),
                     StrokeThickness = 1.5,
+                    StrokeDashArray = new DoubleCollection { 3, 2 },
                     Fill = Brushes.Transparent,
                     IsHitTestVisible = false
                 };
@@ -3085,7 +3097,7 @@ namespace CpqSystemTool
                 {
                     Width = 8,
                     Height = 8,
-                    Stroke = AutoStroke(under),
+                    Stroke = InvertBrush(under),   // 内实线描边 = 轮盘像素取反
                     StrokeThickness = 1.5,
                     Fill = new SolidColorBrush(Color.FromArgb(0x80, palette[i].R, palette[i].G, palette[i].B)),
                     IsHitTestVisible = false
@@ -3204,42 +3216,30 @@ namespace CpqSystemTool
         }
 
         // CSS 状态行：非空显示、空隐藏（空 TextBlock 仍占一行高，留白即按钮下「多余空行」）
-        // ===== 手柄自动对比描边（用户：预览里停靠点圆/中心点白色描边在明亮场景看不清）=====
-        // WCAG 相对亮度：选对比度最大的黑/白描边（替代粗 128 阈值——中亮度底色上单层白描边仍「糊」，用户反馈）
-        private static double RelLuminance(Color c)
-        {
-            double Lin(byte v)
-            {
-                double s = v / 255.0;
-                return s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
-            }
-            return 0.2126 * Lin(c.R) + 0.7152 * Lin(c.G) + 0.0722 * Lin(c.B);
-        }
-        private static Brush AutoStroke(Color under)
-        {
-            double L = RelLuminance(under);
-            double contrastWhite = 1.05 / (L + 0.05);
-            double contrastBlack = (L + 0.05) / 0.05;
-            return contrastWhite >= contrastBlack ? Brushes.White : Brushes.Black;
-        }
-        // 暗色外环（叠在圆下方：黑外 + 内描边双保险，Figma 式——任意底色下都可见；与 AutoStroke 一起彻底解决「圆圈看不清」）
-        private void AddContrastRing(double x, double y, double size)
+        // ===== 标记统一样式（用户指定）=====
+        // 外侧 = 红色虚线圆（透明底色，不影响内部实线圆显示）；内侧实线圆描边 = 底色取反色（= 最大对比度）；
+        // 中心点 = 小红色实心圆（不做多层）。
+        private static Brush InvertBrush(Color under) =>
+            new SolidColorBrush(Color.FromArgb(255, (byte)(255 - under.R), (byte)(255 - under.G), (byte)(255 - under.B)));
+
+        // 外侧红色虚线环（透明底色）
+        private void AddDotRing(double x, double y, double size)
         {
             var ring = new Ellipse
             {
-                Width = size + 4, Height = size + 4,
-                Stroke = new SolidColorBrush(Color.FromArgb(0x80, 0, 0, 0)),
+                Width = size, Height = size,
+                Stroke = new SolidColorBrush(Colors.Red),
                 StrokeThickness = 1.5,
+                StrokeDashArray = new DoubleCollection { 3, 2 },
                 Fill = Brushes.Transparent,
                 IsHitTestVisible = false
             };
-            Canvas.SetLeft(ring, x - (size + 4) / 2);
-            Canvas.SetTop(ring, y - (size + 4) / 2);
+            Canvas.SetLeft(ring, x - size / 2);
+            Canvas.SetTop(ring, y - size / 2);
             _previewOverlay.Children.Add(ring);
             _gradientOverlayItems.Add(ring);
         }
 
-        // 轴线上 t 位置的渐变色（活动套停靠点插值，用于手柄描边自动对比选取）
         private Color GradientColorAt(double t)
         {
             var stops = _settings.GetStops(_previewDark).OrderBy(x => x.Offset).ToList();
