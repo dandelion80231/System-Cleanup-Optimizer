@@ -356,7 +356,9 @@ namespace CpqSystemTool
             var leftTop = new Grid();
             leftTop.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // 色轮（标题已删，直接 row0）
             leftTop.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });   // Star 填空（右列更高时防色轮下空带）
-            var rightCol = new Grid { VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(16, 0, 0, 0) };
+            // 上移 24px（=「正在编辑」行高：12pt 文本 + 8px 下边距）：面板顶缘对齐左列顶（提示/编辑行），
+            // 底部自然留白、页面更舒展（用户：颜色格式行与停靠点同一行、下面有一定间距）
+            var rightCol = new Grid { VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(16, -24, 0, 0) };
             // 色轮下方控件的顶部间距：色轮 wheelGrid 底部边距已置 0，这里用 22 维持
             // 与之前（wheelGrid 10 + 本行 12 = 22）一致的整体视觉间距，同时确保右列对比度文本
             // 能与色轮圆底边精确对齐（rightCol 拉伸对齐的是 leftTop 底边 = 色轮圆底边）。
