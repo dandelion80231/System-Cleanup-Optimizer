@@ -112,8 +112,7 @@ namespace CpqSystemTool
         private TextBox _valVal;              // 明度数值（可点击直接键入修改）
         private Border _colorCard;             // 颜色选择区外层卡片（用于整体显隐）
         private Canvas _wheelOverlay;          // 色轮上的当前颜色指示器容器
-        private Ellipse _wheelIndicator;
-        private Ellipse _wheelIndicatorRing;   // 指示器外侧红色虚线圆（与停点圆同款）       // 当前颜色在色轮上的位置指示器
+        private Ellipse _wheelIndicator;       // 当前颜色在色轮上的位置指示器
 
         // 色轮渲染缓存（性能优化）：复用同一个 WriteableBitmap 与其像素数组，避免每次重绘都
         // new 一个 180×180 的位图 + 129,600 字节数组（原实现每次重绘都全量重新分配）。
@@ -409,16 +408,6 @@ namespace CpqSystemTool
                 Fill = Brushes.Transparent,
                 IsHitTestVisible = false
             };
-            _wheelIndicatorRing = new Ellipse
-            {
-                Width = 14, Height = 14,
-                Stroke = new SolidColorBrush(Colors.Red),
-                StrokeThickness = 1.5,
-                StrokeDashArray = new DoubleCollection { 3, 2 },
-                Fill = Brushes.Transparent,
-                IsHitTestVisible = false
-            };
-            _wheelOverlay.Children.Add(_wheelIndicatorRing);
             _wheelOverlay.Children.Add(_wheelIndicator);
             wheelGrid.Children.Add(_wheelOverlay);
 
@@ -2105,14 +2094,10 @@ namespace CpqSystemTool
             double y = cy + r * Math.Sin(rad) - _wheelIndicator.Height / 2;
             Canvas.SetLeft(_wheelIndicator, x);
             Canvas.SetTop(_wheelIndicator, y);
-            Canvas.SetLeft(_wheelIndicatorRing, x + 2);
-            Canvas.SetTop(_wheelIndicatorRing, y + 2);
 
-            // 指示器描边 = 轮盘该处像素（H/S/V=1）取反色（最大对比度，替代旧的 128 黑白阈值）
+            // 指示器描边 = 轮盘该处像素（H/S/V=1）取反色（最大对比度；色轮点小而单实线圆，不做双层——用户明确）
             _wheelIndicator.Stroke = InvertBrush(HsvToRgb(_currentHue, _currentSat, 1.0));
-            var vis = _settings.Mode == BackgroundMode.Image ? Visibility.Collapsed : Visibility.Visible;
-            _wheelIndicator.Visibility = vis;
-            _wheelIndicatorRing.Visibility = vis;
+            _wheelIndicator.Visibility = _settings.Mode == BackgroundMode.Image ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private void RefreshPreview()
@@ -3080,19 +3065,7 @@ namespace CpqSystemTool
                 _harmonyOverlay.Children.Add(spoke);
                 // 点落在色轮 (H=h, S=_currentSat, V=1) 像素上 → 按该像素亮度自动对比描边
                 Color under = HsvToRgb(h, _currentSat, 1.0);
-                // 外侧红色虚线圆（透明底色，与预览区停点圆同款）
-                var hring = new Ellipse
-                {
-                    Width = 12, Height = 12,
-                    Stroke = new SolidColorBrush(Colors.Red),
-                    StrokeThickness = 1.5,
-                    StrokeDashArray = new DoubleCollection { 3, 2 },
-                    Fill = Brushes.Transparent,
-                    IsHitTestVisible = false
-                };
-                Canvas.SetLeft(hring, px - 6);
-                Canvas.SetTop(hring, py - 6);
-                _harmonyOverlay.Children.Add(hring);
+                // 色轮上的点 = 单层小实线圆（用户：色轮本来就比较小不需要双层；描边=轮盘像素取反）
                 var dot = new Ellipse
                 {
                     Width = 8,
