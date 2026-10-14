@@ -3375,7 +3375,7 @@ namespace CpqSystemTool
                         CenterX = 0.05 + _rng.NextDouble() * 0.90,
                         CenterY = 0.05 + _rng.NextDouble() * 0.90,
                         Radius = 0.70 + _rng.NextDouble() * 0.40,   // 0.7~1.1（大光斑，对齐参考实现；旧 0.45~0.85 小圆斑观感差）
-                        Opacity = 0.30 + _rng.NextDouble() * 0.25
+                        Opacity = 0.50 + _rng.NextDouble() * 0.30   // 0.50~0.80（对齐参考站可见度；旧 0.30~0.55 色场太淡）
                     });
                 }
                 _editingMeshBase = false;
