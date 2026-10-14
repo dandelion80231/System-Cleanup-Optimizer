@@ -937,9 +937,8 @@ namespace CpqSystemTool
                 // 0% → α、65% → α/4、100% → 0，与 WPF 的 GradientStop(α, 0.0)/(α/4, 0.65)/(0, 1.0) 一一对应，
                 // 中间停靠点让衰减前段更平缓、边缘更渐进，消除光斑之间的圆形轮廓感。
                 sb.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                // 两段线性衰减（0%→α、100%→0）：与 WPF 渲染（PopulateBlobCanvas）及参考实现 CSS 同源
                     "      <stop offset=\"0%\" stop-color=\"#{0:X2}{1:X2}{2:X2}\" stop-opacity=\"{3}\"/>", c.R, c.G, c.B, a));
-                sb.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                    "      <stop offset=\"65%\" stop-color=\"#{0:X2}{1:X2}{2:X2}\" stop-opacity=\"{3}\"/>", c.R, c.G, c.B, a / 4.0));
                 sb.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
                     "      <stop offset=\"100%\" stop-color=\"#{0:X2}{1:X2}{2:X2}\" stop-opacity=\"0\"/>", c.R, c.G, c.B));
                 sb.AppendLine("    </radialGradient>");
