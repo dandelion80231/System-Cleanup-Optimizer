@@ -3355,8 +3355,8 @@ namespace CpqSystemTool
             randMeshBtn.Click += (s, e) =>
             {
                 if (_settings.Blobs == null || _settings.Blobs.Count == 0) _settings.EnsureMeshBlobs();
-                // 8~11 个光斑,半径 0.45~0.85,透明度 0.30~0.55,基于当前主色做 HSL 小范围偏移。
-                // 数量与参数对齐 gradients.app:多光斑大面积重叠 + 低透明度,消除圆形轮廓边界。
+                // 8~11 个光斑,半径 0.7~1.1（大光斑对齐参考实现 farthest-corner 观感）,透明度 0.30~0.55,基于当前主色做 HSL 小范围偏移。
+                // 饱和度收敛到 0.45~0.75（对齐参考实现 51~75%,旧 0.55~0.90 过艳）；多光斑大面积重叠 + 低透明度,柔和色场互渗。
                 int n = 8 + _rng.Next(4);
                 // 锚色：优先用 _currentColor（用户当前选色),回退 _settings.SolidColor。
                 Color anchor = _currentColor;
@@ -3366,7 +3366,7 @@ namespace CpqSystemTool
                 {
                     // HSL 偏移：色相 ±25°,饱和度 0.55~0.90,亮度 0.40~0.75
                     double hue = (bh + (_rng.NextDouble() * 50.0 - 25.0) + 360.0) % 360.0;
-                    double sat = Math.Min(0.90, Math.Max(0.55, bs + (_rng.NextDouble() - 0.5) * 0.30));
+                    double sat = Math.Min(0.75, Math.Max(0.45, bs + (_rng.NextDouble() - 0.5) * 0.30));
                     double lit = Math.Min(0.75, Math.Max(0.40, bl + (_rng.NextDouble() - 0.5) * 0.25));
                     var c = BackgroundSettings.HslToRgb(hue, sat, lit);
                     _settings.Blobs.Add(new MeshBlobSetting
@@ -3374,7 +3374,7 @@ namespace CpqSystemTool
                         Color = BackgroundSettings.ColorToHex(c),
                         CenterX = 0.05 + _rng.NextDouble() * 0.90,
                         CenterY = 0.05 + _rng.NextDouble() * 0.90,
-                        Radius = 0.45 + _rng.NextDouble() * 0.40,
+                        Radius = 0.70 + _rng.NextDouble() * 0.40,   // 0.7~1.1（大光斑，对齐参考实现；旧 0.45~0.85 小圆斑观感差）
                         Opacity = 0.30 + _rng.NextDouble() * 0.25
                     });
                 }

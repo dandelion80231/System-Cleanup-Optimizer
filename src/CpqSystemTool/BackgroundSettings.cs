@@ -655,7 +655,7 @@ namespace CpqSystemTool
             if (Blobs == null) Blobs = new List<MeshBlobSetting>();
             if (Blobs.Count == 0)
             {
-                Blobs.Add(new MeshBlobSetting { Color = "#16E0BD", CenterX = 0.5, CenterY = 0.5, Radius = 0.5, Opacity = 1.0 });
+                Blobs.Add(new MeshBlobSetting { Color = "#16E0BD", CenterX = 0.5, CenterY = 0.5, Radius = 0.9, Opacity = 0.5 });   // 大光斑 + 中低不透明（旧 0.5/1.0 = 全不透明小圆斑，效果差）
             }
         }
 
@@ -691,8 +691,10 @@ namespace CpqSystemTool
                 double oy = (rnd.NextDouble() - 0.5) * 0.1;
                 double cx = Clamp01(positions[i, 0] + ox);
                 double cy = Clamp01(positions[i, 1] + oy);
-                double radius = 0.3 + rnd.NextDouble() * 0.2;  // 0.3~0.5
-                double opacity = 0.6 + rnd.NextDouble() * 0.3; // 0.6~0.9
+                // 大半径 + 低不透明（对齐参考实现：CSS farthest-corner 大光斑 + 海洋预设 0.34~0.46 低 α 同风格；
+                // 旧 0.3~0.5 小光斑 + 0.6~0.9 高 α = 一坨圆形色块，观感差——用户反馈）
+                double radius = 0.7 + rnd.NextDouble() * 0.3;  // 0.7~1.0
+                double opacity = 0.35 + rnd.NextDouble() * 0.25; // 0.35~0.60
                 blobs.Add(new MeshBlobSetting
                 {
                     Color = ColorToHex(c),

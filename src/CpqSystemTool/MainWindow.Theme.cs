@@ -582,10 +582,9 @@ namespace CpqSystemTool
                     MappingMode = BrushMappingMode.RelativeToBoundingBox,
                     SpreadMethod = GradientSpreadMethod.Pad
                 };
-                // 3 段渐变:0.0 处全α,0.65 处衰减到约 25%,1.0 处归零。
-                // 中间 stop 让衰减曲线前段更平缓、边缘更渐进,消除光斑之间的圆形轮廓感。
+                // 2 段线性衰减（对齐参考实现 gradients.app 的 CSS radial-gradient：中心 α → 100% 处 0）。
+                // 配大半径 = 柔和色场互渗；旧 3 段（中段 α/4）让光斑中心更「平」，小半径下圆形轮廓感更强。
                 grad.GradientStops.Add(new GradientStop(Color.FromArgb(alpha, c.R, c.G, c.B), 0.0));
-                grad.GradientStops.Add(new GradientStop(Color.FromArgb((byte)(alpha / 4), c.R, c.G, c.B), 0.65));
                 grad.GradientStops.Add(new GradientStop(Color.FromArgb(0, c.R, c.G, c.B), 1.0));
                 var ellipse = new System.Windows.Shapes.Ellipse
                 {
