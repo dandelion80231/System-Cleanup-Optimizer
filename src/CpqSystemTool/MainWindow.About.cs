@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -23,6 +23,7 @@ namespace CpqSystemTool
         private Button _aboutDownloadUpdateBtn;
         private string _pendingUpdateFileName;
         private string _pendingUpdateUrl;   // 从官网 version.json 取得的下载直链（含正确的资产文件名）
+        private string _pendingUpdateSha256; // 官网 version.json 的 sha256 字段（下载后本地比对，防 CDN/中间人污染）
 
         // 更新流程状态锁：防止「检查更新」「下载更新」被并发/重复触发。均在 UI 线程读写（后台复位经 Dispatcher 回 UI 线程）。
         private bool _checkingUpdate;
@@ -502,6 +503,9 @@ namespace CpqSystemTool
                     var latest = verMatch.Groups[1].Value.Trim();
                     var urlMatch = System.Text.RegularExpressions.Regex.Match(json, "\"url\"\\s*:\\s*\"([^\"]+)\"");
                     _pendingUpdateUrl = urlMatch.Success ? urlMatch.Groups[1].Value : "";
+                    // F-v124-1：取 sha256 字段，下载完成后本地比对（防官网/CDN 被污染时下到被篡改的 exe）
+                    var shaMatch = System.Text.RegularExpressions.Regex.Match(json, "\"sha256\"\\s*:\\s*\"([0-9a-fA-F]{64})\"");
+                    _pendingUpdateSha256 = shaMatch.Success ? shaMatch.Groups[1].Value.ToLowerInvariant() : "";
                     var nameMatch = System.Text.RegularExpressions.Regex.Match(json, "\"name\"\\s*:\\s*\"([^\"]+)\"");
                     // 保存完整 exe 文件名（如 系统清理与优化工具_v1.08.exe），DownloadUpdate 直接复用，无需自行拼装
                     _pendingUpdateFileName = nameMatch.Success ? nameMatch.Groups[1].Value : latest;
@@ -513,11 +517,13 @@ namespace CpqSystemTool
                     else if (cmp == 0)
                     {
                         _pendingUpdateFileName = null;
+                        _pendingUpdateSha256 = null;
                         SetStatusUi("已是最新版本 (" + APP_VERSION + ")", Visibility.Collapsed);
                     }
                     else
                     {
                         _pendingUpdateFileName = null;
+                        _pendingUpdateSha256 = null;
                         SetStatusUi("当前版本 (" + APP_VERSION + ") 已高于线上 " + latest, Visibility.Collapsed);
                     }
                 }
@@ -612,7 +618,33 @@ namespace CpqSystemTool
                         SetStatus($"下载失败：{downloadErr ?? "未知错误"}");
                         return;
                     }
-                    SetStatus($"新版本已保存：{dlg.FileName}");
+                    // F-v124-1：官网 version.json 提供 sha256 时，下载完成后本地比对；不匹配=疑似被篡改，删除并禁止运行。
+                    if (!string.IsNullOrEmpty(_pendingUpdateSha256))
+                    {
+                        string actual;
+                        try
+                        {
+                            using var fs = new System.IO.FileStream(dlg.FileName, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read);
+                            actual = System.Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(fs)).ToLowerInvariant();
+                        }
+                        catch (System.Exception ex)
+                        {
+                            SetStatus("校验失败：无法读取已下载文件（" + ex.Message + "），请勿运行");
+                            return;
+                        }
+                        if (actual != _pendingUpdateSha256)
+                        {
+                            try { System.IO.File.Delete(dlg.FileName); } catch { /* 删除失败也不放行 */ }
+                            SetStatus($"SHA256 校验失败（期望 {_pendingUpdateSha256.Substring(0, 8)}…，实际 {actual.Substring(0, 8)}…），文件已删除，请勿运行");
+                            MessageBox.Show("下载文件的 SHA256 与官网 version.json 不一致，可能已在传输中被篡改。文件已删除，请勿运行。\n\n如仍有疑虑，可稍后重新下载或到官网 Release 页核对哈希。", "SHA256 校验失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            return;
+                        }
+                        SetStatus($"新版本已保存：{dlg.FileName}（SHA256 校验通过）");
+                    }
+                    else
+                    {
+                        SetStatus($"新版本已保存：{dlg.FileName}（官网未提供校验值，建议到 Release 页自行核对哈希）");
+                    }
                     if (MessageBox.Show("下载完成，是否打开所在文件夹？", "下载完成", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
                     {
                         try { System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{dlg.FileName}\""); } catch (Exception ex) { DebugLog.Ignore(ex); }
