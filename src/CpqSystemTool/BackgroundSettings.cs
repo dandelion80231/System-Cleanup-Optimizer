@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Media;
@@ -306,6 +307,51 @@ namespace CpqSystemTool
             sb.AppendLine("  \"LightMeshBaseColor\": " + JsonStr(LightMeshBaseColor));
             sb.AppendLine("}");
             return sb.ToString();
+        }
+
+        /// <summary>数据目录下壁纸存档位置（cpq-tool\壁纸\）。自定义背景图本地化后存放于此，
+        /// 随数据文件夹一起迁移（挪 exe 数据自动跟随），避免原图片被移动/删除/换机后背景丢失。</summary>
+        public static string WallpaperArchiveDir => AppPaths.WallpaperDir;
+
+        /// <summary>路径是否已在本机数据目录的壁纸存档内（幂等判断；空路径/非法路径返回 false，不抛异常）。</summary>
+        public static bool IsLocalImagePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return false;
+            try
+            {
+                string localRoot = Path.GetFullPath(WallpaperArchiveDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                return Path.GetFullPath(path).StartsWith(localRoot, StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// 将图片文件复制进数据目录壁纸存档（cpq-tool\壁纸\），返回存档内路径。
+        /// 已在存档内 → 原样返回（幂等）；源文件不存在或复制失败（磁盘满/权限等）→ 返回原路径（降级为引用原件，不阻断用户）。
+        /// 同名冲突时追加 _2/_3 序号，不覆盖既有文件。
+        /// </summary>
+        public static string EnsureImageLocal(string src)
+        {
+            if (string.IsNullOrWhiteSpace(src)) return src;
+            if (IsLocalImagePath(src)) return src;
+            if (!File.Exists(src)) return src;
+            try
+            {
+                string dir = AppPaths.EnsureDir(WallpaperArchiveDir);
+                string name = Path.GetFileName(src);
+                string stem = Path.GetFileNameWithoutExtension(name);
+                string ext = Path.GetExtension(name);
+                string dest = Path.Combine(dir, name);
+                int n = 2;
+                while (File.Exists(dest))
+                {
+                    dest = Path.Combine(dir, string.Format("{0}_{1}{2}", stem, n, ext));
+                    n++;
+                }
+                File.Copy(src, dest, false);
+                return dest;
+            }
+            catch { return src; }
         }
 
         /// <summary>

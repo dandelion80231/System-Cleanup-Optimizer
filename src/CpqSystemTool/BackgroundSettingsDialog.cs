@@ -64,6 +64,7 @@ namespace CpqSystemTool
         private TextBlock _lightOpacityVal;
         private Image _imgBigPreview;        // 右列大预览：按「深浅预览切换行」所选套显示深色/浅色背景图
         private TextBlock _imgBigPlaceholder;
+        private TextBlock _bgCopyNote;       // 选图本地化提示行（已复制到数据目录 / 保留原路径）
         private TextBox _cssBox;
         private TextBlock _cssStatus;
 
@@ -669,7 +670,14 @@ namespace CpqSystemTool
                 };
                 if (dlg.ShowDialog() == true)
                 {
-                    _settings.DarkPath = dlg.FileName;
+                    // 选图即复制到数据目录（cpq-tool\壁纸\），避免原文件被移动/删除/换机后背景丢失；
+                    // 复制失败（磁盘满/权限）降级为引用原件，提示行如实告知。
+                    string src = dlg.FileName;
+                    string local = BackgroundSettings.EnsureImageLocal(src);
+                    _settings.DarkPath = local;
+                    _bgCopyNote.Text = local == src
+                        ? "⚠ 深色背景保留原路径（未能复制到数据目录，请勿移动/删除原文件）"
+                        : "📁 深色背景已复制到数据目录（cpq-tool\\壁纸\\" + System.IO.Path.GetFileName(local) + "）";
                     // 修复：选图是真实编辑，原先未置位导致「应用→换图→×关闭」时新图被回滚吞掉
                     _hasEditedAfterShow = true;
                     RefreshImageModePreviews();
@@ -700,14 +708,29 @@ namespace CpqSystemTool
                 };
                 if (dlg.ShowDialog() == true)
                 {
-                    _settings.LightPath = dlg.FileName;
-                    // 修复：选图是真实编辑，原先未置位导致「应用→换图→×关闭」时新图被回滚吞掉
+                    // 深色同款逻辑：复制到数据目录存档，失败降级引用原件
+                    string src = dlg.FileName;
+                    string local = BackgroundSettings.EnsureImageLocal(src);
+                    _settings.LightPath = local;
+                    _bgCopyNote.Text = local == src
+                        ? "⚠ 浅色背景保留原路径（未能复制到数据目录，请勿移动/删除原文件）"
+                        : "📁 浅色背景已复制到数据目录（cpq-tool\\壁纸\\" + System.IO.Path.GetFileName(local) + "）";
                     _hasEditedAfterShow = true;
                     RefreshImageModePreviews();
                 }
             };
             leftColImg.Children.Add(lightSelectBtn);
             BuildImageOpacityRow(leftColImg, false, out _lightOpacitySlider, out _lightOpacityVal);
+            // 选图本地化提示行（默认隐藏；选图后按复制结果更新文案）
+            _bgCopyNote = new TextBlock
+            {
+                Text = "",
+                FontSize = 11,
+                Margin = new Thickness(0, 6, 0, 0),
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = _owner._textDim
+            };
+            leftColImg.Children.Add(_bgCopyNote);
 
             Grid.SetColumn(leftColImg, 0);
             imgRoot.Children.Add(leftColImg);

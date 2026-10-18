@@ -29,6 +29,26 @@ namespace CpqSystemTool
                 if (!File.Exists(_bgSettingsPath)) return;
                 var json = File.ReadAllText(_bgSettingsPath, System.Text.Encoding.UTF8);
                 _backgroundSettings = BackgroundSettings.FromJson(json);
+                // 存量配置迁移：DarkPath/LightPath 若指向数据目录外的既有图片（文件仍在），
+                // 复制进壁纸存档（cpq-tool\壁纸\）并改写路径，之后随数据文件夹一起迁移；
+                // 幂等——已在存档内的路径不动，复制失败保持原值（渲染回退逻辑不变）。
+                bool migrated = false;
+                string d = _backgroundSettings.DarkPath;
+                if (!string.IsNullOrEmpty(d) && !BackgroundSettings.IsLocalImagePath(d) && File.Exists(d))
+                {
+                    string dl = BackgroundSettings.EnsureImageLocal(d);
+                    if (dl != d) { _backgroundSettings.DarkPath = dl; migrated = true; }
+                }
+                string l = _backgroundSettings.LightPath;
+                if (!string.IsNullOrEmpty(l) && !BackgroundSettings.IsLocalImagePath(l) && File.Exists(l))
+                {
+                    string ll = BackgroundSettings.EnsureImageLocal(l);
+                    if (ll != l) { _backgroundSettings.LightPath = ll; migrated = true; }
+                }
+                if (migrated)
+                {
+                    SaveBackgroundSettings();   // 立即持久化，防止崩溃后下次仍读旧路径
+                }
             }
             catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
             if (_backgroundSettings == null) _backgroundSettings = new BackgroundSettings();
