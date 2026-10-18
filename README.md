@@ -682,7 +682,7 @@ dotnet build -c Release
 
 ## 版本更新记录
 
-最新版本为 **v1.24**（.NET 10 构建，2026-10-14）。各版本完整变更见 [CHANGELOG.md](CHANGELOG.md)。
+最新版本为 **v1.24**（.NET 10 构建，2026-10-18）。各版本完整变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ### v1.24（2026-10-14）
 
