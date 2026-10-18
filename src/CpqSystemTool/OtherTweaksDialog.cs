@@ -331,9 +331,8 @@ namespace CpqSystemTool
             Grid.SetColumn(btn, 1);
             grid.Children.Add(btn);
 
-            // 整行悬浮高亮（与服务页一致）
-            grid.MouseEnter += (s, e) => { if (card.Background == _cardBg) card.Background = _rowHover; };
-            grid.MouseLeave += (s, e) => { card.Background = _cardBg; };
+            // 整行悬浮高亮（与服务页一致；属性驱动触发器挂卡片本体，离屏自动复位回 _cardBg）
+            MainWindow.AttachHoverHighlight(card, _rowHover);
 
             // 分隔线：除第一项外，每张卡片前加一条（避免末尾多余分隔线出现在关闭按钮上方）
             if (parent.Children.Count > 0)

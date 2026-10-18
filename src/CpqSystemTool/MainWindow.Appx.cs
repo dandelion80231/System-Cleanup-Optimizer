@@ -689,9 +689,8 @@ namespace CpqSystemTool
 
                             rowBorder.Child = rowGrid;
 
-                            // Issue 37: 鼠标悬停高亮（统一浅色 = _rowHover）
-                            rowBorder.MouseEnter += (s, e) => { ((Border)s).Background = _rowHover; };
-                            rowBorder.MouseLeave += (s, e) => { ((Border)s).Background = Brushes.Transparent; };
+                            // Issue 37: 鼠标悬停高亮（属性驱动触发器，统一 _rowHover，防裁剪残留）
+                            AttachHoverHighlight(rowBorder, _rowHover);
 
                             listStack.Children.Add(rowBorder);
                             rowItems.Add(Tuple.Create(chk, rowBorder, it));

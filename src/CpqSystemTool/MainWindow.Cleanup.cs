@@ -224,8 +224,8 @@ namespace CpqSystemTool
                         Margin = new Thickness(-6, 1, -6, 1),
                         Child = row
                     };
-                    rowBd.MouseEnter += (s, e) => rowBd.Background = _rowHover;
-                    rowBd.MouseLeave += (s, e) => rowBd.Background = Brushes.Transparent;
+                    // 行悬浮高亮（属性驱动触发器，防裁剪残留）
+                    AttachHoverHighlight(rowBd, _rowHover);
                     grpSp.Children.Add(rowBd);
                     allCheckBoxes.Add(chk);
                     chk.Checked += (s, e) => { UpdateCleanupSelCount(); SyncChkAll(); };

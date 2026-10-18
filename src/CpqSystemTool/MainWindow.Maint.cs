@@ -950,8 +950,8 @@ namespace CpqSystemTool
                 CornerRadius = new CornerRadius(3),
                 Cursor = Cursors.Hand
             };
-            border.MouseEnter += (s, e) => border.Background = _rowHover;
-            border.MouseLeave += (s, e) => border.Background = Brushes.Transparent;
+            // 行悬浮高亮（属性驱动触发器，防裁剪残留）
+            AttachHoverHighlight(border, _rowHover);
             // 共 8 个菜单项共用此入口。同步处理器 → 异常直达 Dispatcher（net48 会终止进程）。
             // click 里的动作并不都在 RunInBg 内部（例如「卸载本地依赖」「卸载 WebView2」会先弹 MessageBox，
             // 然后才进后台线程），因此必须在这里整体兜底：先关弹窗保证 UI 状态收敛，再执行动作。

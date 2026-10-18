@@ -52,8 +52,8 @@ namespace CpqSystemTool
 
             void AttachCardHover(Border card)
             {
-                card.MouseEnter += (s, e) => { if (card.Background == Brushes.Transparent) card.Background = _rowHover; };
-                card.MouseLeave += (s, e) => { card.Background = Brushes.Transparent; };
+                // 卡片悬浮高亮（属性驱动触发器，防裁剪/切页残留；见 AttachHoverHighlight 注释）
+                AttachHoverHighlight(card, _rowHover);
             }
 
             // 1. 身份定位卡：图标 + 名称 + 版本 + 一句话简介（右上角风险提醒）

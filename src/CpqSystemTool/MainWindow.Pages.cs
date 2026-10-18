@@ -144,6 +144,32 @@ namespace CpqSystemTool
             return expander;
         }
 
+        /// <summary>
+        /// 行/卡片悬浮高亮（属性驱动，替代旧的手动 MouseEnter/Leave 设背景方案）。
+        /// 旧方案缺陷：鼠标因元素被 ScrollViewer 裁剪、列表滚动出屏、切页缓存复用等离开可视区时，
+        /// WPF 不保证触发 MouseLeave，_rowHover 背景残留在该行上——表现为「一条半透明灰条盖在行文字上」，
+        /// 且滚动回屏/重进页后依然残留。
+        /// 现方案：Style Trigger 挂 IsMouseOver 附加属性（输入系统自动维护：元素裁剪/离屏即 False），
+        /// 触发器 setter 在失焦时自动复位回元素初始 Background（Transparent 或卡片底色均正确），无残留。
+        /// 适用：单态 hover 行（Grid 行 / Border 卡片 / Border 行）。
+        /// 不适用：带「选中行背景」两态守卫的场景（常用软件/系统工具激活卡，hover 不得覆盖选中色）——
+        /// 那些调用点保留手动事件，已知残留风险记账于 代码审核-优化建议.md。
+        /// </summary>
+        internal static void AttachHoverHighlight(FrameworkElement el, System.Windows.Media.Brush hoverBrush)
+        {
+            if (hoverBrush == null) return;
+            DependencyProperty bgProp;
+            if (el is System.Windows.Controls.Control) bgProp = System.Windows.Controls.Control.BackgroundProperty;
+            else if (el is Panel) bgProp = Panel.BackgroundProperty;
+            else bgProp = Border.BackgroundProperty;
+
+            var st = new Style(el.GetType());
+            var tg = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+            tg.Setters.Add(new Setter(bgProp, hoverBrush));
+            st.Triggers.Add(tg);
+            el.Style = st;
+        }
+
         // =====================================================================
         //  Module: 服务优化（保持不变）
         // =====================================================================
@@ -191,9 +217,8 @@ namespace CpqSystemTool
 
                 row.Children.Add(info);
                 row.Children.Add(btn);
-                // 整行悬浮高亮：鼠标移到行上时整行变色
-                row.MouseEnter += (s, e) => { if (row.Background == Brushes.Transparent) row.Background = _rowHover; };
-                row.MouseLeave += (s, e) => { row.Background = Brushes.Transparent; };
+                // 整行悬浮高亮（属性驱动触发器，防裁剪残留；见 AttachHoverHighlight 注释）
+                AttachHoverHighlight(row, _rowHover);
                 inner.Children.Add(row);
                 inner.Children.Add(new Separator { Margin = new Thickness(0, 6, 0, 0), Background = _panelBorder });
 
@@ -773,10 +798,8 @@ namespace CpqSystemTool
                         () => { pb.Visibility = Visibility.Collapsed; }, "正在应用: " + title + "…");
                 };
                 item.Child = sp;
-                // 鼠标悬停高亮（与 AddRow + 常用软件列表统一风格）
-                var mcOrigBg = item.Background;
-                item.MouseEnter += (s, e) => { ((Border)s).Background = _rowHover; };
-                item.MouseLeave += (s, e) => { ((Border)s).Background = mcOrigBg; };
+                // 鼠标悬停高亮（属性驱动触发器；失焦自动复位回该行原始背景 mcOrigBg，防裁剪残留）
+                AttachHoverHighlight(item, _rowHover);
                 inner.Children.Add(item);
             }
 

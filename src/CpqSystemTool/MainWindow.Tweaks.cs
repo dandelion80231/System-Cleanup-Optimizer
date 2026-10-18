@@ -217,9 +217,9 @@ namespace CpqSystemTool
                     var tip = t.Desc + "  [" + RiskLabel(t.Risk) + "]" + (t.IsThreeState ? "  [三态: 勾选=开 / 留空=系统默认 / 取消=关]" : "");
                     chk.ToolTip = tip;
                     tb.ToolTip = tip;
-                    // 整行悬浮高亮
-                    row.MouseEnter += (s, e) => { if (row.Background == Brushes.Transparent) row.Background = _rowHover; };
-                    row.MouseLeave += (s, e) => { row.Background = Brushes.Transparent; };
+                    // 整行悬浮高亮（属性驱动：行被列表裁剪/离屏时 IsMouseOver 自动 False，背景自动复位——
+                    // 旧 MouseEnter/Leave 手动方案在裁剪场景 Leave 不触发，高亮残留成「灰条盖文字」）
+                    AttachHoverHighlight(row, _rowHover);
                     content.Children.Add(row);
                     // P2 常驻提示：关闭系统还原后危险操作将失去还原点兜底（提示位于该项下方，保证用户能看到）
                     if (t.Id == "system_restore")
