@@ -117,3 +117,4 @@ publish_folder_1.23/
 # AOCI 临时 dump（aoci.txt 索引本体入库，code/meta dump 不入库）
 aoci.code.txt
 aoci.meta.txt
+_tmp_changelog_v1.24.html
