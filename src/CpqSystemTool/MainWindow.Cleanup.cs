@@ -250,8 +250,6 @@ namespace CpqSystemTool
             // ★ 关键：inner（StackPanel）必须包在 ScrollViewer 里才能滚动！
             //   leftGrid 的 Star 行约束了 card 高度，但 StackPanel 本身不滚动
             //   没有 SV → 内容超长时直接截断，无法滚动查看
-            // 列表末尾整行间距：滚到最底时最后一行不贴卡片底边（半行贴底边观感兜底）
-            inner.Children.Add(new System.Windows.Controls.Border { Height = 30, Background = System.Windows.Media.Brushes.Transparent });
             var cleanupScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = inner };
             AttachRowSnap(cleanupScroll, inner);   // 滚动停稳后行吸附，底边不再露半行
             card.Child = cleanupScroll;
