@@ -333,6 +333,7 @@ namespace CpqSystemTool
             reloadTweaksStates();
 
             treeScroll.Content = treePanel;
+            AttachRowSnap(treeScroll, treePanel);   // 滚动停稳后行吸附，底边不再露半行（半行+hover 条=「灰条遮挡」观感根因）
             Grid.SetRow(treeScroll, 1);
             leftGrid.Children.Add(treeScroll);
             leftPanel.Child = leftGrid;

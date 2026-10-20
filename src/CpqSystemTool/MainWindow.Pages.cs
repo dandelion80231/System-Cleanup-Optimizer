@@ -183,6 +183,78 @@ namespace CpqSystemTool
             el.Style = st;
         }
 
+        /// <summary>
+        /// 列表行吸附（防「底边露半行」）：挂在 ScrollViewer 上，滚动停稳 250ms 后，
+        /// 若视口底边正裁到某一行（行顶部可见、底部超出视口），最小幅度下移让该行完整可见
+        /// （行底对齐视口底）；下一帧复检无半行即收敛停止。
+        /// 行 = 直接含 CheckBox 子级的 Panel（Tweaks/Cleanup 的行模板）。
+        /// 视觉动机：半行 + 该行 hover 高亮条在卡片圆角底边处看着像「多余遮挡条」（v1.24 用户反馈）。
+        /// </summary>
+        internal static void AttachRowSnap(ScrollViewer sv, UIElement contentRoot)
+        {
+            if (!(contentRoot is System.Windows.Controls.Panel rootPanel)) return;
+            System.Windows.Threading.DispatcherTimer timer = null;
+            void DoSnap()
+            {
+                double offset = sv.VerticalOffset;
+                double viewport = sv.ViewportHeight;
+                if (viewport <= 0) return;
+                double viewBottom = offset + viewport;
+                double? snapBottom = null;   // 最靠近视口底边的「半行」行底（内容坐标）
+                void Walk(System.Windows.Controls.Panel pnl, double y)
+                {
+                    if (snapBottom.HasValue) return;
+                    foreach (var childRaw in pnl.Children)
+                    {
+                        if (snapBottom.HasValue) return;
+                        var fe = childRaw as System.Windows.FrameworkElement;
+                        double mtop = fe != null ? fe.Margin.Top : 0;
+                        double mbot = fe != null ? fe.Margin.Bottom : 0;
+                        double top = y + mtop;
+                        double h = fe != null ? fe.ActualHeight : 0;
+                        var kids = childRaw is System.Windows.Controls.Panel cp ? cp.Children : null;
+                        bool isRow = kids != null && kids.Count > 0 && kids.OfType<System.Windows.Controls.CheckBox>().Any();
+                        if (isRow)
+                        {
+                            double rowBottom = top + h;
+                            if (h > 4 && top < viewBottom - 2 && rowBottom > viewBottom + 6)
+                                snapBottom = rowBottom;
+                        }
+                        else if (fe is System.Windows.Controls.Panel)
+                        {
+                            Walk((System.Windows.Controls.Panel)fe, top);
+                        }
+                        else if (fe is System.Windows.Controls.HeaderedContentControl hcc
+                                 && hcc.Content is System.Windows.Controls.Panel cpn)
+                        {
+                            // 分组容器（Expander）：内容面板起点 = 容器顶 + 标题区高度（总高 − 内容高 近似）
+                            double cTop = top + Math.Max(0.0, hcc.ActualHeight - cpn.ActualHeight);
+                            Walk(cpn, cTop);
+                        }
+                        y = top + h + mbot;
+                    }
+                }
+                Walk(rootPanel, 0);
+                if (snapBottom.HasValue && snapBottom.Value > viewBottom + 6)
+                {
+                    sv.ScrollToVerticalOffset(offset + (snapBottom.Value - viewBottom));
+                }
+            }
+            sv.ScrollChanged += (s, e) =>
+            {
+                if (timer == null)
+                {
+                    timer = new System.Windows.Threading.DispatcherTimer
+                    {
+                        Interval = TimeSpan.FromMilliseconds(250)
+                    };
+                    timer.Tick += (a, b) => { timer.Stop(); DoSnap(); };
+                }
+                timer.Stop();
+                timer.Start();
+            };
+        }
+
         // =====================================================================
         //  Module: 服务优化（保持不变）
         // =====================================================================

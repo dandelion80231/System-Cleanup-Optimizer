@@ -250,7 +250,9 @@ namespace CpqSystemTool
             // ★ 关键：inner（StackPanel）必须包在 ScrollViewer 里才能滚动！
             //   leftGrid 的 Star 行约束了 card 高度，但 StackPanel 本身不滚动
             //   没有 SV → 内容超长时直接截断，无法滚动查看
-            card.Child = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = inner };
+            var cleanupScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = inner };
+            AttachRowSnap(cleanupScroll, inner);   // 滚动停稳后行吸附，底边不再露半行
+            card.Child = cleanupScroll;
             Grid.SetRow(leftSp, 0);
             leftGrid.Children.Add(leftSp);
             Grid.SetRow(card, 1);
