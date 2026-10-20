@@ -218,7 +218,7 @@ namespace CpqSystemTool
                     // 为每行套一个 Border，实现鼠标跟随背景填充
                     var rowBd = new Border
                     {
-                        Background = Brushes.Transparent,
+                        // 不设本地 Background（默认透明）：让 AttachHoverHighlight 走无残留触发器路径
                         CornerRadius = new CornerRadius(4),
                         Padding = new Thickness(6, 3, 6, 3),
                         Margin = new Thickness(-6, 1, -6, 1),

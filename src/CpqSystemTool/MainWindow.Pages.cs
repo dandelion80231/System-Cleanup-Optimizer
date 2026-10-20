@@ -145,15 +145,15 @@ namespace CpqSystemTool
         }
 
         /// <summary>
-        /// 行/卡片悬浮高亮（属性驱动，替代旧的手动 MouseEnter/Leave 设背景方案）。
-        /// 旧方案缺陷：鼠标因元素被 ScrollViewer 裁剪、列表滚动出屏、切页缓存复用等离开可视区时，
-        /// WPF 不保证触发 MouseLeave，_rowHover 背景残留在该行上——表现为「一条半透明灰条盖在行文字上」，
-        /// 且滚动回屏/重进页后依然残留。
-        /// 现方案：Style Trigger 挂 IsMouseOver 附加属性（输入系统自动维护：元素裁剪/离屏即 False），
-        /// 触发器 setter 在失焦时自动复位回元素初始 Background（Transparent 或卡片底色均正确），无残留。
-        /// 适用：单态 hover 行（Grid 行 / Border 卡片 / Border 行）。
-        /// 不适用：带「选中行背景」两态守卫的场景（常用软件/系统工具激活卡，hover 不得覆盖选中色）——
-        /// 那些调用点保留手动事件，已知残留风险记账于 代码审核-优化建议.md。
+        /// 行/卡片悬浮高亮（统一入口，两种实现自动选择）：
+        /// ① 元素无本地 Background 值（默认/null）→ Style Trigger 挂 IsMouseOver：
+        ///    输入系统自动维护（裁剪/离屏/切页自动 False），失焦自动复位，无「灰条残留」缺陷。
+        /// ② 元素有本地 Background（构造器里显式赋过，哪怕 Transparent——本地值优先级高于 Style 触发器，
+        ///    触发器会被静默压住导致高亮失效（v1.24d 回归根因，2026-10-20 试验实锤：IsMouseOver 跟随但背景不变）
+        ///    → 回落手动 MouseEnter/Leave（旧行为：高亮必跟随；残留风险回到旧水平，已知局限记账）。
+        /// 带「选中行背景」两态守卫的调用点（常用软件/系统工具激活卡）不要用本方法，保留自带手动事件。
+        /// 注意：① 路径的触发器持有 hoverBrush 快照，主题切换后已构建页面的 hover 颜色不随新主题变色
+        /// （旧手动方案每次读 _rowHover 是跟着变的；如用户反馈「换主题后高亮颜色不对」再升级为共享 Brush 换色方案）。
         /// </summary>
         internal static void AttachHoverHighlight(FrameworkElement el, System.Windows.Media.Brush hoverBrush)
         {
@@ -163,6 +163,19 @@ namespace CpqSystemTool
             else if (el is Panel) bgProp = Panel.BackgroundProperty;
             else bgProp = Border.BackgroundProperty;
 
+            // 本地值检测：构造器里赋过 Background（哪怕 Transparent 也是本地值，会压住触发器）→ 回落手动事件
+            var local = el.GetValue(bgProp);
+            bool hasLocalBackground = local != null;
+
+            if (hasLocalBackground)
+            {
+                // 回落手动事件：保留旧「高亮必跟随」行为（残留风险已知，记账）
+                var localEl = el;
+                el.MouseEnter += (s, e) => { if (localEl.GetValue(bgProp) == local) localEl.SetValue(bgProp, hoverBrush); };
+                el.MouseLeave += (s, e) => { localEl.SetValue(bgProp, local); };
+                return;
+            }
+            // 无本地背景：触发器路径（无残留）
             var st = new Style(el.GetType());
             var tg = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
             tg.Setters.Add(new Setter(bgProp, hoverBrush));

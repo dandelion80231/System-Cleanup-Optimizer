@@ -171,7 +171,7 @@ namespace CpqSystemTool
                 var content = groupContents[g.Key];
                 foreach (var t in g)
                 {
-                    var row = new Grid { Margin = new Thickness(0, 2, 0, 2), Background = Brushes.Transparent };
+                    var row = new Grid { Margin = new Thickness(0, 2, 0, 2) };   // 不设本地 Background（默认透明）：让 AttachHoverHighlight 走无残留触发器路径
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 

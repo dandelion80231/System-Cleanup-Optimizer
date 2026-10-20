@@ -946,7 +946,7 @@ namespace CpqSystemTool
             var border = new Border
             {
                 Child = tb,
-                Background = Brushes.Transparent,
+                // 不设本地 Background（默认透明）：让 AttachHoverHighlight 走无残留触发器路径
                 CornerRadius = new CornerRadius(3),
                 Cursor = Cursors.Hand
             };
