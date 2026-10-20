@@ -332,6 +332,8 @@ namespace CpqSystemTool
             };
             reloadTweaksStates();
 
+            // 列表末尾整行间距：滚到最底时最后一行不贴卡片底边（半行贴底边观感兜底；底边不做吸附——双向吸附互斥会来回跳）
+            treePanel.Children.Add(new System.Windows.Controls.Border { Height = 30, Background = System.Windows.Media.Brushes.Transparent });
             treeScroll.Content = treePanel;
             AttachRowSnap(treeScroll, treePanel);   // 滚动停稳后行吸附，底边不再露半行（半行+hover 条=「灰条遮挡」观感根因）
             Grid.SetRow(treeScroll, 1);
@@ -351,6 +353,8 @@ namespace CpqSystemTool
             Grid.SetRow(rLabel, 0);
             rightGrid.Children.Add(rLabel);
             // selectedPanel 已在左侧 tree 构建前创建并赋值给 UpdateSelectedPanel
+            // 已选列表末尾整行间距（同上：滚到最底不贴卡边）
+            selectedPanel.Children.Add(new System.Windows.Controls.Border { Height = 30, Background = System.Windows.Media.Brushes.Transparent });
             var selectedScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = selectedPanel };
             Grid.SetRow(selectedScroll, 1);
             rightGrid.Children.Add(selectedScroll);
