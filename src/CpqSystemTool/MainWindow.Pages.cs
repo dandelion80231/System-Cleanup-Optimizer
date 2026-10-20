@@ -248,8 +248,13 @@ namespace CpqSystemTool
                 }
                 Walk(rootPanel, 0);
                 // 顶边单向吸附：顶边半块 → 块顶对齐视口顶；对齐后复检无顶边半块即停，绝不向反方向动。
-                // 底边半行由列表末尾整行间距兜底（滚到最底不贴卡边），不参与吸附——双向吸附互斥会来回跳。
-                if (snapTop.HasValue)
+                // 底边半行不做处理（撤掉末尾间距方案后，底边贴卡边是用户期望；中段底边半行属正常滚动状态）。
+                // 两条守卫（用户反馈「滚到底会有一个小的回弹反应」= 贴底态被顶边吸附上拉）：
+                //  ① 已贴底（offset+视口 ≥ 内容总高 −1）→ 免吸附，保持贴底不动；
+                //  ② 吸附位移 < 4px → 免吸附（亚行抖动无视觉收益）。
+                if (snapTop.HasValue
+                    && sv.VerticalOffset + sv.ViewportHeight < sv.ExtentHeight - 1
+                    && Math.Abs(snapTop.Value - sv.VerticalOffset) >= 4)
                 {
                     sv.ScrollToVerticalOffset(snapTop.Value);
                 }
