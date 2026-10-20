@@ -184,11 +184,13 @@ namespace CpqSystemTool
         }
 
         /// <summary>
-        /// 列表行吸附（防「底边露半行」）：挂在 ScrollViewer 上，滚动停稳 250ms 后，
-        /// 若视口底边正裁到某一行（行顶部可见、底部超出视口），最小幅度下移让该行完整可见
-        /// （行底对齐视口底）；下一帧复检无半行即收敛停止。
-        /// 行 = 直接含 CheckBox 子级的 Panel（Tweaks/Cleanup 的行模板）。
-        /// 视觉动机：半行 + 该行 hover 高亮条在卡片圆角底边处看着像「多余遮挡条」（v1.24 用户反馈）。
+        /// 列表行吸附（防「顶边/底边露半行」）：挂在 ScrollViewer 上，滚动停稳 250ms 后——
+        /// ① 视口顶边正裁到某个块（行或分组标题，块顶在上、块底在下，露上半截）→ 上移让该块完整露出（块顶对齐视口顶）；
+        /// ② 否则视口底边正裁到某一行（行顶在视口内、行底超出）→ 最小幅度下移让该行完整可见（行底对齐视口底）。
+        /// 复检无半块即收敛；滚动停稳前不打断（250ms 防抖）。
+        /// 行 = 直接含 CheckBox 子级的 Panel；位置按逻辑布局累加（StackPanel 子级顺序累计 Y 含 Margin），
+        /// 分组 Expander 的可视顶 = 容器顶（标题区），裁剪/离屏元素同样有效。
+        /// 视觉动机：半块（尤其底边半行 + hover 高亮条）在卡片圆角边处看着像「多余遮挡条」（v1.24 用户两轮反馈）。
         /// </summary>
         internal static void AttachRowSnap(ScrollViewer sv, UIElement contentRoot)
         {
@@ -200,27 +202,35 @@ namespace CpqSystemTool
                 double viewport = sv.ViewportHeight;
                 if (viewport <= 0) return;
                 double viewBottom = offset + viewport;
-                double? snapBottom = null;   // 最靠近视口底边的「半行」行底（内容坐标）
+                double? snapTop = null;     // 视口顶边裁切块：其块顶（内容坐标）
+                double? snapBottom = null;  // 视口底边裁切行：其行底（内容坐标，取最靠近底边者）
                 void Walk(System.Windows.Controls.Panel pnl, double y)
                 {
-                    if (snapBottom.HasValue) return;
                     foreach (var childRaw in pnl.Children)
                     {
-                        if (snapBottom.HasValue) return;
                         var fe = childRaw as System.Windows.FrameworkElement;
                         double mtop = fe != null ? fe.Margin.Top : 0;
                         double mbot = fe != null ? fe.Margin.Bottom : 0;
                         double top = y + mtop;
                         double h = fe != null ? fe.ActualHeight : 0;
+                        double bottom = top + h;
                         var kids = childRaw is System.Windows.Controls.Panel cp ? cp.Children : null;
                         bool isRow = kids != null && kids.Count > 0 && kids.OfType<System.Windows.Controls.CheckBox>().Any();
-                        if (isRow)
-                        {
-                            double rowBottom = top + h;
-                            if (h > 4 && top < viewBottom - 2 && rowBottom > viewBottom + 6)
-                                snapBottom = rowBottom;
-                        }
-                        else if (fe is System.Windows.Controls.Panel)
+                        // 顶边「半块」判定（只有以下两类算缺陷，大容器/整组被裁切是正常滚动状态，不可作为吸附目标——防震荡）：
+                        //  a) 叶级块（行 / 不含子容器的普通块 / 分组标题）顶被裁、下方至少露 2px；
+                        //  b) Expander 仅「标题区」半露（标题区 ≈ 总高 − 内容高，≤32px；内容区被裁不算）
+                        bool isLeafPlain = !(childRaw is System.Windows.Controls.Panel pc && pc.Children.OfType<System.Windows.Controls.Panel>().Any());
+                        bool isHalfExpander = childRaw is System.Windows.Controls.HeaderedContentControl hcc2
+                            && hcc2.ActualHeight - (hcc2.Content is System.Windows.Controls.Panel c2 ? c2.ActualHeight : 0) <= 32
+                            && hcc2.ActualHeight - (hcc2.Content is System.Windows.Controls.Panel c3 ? c3.ActualHeight : 0) > offset + 2 - top;
+                        bool isLeaf = isRow || (isLeafPlain && !(childRaw is System.Windows.Controls.HeaderedContentControl)) || isHalfExpander;
+                        // ① 顶边裁切叶块（顶被视口顶裁掉，但下方至少露 2px）
+                        if (h > 4 && isLeaf && top < offset - 0.5 && bottom > offset + 2 && !snapTop.HasValue)
+                            snapTop = top;
+                        // ② 底边裁切行（行顶在视口内、行底超出视口底 > 6px；按顺序取最靠近底边者）
+                        if (isRow && h > 4 && top < viewBottom - 2 && bottom > viewBottom + 6)
+                            snapBottom = bottom;
+                        if (fe is System.Windows.Controls.Panel)
                         {
                             Walk((System.Windows.Controls.Panel)fe, top);
                         }
@@ -235,7 +245,16 @@ namespace CpqSystemTool
                     }
                 }
                 Walk(rootPanel, 0);
-                if (snapBottom.HasValue && snapBottom.Value > viewBottom + 6)
+                // 单侧半块才吸附；顶、底同时半块 = 稳定状态不动（顶优先会引发顶/底往复震荡，实测 315/327 抖动）
+                if (snapTop.HasValue && snapBottom.HasValue)
+                {
+                    // 保持现状：两侧各半一行在窄视口下无法同时对齐，属可接受状态
+                }
+                else if (snapTop.HasValue)
+                {
+                    sv.ScrollToVerticalOffset(snapTop.Value);
+                }
+                else if (snapBottom.HasValue)
                 {
                     sv.ScrollToVerticalOffset(offset + (snapBottom.Value - viewBottom));
                 }
