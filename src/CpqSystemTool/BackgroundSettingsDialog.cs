@@ -2865,15 +2865,19 @@ namespace CpqSystemTool
         // 功能1：停靠点列表方向键在停靠点间移动选中
         private void StopPanel_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            if (_settings.Stops == null || _settings.Stops.Count == 0) return;
-            int idx = _selectedStop != null ? _settings.Stops.IndexOf(_selectedStop) : -1;
+            // R-v124-A3（P2）：按「活动套」取停靠点（GetStops 内部浅色套为空时回退深色套，
+            // 与 UpdateEditLabel/行点击选择器同口径）。旧实现恒用 _settings.Stops（深色套），
+            // 浅色套编辑时 IndexOf 恒 -1，Up/Down 静默选中深色套元素。
+            var stops = _settings.GetStops(_previewDark);
+            if (stops == null || stops.Count == 0) return;
+            int idx = _selectedStop != null ? stops.IndexOf(_selectedStop) : -1;
             if (e.Key == Key.Up)
-                idx = idx <= 0 ? _settings.Stops.Count - 1 : idx - 1;
+                idx = idx <= 0 ? stops.Count - 1 : idx - 1;
             else if (e.Key == Key.Down)
-                idx = idx >= _settings.Stops.Count - 1 ? 0 : idx + 1;
+                idx = idx >= stops.Count - 1 ? 0 : idx + 1;
             else
                 return;
-            _selectedStop = _settings.Stops[idx];
+            _selectedStop = stops[idx];
             _currentColor = BackgroundSettings.ParseColor(_selectedStop.Color);
             UpdateColor(_currentColor, true);
             RefreshStopList();
