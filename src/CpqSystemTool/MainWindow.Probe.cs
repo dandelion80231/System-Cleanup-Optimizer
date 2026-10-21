@@ -612,7 +612,8 @@ namespace CpqSystemTool
             if (d == null || !d.ContainsKey(key) || d[key] == null) return false;
             var v = d[key];
             if (v is bool b) return b;
-            return v.ToString() == "True";
+            // R-v124-A8（P3）：探针输出若为字符串 "true"/"TRUE" 旧实现判 false（大小写敏感），改 OrdinalIgnoreCase
+            return string.Equals(v.ToString(), "True", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string ArchOf(Dictionary<string, object> c)

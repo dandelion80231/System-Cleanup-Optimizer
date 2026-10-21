@@ -22,6 +22,9 @@ namespace CpqSystemTool
         // 导致文字被压扁/截断。给行与按钮同时设该下限，空间不足时由外层 ScrollViewer 滚动兜底。
         private const double NAV_BUTTON_MIN_HEIGHT = 32;
 
+        // R-v124-A10：窗口失活清 hover 残留的 Deactivated 钩子只挂一次（BuildSidebar 可能随主题重建）
+        private bool _navDeactivatedHooked;
+
         private void BuildSidebar()
         {
             _nav = new List<NavItem>
@@ -186,6 +189,22 @@ namespace CpqSystemTool
             scroller.Content = sp;
             // scroller 后加 → 自动填充 DockPanel 剩余空间（标题固定顶部，按钮区矮窗可滚动，footer 贴底）
             dock.Children.Add(scroller);
+
+            // R-v124-A10（P3）：鼠标经某导航按钮直接离开窗口时 WPF 不保证触发该按钮的 MouseLeave，
+            // hover 高亮残留（按钮一直亮着，直到下次再移动鼠标）。窗口失活时统一清掉所有「未选中」
+            // 项的 hover 背景（选中项的高亮是 Navigate 管理的另一种状态，不动）。
+            if (!_navDeactivatedHooked)
+            {
+                _navDeactivatedHooked = true;
+                this.Deactivated += (s, e) =>
+                {
+                    foreach (var btn in FindNavButtons(Sidebar))
+                    {
+                        if ((btn.Tag as string) != _activeNavKey) btn.Background = Brushes.Transparent;
+                    }
+                    if (_aboutEntry != null && _activeNavKey != "about") _aboutEntry.Background = Brushes.Transparent;
+                };
+            }
 
             // 已迁移至 XAML 全局 Button Style，代码中不再需要 FrameworkElementFactory。
             Sidebar.Child = dock;

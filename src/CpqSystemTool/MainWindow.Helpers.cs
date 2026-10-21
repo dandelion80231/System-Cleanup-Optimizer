@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -426,7 +426,10 @@ namespace CpqSystemTool
                 StatusText.FontWeight = FontWeights.Normal;
                 SetStatus(progress);
             }
-            log?.Dispatcher.Invoke(() => { log.Visibility = Visibility.Visible; log.Clear(); });
+            // R-v124-A9（P3）：窗口关闭中调用时 Dispatcher 已关停，此 Invoke 会抛异常逸出到调用方
+            // （按钮事件 → 未处理异常）且后续线程不启动、任务静默丢失；包 try 吞掉（与下方 safeUi 同口径）
+            try { log?.Dispatcher.Invoke(() => { log.Visibility = Visibility.Visible; log.Clear(); }); }
+            catch { /* 窗口已关闭，忽略 */ }
             var disp = Dispatcher;
             // 窗口关闭后 Dispatcher 关停，BeginInvoke/Invoke 均抛 InvalidOperationException；
             // 后台线程未处理异常在 net48 会直接终止进程。safeUi 统一兜底：UI 更新静默忽略。
