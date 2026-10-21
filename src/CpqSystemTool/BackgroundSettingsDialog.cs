@@ -107,6 +107,34 @@ namespace CpqSystemTool
         private bool _isInitializing;          // 防止初始化时 SelectionChanged 重入导致 UI 树抖动
         // 关闭时撤销用：_hasEditedAfterShow=用户曾编辑；_hasAppliedAtLeastOnce=曾点过"应用"；_appliedSnapshot=最近一次 Apply 时的 _settings 快照
         private bool _hasEditedAfterShow;
+
+        // R-v124-A4/A5（P2）：本会话选图产生的壁纸存档副本（cpq-tool\壁纸\ 内、EnsureImageLocal 新建的）。
+        // 取消/保存/恢复默认 三个时点对照「当前引用（DarkPath/LightPath）」清理无引用副本，
+        // 避免「选图→取消」/「换图→前一张副本」/「恢复默认」留下永久孤儿文件（壁纸目录无其他 GC 机制）。
+        // 只清本会话新增副本（历史会话已落盘的旧副本不动，防误删用户仍可能在用的存档）。
+        private readonly List<string> _bgSessionCopies = new List<string>();
+
+        /// <summary>清理本会话产生但当前已无引用的壁纸存档副本（仅删 壁纸\ 目录内文件，绝不动外部原图）。</summary>
+        private void CleanupUnreferencedBgCopies(string refDark, string refLight)
+        {
+            if (_bgSessionCopies.Count == 0) return;
+            var wallDir = BackgroundSettings.WallpaperArchiveDir;
+            foreach (var copy in _bgSessionCopies.ToList())
+            {
+                if (string.Equals(copy, refDark, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(copy, refLight, StringComparison.OrdinalIgnoreCase))
+                    continue;   // 仍被引用，保留
+                try
+                {
+                    var full = System.IO.Path.GetFullPath(copy);
+                    if (!full.StartsWith(wallDir, StringComparison.OrdinalIgnoreCase)) continue; // 非存档目录文件（理论不会）不动
+                    if (System.IO.File.Exists(full)) System.IO.File.Delete(full);
+                    _bgSessionCopies.Remove(copy);
+                }
+                catch { /* 删除失败（被占用）不阻断主流程 */ }
+            }
+        }
+
         private bool _hasAppliedAtLeastOnce;
         private BackgroundSettings _appliedSnapshot;
         private Slider _valSlider;             // 明度滑块（HSV 列，0–100% 量程）
@@ -642,6 +670,10 @@ namespace CpqSystemTool
                 if (_lightOpacitySlider != null) { _lightOpacitySlider.Value = 1.0; _lightOpacityVal.Text = "100%"; }
                 // 修复：恢复默认背景也是一次真实编辑，原先未置位导致「应用→恢复默认→×关闭」时改动被回滚吞掉
                 _hasEditedAfterShow = true;
+                // R-v124-A5（P2）：清旧提示行（原实现不清 _bgCopyNote，恢复默认后仍提示「已复制到数据目录」）
+                if (_bgCopyNote != null) { _bgCopyNote.Text = ""; _bgCopyNote.Visibility = Visibility.Collapsed; }
+                // 恢复默认清空引用后，本会话无引用的壁纸副本一并清掉（壁纸目录无其他 GC）
+                CleanupUnreferencedBgCopies("", "");
                 RefreshImageModePreviews();
             };
             Grid.SetColumn(imgResetBtn, 1);
@@ -674,6 +706,7 @@ namespace CpqSystemTool
                     // 复制失败（磁盘满/权限）降级为引用原件，提示行如实告知。
                     string src = dlg.FileName;
                     string local = BackgroundSettings.EnsureImageLocal(src);
+                    if (local != src && !_bgSessionCopies.Contains(local)) _bgSessionCopies.Add(local);   // 登记本会话新副本（取消/保存时 GC）
                     _settings.DarkPath = local;
                     _bgCopyNote.Text = local == src
                         ? "⚠ 深色背景保留原路径（未能复制到数据目录，请勿移动/删除原文件）"
@@ -711,6 +744,7 @@ namespace CpqSystemTool
                     // 深色同款逻辑：复制到数据目录存档，失败降级引用原件
                     string src = dlg.FileName;
                     string local = BackgroundSettings.EnsureImageLocal(src);
+                    if (local != src && !_bgSessionCopies.Contains(local)) _bgSessionCopies.Add(local);   // 登记本会话新副本（取消/保存时 GC）
                     _settings.LightPath = local;
                     _bgCopyNote.Text = local == src
                         ? "⚠ 浅色背景保留原路径（未能复制到数据目录，请勿移动/删除原文件）"
@@ -993,7 +1027,12 @@ namespace CpqSystemTool
                 Foreground = _owner._btnPrimaryFg,
                 BorderThickness = new Thickness(0)
             };
-            _saveBtn.Click += (s, e) => { DialogResult = true; Close(); };
+            _saveBtn.Click += (s, e) =>
+            {
+                // R-v124-A4（P2）：保存前清理本会话产生但已不被引用的壁纸副本（如「选图 A 再换图 B」的 A 副本）
+                CleanupUnreferencedBgCopies(_settings.DarkPath, _settings.LightPath);
+                DialogResult = true; Close();
+            };
             _cancelBtn = new Button
             {
                 Content = "取消",
@@ -1003,7 +1042,13 @@ namespace CpqSystemTool
                 Foreground = _owner._btnSecondaryFg,
                 BorderThickness = new Thickness(0)
             };
-            _cancelBtn.Click += (s, e) => { DialogResult = false; Close(); };
+            _cancelBtn.Click += (s, e) =>
+            {
+                // R-v124-A4（P2）：取消 = 回滚到打开前快照（Closing 内执行）；本会话新副本中不被
+                // 打开前引用（_initial）覆盖的一并清掉，避免「选图后取消」留孤儿文件。
+                CleanupUnreferencedBgCopies(_initial.DarkPath, _initial.LightPath);
+                DialogResult = false; Close();
+            };
             btnRow.Children.Add(_applyBtn);
             btnRow.Children.Add(_saveBtn);
             btnRow.Children.Add(_cancelBtn);
