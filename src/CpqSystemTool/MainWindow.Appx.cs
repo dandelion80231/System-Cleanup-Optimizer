@@ -616,7 +616,8 @@ namespace CpqSystemTool
                     if (hideFramework && it.IsFramework) { hiddenCount++; continue; }
                             var rowBorder = new Border
                             {
-                                Background = Brushes.Transparent,
+                                // R-v124-B7：不设本地 Background（默认透明）：让下方 AttachHoverHighlight 走无残留触发器路径
+                                //（构造器写 Transparent 本地值会压住触发器 → 回落手动事件，裁剪后高亮残留风险回来）
                                 BorderBrush = _panelBorder,
                                 BorderThickness = new Thickness(0, 0, 0, 1),
                                 Padding = new Thickness(8, 6, 8, 6),

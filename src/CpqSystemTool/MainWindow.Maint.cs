@@ -952,7 +952,8 @@ namespace CpqSystemTool
             };
             // 行悬浮高亮（属性驱动触发器，防裁剪残留）
             AttachHoverHighlight(border, _rowHover);
-            // 共 8 个菜单项共用此入口。同步处理器 → 异常直达 Dispatcher（net48 会终止进程）。
+            // 共 6 个菜单项调用此入口（R-v124-B3：旧「8 个」是「复制日志」加入前的残留计数）。
+            // 同步处理器 → 异常直达 Dispatcher（未处理异常将终止进程，故需下方整体兜底）。
             // click 里的动作并不都在 RunInBg 内部（例如「卸载本地依赖」「卸载 WebView2」会先弹 MessageBox，
             // 然后才进后台线程），因此必须在这里整体兜底：先关弹窗保证 UI 状态收敛，再执行动作。
             border.MouseLeftButtonDown += (s, e) =>

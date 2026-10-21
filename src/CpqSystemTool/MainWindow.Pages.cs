@@ -188,7 +188,8 @@ namespace CpqSystemTool
         /// 若视口顶边正裁到某个叶级块（行、或分组标题区半露的 Expander，块顶在上、块底在下）→
         /// 上移让该块完整露出（块顶对齐视口顶）；复检无顶边半块即收敛，绝不反向动（无来回跳）。
         /// 只处理顶边：视口高度不是行高整数倍时，顶/底不可能同时对齐，双向吸附实测互斥震荡（用户反馈「列表来回跳」）。
-        /// 底边半行改为「列表内容末尾加整行间距（AttachRowSnapBottomPadding）」，滚到最底不贴卡边。
+        /// 底边半行不做处理（R-v124-B6：曾加「列表末尾整行间距」兜底，因用户反馈多余留白已撤销；
+        /// 底边贴卡边半行属正常滚动状态，滚到底保持贴底不回弹由 DoSnap 内贴底守卫保证）。
         /// 行 = 直接含 CheckBox 子级的 Panel；位置按逻辑布局累加（StackPanel 子级顺序累计 Y 含 Margin），
         /// 分组 Expander 仅「标题区」半露才算半块（整组被裁是正常滚动状态），裁剪/离屏元素同样有效。
         /// </summary>
@@ -305,7 +306,7 @@ namespace CpqSystemTool
             var btnByService = new Dictionary<string, Button>();
             foreach (var s in ServiceOptimizer.All)
             {
-                var row = new Grid { Background = Brushes.Transparent };
+                var row = new Grid { };   // R-v124-B7：不设本地 Background（默认透明）：下方 AttachHoverHighlight 走无残留触发器路径
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -868,6 +869,8 @@ namespace CpqSystemTool
             {
                 var item = new Border
                 {
+                    // R-v124-B7：浅色模式背景 = _bgTable（非透明双态），AttachHoverHighlight 会判为「有本地背景」
+                    // 自动回落手动事件（高亮必跟随；裁剪残留风险已知，与常用软件选中行同款记账）
                     Background = _isDarkMode ? Brushes.Transparent : _bgTable,
                     BorderBrush = _panelBorder,
                     BorderThickness = new Thickness(1),

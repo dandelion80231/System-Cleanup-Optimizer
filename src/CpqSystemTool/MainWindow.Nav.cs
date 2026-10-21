@@ -15,7 +15,7 @@ namespace CpqSystemTool
     public partial class MainWindow
     {
         // 软件版本号：左下角显示（同 BuildAbout 关于页更新日志）。
-        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.23.0 ↔ v1.23），两处保持一致。
+        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.24.0 ↔ v1.24），两处保持一致。
         private const string APP_VERSION = "v1.24";
 
         // 导航按钮最小高度：16 个按钮平分视口高度（Star 行），窗口变矮或高 DPI 下高度会小于文字行高，
@@ -83,10 +83,8 @@ namespace CpqSystemTool
             // 左下角版本+关于入口：文字颜色随主题切换，统一由 UpdateSidebarTitleColors 刷新
             var verTb = new TextBlock
             {
-                // 修正：原注释写 APP_VERSION = "v1.07" → "关于 V1.06"（版本号既与实际常量不符，
-                // 箭头两侧也自相矛盾）。实际常量为 "v1.16"，Substring(1) 去掉前缀 'v' 后得 "关于 V1.16"；
-                // 常量升级时此处自动跟随，无需改注释里的具体数字。
-                Text = "关于 V" + APP_VERSION.Substring(1), // APP_VERSION = "v1.16" → "关于 V1.16"
+                // R-v124-B4：显示「关于 V1.24」（= APP_VERSION 常量 Substring(1) 自动跟随，升版无需改此处）。
+                Text = "关于 V" + APP_VERSION.Substring(1),
                 FontSize = 12,
                 Foreground = _textMain,
                 VerticalAlignment = VerticalAlignment.Center,

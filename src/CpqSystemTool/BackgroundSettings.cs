@@ -141,7 +141,7 @@ namespace CpqSystemTool
         /// <summary>创建默认的网格渐变。
         /// 修复（默认过艳）：原实现 3 个高饱和实色光斑（#16E0BD/#2563EB/#7C3AED，Opacity 0.7~0.8）
         /// 叠在深底上观感偏艳，与系统工具的冷静观感不符。现对齐预设「海洋」的收敛风格
-        /// （低不透明度 0.42~0.52、大面积柔和重叠），进入 Mesh 模式第一眼即为 multi-blob 柔和 mesh。</summary>
+        /// （低不透明度 0.34~0.46、大面积柔和重叠，R-v124-B5：数值与下方实现同步），进入 Mesh 模式第一眼即为 multi-blob 柔和 mesh。</summary>
         public static BackgroundSettings CreateDefaultMesh()
         {
             return new BackgroundSettings
@@ -698,7 +698,7 @@ namespace CpqSystemTool
         /// <summary>
         /// 基于主色生成 4 个不同位置/颜色的默认光斑（四色组和谐色：0/90/180/270°），
         /// 让用户在进入网格模式第一眼看到的就是 multi-blob mesh，而不是单色径向。
-        /// 位置在画布四角附近均匀分布并加小随机偏移；半径 0.3~0.5，不透明度 0.6~0.9。
+        /// 位置在画布四角附近均匀分布并加小随机偏移；半径 0.7~1.0，不透明度 0.55~0.80（R-v124-B5：与下方实现同步，旧摘要值已过期）。
         /// 返回的光斑是普通 MeshBlobSetting，保存后与手工添加的光斑无差别。
         /// </summary>
         public static List<MeshBlobSetting> CreateDefaultMeshBlobs(string baseColorHex)
@@ -1015,7 +1015,7 @@ namespace CpqSystemTool
         /// <summary>
         /// 将光斑列表序列化为与 gradients.app 同构的 CSS：
         /// radial-gradient(at X% Y%, hsla(h,s%,l%,a) 0%, hsla(h,s%,l%,0) 100%)，多层用 ", " 连接。
-        /// 注意：该 CSS 格式本身不携带半径字段，导出/导入往返会丢失各光斑的 Radius；导入时默认用 0.5。
+        /// 半径经每层尾部私有注释 /* r:<radius> */ 随 CSS 无损往返（标准解析器忽略注释，不破坏兼容性）；导入优先读回该注释，缺省才用 0.5（R-v124-B5：摘要与实现同步）。
         /// </summary>
         public static string ToCssGradient(List<MeshBlobSetting> blobs)
         {
