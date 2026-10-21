@@ -243,16 +243,6 @@ namespace CpqSystemTool
                 }
             }
             sb.AppendLine("],");
-            if (Stops != null)
-            {
-                for (int i = 0; i < Stops.Count; i++)
-                {
-                    var s = Stops[i];
-                    sb.Append("{\"Color\":" + JsonStr(s.Color) + ",\"Offset\":" + s.Offset.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}");
-                    if (i < Stops.Count - 1) sb.Append(",");
-                }
-            }
-            sb.AppendLine("],");
             // 浅色停靠点（深浅背景切换）：null 时不输出，保持旧版 JSON 最小
             if (LightStops != null && LightStops.Count > 0)
             {
