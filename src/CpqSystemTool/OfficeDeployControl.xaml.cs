@@ -1096,10 +1096,12 @@ namespace CpqSystemTool
                         });
                         if (!autoAlignConfirmed)
                         {
-                            // 用户选择改用「切换到其他版本」：在 UI 线程打开切换版本对话框
-                            this.Dispatcher.Invoke(() => OnSwitchEditionExecute());
-                            AppendLog("  [已取消] 版本冲突，已打开「切换到其他版本」供重新部署目标版本。");
-                            SetStatus("已打开切换版本");
+                            // R-v124-A2（P1）修复：旧实现在此嵌套调用 OnSwitchEditionExecute()——本 worker 正持
+                            // OperationLock（全局 bool 不可重入），切版本入口的 TryEnter 同一锁必失败，
+                            // 用户走完选版本+确认两个弹窗后仍被「操作冲突」打回、什么都没发生，且旧日志假报「已打开切换版本」。
+                            // 现改为：如实记录取消 + 状态栏引导用户手动点「切换到其他版本」（用户主动决策，避免无意图触发卸载重装）。
+                            AppendLog("  [已取消] 版本冲突，本次安装未执行。如需安装不同版本，请点上方「切换到其他版本」按钮切换后重新安装。");
+                            SetStatus("版本冲突：安装未执行。请改用「切换到其他版本」卸载重装目标版本");
                             return;
                         }
                     }
