@@ -32,22 +32,58 @@ namespace CpqSystemTool
                 // 存量配置迁移：DarkPath/LightPath 若指向数据目录外的既有图片（文件仍在），
                 // 复制进壁纸存档（cpq-tool\壁纸\）并改写路径，之后随数据文件夹一起迁移；
                 // 幂等——已在存档内的路径不动，复制失败保持原值（渲染回退逻辑不变）。
-                bool migrated = false;
+                // R-v124-C1（v1.25）：迁移复制（File.Copy 百 MB 级壁纸）改为后台线程执行——
+                // 旧实现在 UI 线程同步复制，启动窗口先冻结到复制完才出界面。
+                // 迁移期间首帧仍用旧路径渲染（原图尚在）；后台复制完成后改写路径并持久化。
                 string d = _backgroundSettings.DarkPath;
-                if (!string.IsNullOrEmpty(d) && !BackgroundSettings.IsLocalImagePath(d) && File.Exists(d))
-                {
-                    string dl = BackgroundSettings.EnsureImageLocal(d);
-                    if (dl != d) { _backgroundSettings.DarkPath = dl; migrated = true; }
-                }
                 string l = _backgroundSettings.LightPath;
-                if (!string.IsNullOrEmpty(l) && !BackgroundSettings.IsLocalImagePath(l) && File.Exists(l))
+                bool needMigrateD = !string.IsNullOrEmpty(d) && !BackgroundSettings.IsLocalImagePath(d) && File.Exists(d);
+                bool needMigrateL = !string.IsNullOrEmpty(l) && !BackgroundSettings.IsLocalImagePath(l) && File.Exists(l);
+                // R-v125-E15（用户 background.json 第 17 行历史损坏残留查实）：加载期严格 JSON 自检——
+                // 文件若非法（历史半截写/手工编辑损坏），后台立即用刚解析出的设置重写一份干净文件（幂等，
+                // 文件合法时零写入）。宽容解析（FromJson）保证损坏文件仍可用，自愈保证下次启动读到的合法。
+                bool jsonStrictlyValid;
+                try { System.Text.Json.JsonDocument.Parse(json); jsonStrictlyValid = true; }
+                catch { jsonStrictlyValid = false; }
+                if (!jsonStrictlyValid)
                 {
-                    string ll = BackgroundSettings.EnsureImageLocal(l);
-                    if (ll != l) { _backgroundSettings.LightPath = ll; migrated = true; }
+                    var s0 = _backgroundSettings;
+                    System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                    {
+                        try
+                        {
+                            if (ReferenceEquals(_backgroundSettings, s0)) SaveBackgroundSettings();
+                        }
+                        catch { /* 重写失败：下次启动再试（宽容解析保证可用） */ }
+                    });
                 }
-                if (migrated)
+                if (needMigrateD || needMigrateL)
                 {
-                    SaveBackgroundSettings();   // 立即持久化，防止崩溃后下次仍读旧路径
+                    var s = _backgroundSettings;
+                    System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                    {
+                        try
+                        {
+                            // R-v124-C2（v1.25）：先清壁纸存档中不被当前设置引用的孤儿文件（历史会话遗留），
+                            // 再做迁移复制（串行同一 worker，复制产生的新副本已改写进 s，不会被本次 GC 误删）
+                            BackgroundSettings.GcUnreferencedWallpapers(s.DarkPath, s.LightPath);
+                            bool any = false;
+                            if (needMigrateD)
+                            {
+                                string dl = BackgroundSettings.EnsureImageLocal(d);
+                                if (dl != d) { s.DarkPath = dl; any = true; }
+                            }
+                            if (needMigrateL)
+                            {
+                                string ll = BackgroundSettings.EnsureImageLocal(l);
+                                if (ll != l) { s.LightPath = ll; any = true; }
+                            }
+                            // 迁移期间弹窗已保存过新设置（_backgroundSettings 换实例）→ 本次迁移过期，不覆盖
+                            if (any && !ReferenceEquals(_backgroundSettings, s)) return;
+                            if (any) SaveBackgroundSettings();   // 持久化，防止崩溃后下次仍读旧路径
+                        }
+                        catch { /* 复制失败（磁盘满/权限）保持原值，渲染回退逻辑不变 */ }
+                    });
                 }
             }
             catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
@@ -592,6 +628,10 @@ namespace CpqSystemTool
                 byte alpha = (byte)Math.Max(0, Math.Min(255, (int)Math.Round(255 * b.Opacity)));
                 double px = b.CenterX * canvasW;
                 double py = b.CenterY * canvasH;
+                // R-v125-E10 已按用户要求回退：farthest-corner 是「方框=光斑衰减边界」的错误诊断下的顺带改动
+                //（光斑是圆的，解释不了方形框；真凶是 E10b 噪点瓦片/E10c GPU tile，已独立修复）。
+                // 恢复原口径 pr = Radius × 画布短边（正圆光斑，与既有 0.6~0.9 参数观感一致）。
+                // 注：CSS/SVG 导出仍为 farthest-corner 语义（导出文件独立口径，不影响屏幕渲染）。
                 double pr = b.Radius * Math.Min(canvasW, canvasH);
                 var grad = new RadialGradientBrush
                 {
@@ -602,9 +642,12 @@ namespace CpqSystemTool
                     MappingMode = BrushMappingMode.RelativeToBoundingBox,
                     SpreadMethod = GradientSpreadMethod.Pad
                 };
-                // 2 段线性衰减（对齐参考实现 gradients.app 的 CSS radial-gradient：中心 α → 100% 处 0）。
-                // 配大半径 = 柔和色场互渗；旧 3 段（中段 α/4）让光斑中心更「平」，小半径下圆形轮廓感更强。
+                // R-v125-E8（v1.25，用户反馈放大可见条纹）：banding 根源 = WPF 渐变 8-bit 量化且无抖动
+                // （参考实现 gradients.app 跑在浏览器 GPU 上自带 dither，故无条纹；双管齐下）：
+                // ① 衰减曲线由 2 段 α→0 改为 4 段（40%/75% 中间停靠，色阶密度提高，每段跨度更小）
                 grad.GradientStops.Add(new GradientStop(Color.FromArgb(alpha, c.R, c.G, c.B), 0.0));
+                grad.GradientStops.Add(new GradientStop(Color.FromArgb((byte)Math.Round(alpha * 0.62), c.R, c.G, c.B), 0.40));
+                grad.GradientStops.Add(new GradientStop(Color.FromArgb((byte)Math.Round(alpha * 0.22), c.R, c.G, c.B), 0.75));
                 grad.GradientStops.Add(new GradientStop(Color.FromArgb(0, c.R, c.G, c.B), 1.0));
                 var ellipse = new System.Windows.Shapes.Ellipse
                 {
@@ -617,6 +660,69 @@ namespace CpqSystemTool
                 Canvas.SetTop(ellipse, py - pr);
                 canvas.Children.Add(ellipse);
             }
+            // R-v125-E8（v1.25）：噪点抖动层（banding 根治）——WPF 8-bit 渐变无 dither（浏览器 GPU 有，
+            // 参考网页因此无条纹）；叠一层 128×128 随机灰度噪点（alpha≈2/255，肉眼不可见但打散量化条纹）。
+            // 纹理进程内共享一份（冻结 + 平铺 ImageBrush），不逐调用生成。
+            var dither = new Border
+            {
+                IsHitTestVisible = false,
+                Background = GetBandingDitherBrush((int)canvasW, (int)canvasH)   // R-v125-E10b：整幅无瓦片噪点（按画布尺寸，缓存）
+            };
+            Canvas.SetLeft(dither, 0);
+            Canvas.SetTop(dither, 0);
+            dither.Width = canvasW;
+            dither.Height = canvasH;
+            canvas.Children.Add(dither);
+        }
+
+
+        // R-v125-E10b（用户两次反馈「网格中间有一个框」）：查实 256×256 Tile 平铺的噪点瓦片之间
+        // 均值差在低对比渐变上形成可见的「方形格」（用户圈的就是这个）。改整幅无瓦片噪点：
+        // 按画布尺寸生成单张 w×h 噪点图（无 Tile 边界），按尺寸 LRU 缓存（主窗 1920×1080 / 大窗 / 小预览各一张）。
+        private static readonly System.Collections.Generic.Dictionary<long, System.Windows.Media.ImageBrush> _ditherCache
+            = new System.Collections.Generic.Dictionary<long, System.Windows.Media.ImageBrush>();
+        private static readonly System.Collections.Generic.List<long> _ditherLru
+            = new System.Collections.Generic.List<long>();
+        private static readonly object _ditherLock = new object();
+
+        private static System.Windows.Media.ImageBrush GetBandingDitherBrush(int w, int h)
+        {
+            long key = ((long)Math.Max(1, w) << 32) | Math.Max(1, h);
+            lock (_ditherLock)
+            {
+                System.Windows.Media.ImageBrush cached;
+                if (_ditherCache.TryGetValue(key, out cached))
+                {
+                    _ditherLru.Remove(key); _ditherLru.Add(key);
+                    return cached;
+                }
+                int bw = Math.Max(1, w), bh = Math.Max(1, h);
+                var rnd = new Random((int)(key & 0x7FFFFFFF));
+                var bmp = new System.Windows.Media.Imaging.WriteableBitmap(bw, bh, 96, 96,
+                    System.Windows.Media.PixelFormats.Bgra32, null);
+                var buf = new byte[bw * bh * 4];
+                for (int i = 0; i < buf.Length; i += 4)
+                {
+                    byte v = (byte)(128 + (rnd.Next(0, 81) - 40));   // 128±40 均值中性
+                    buf[i] = v; buf[i + 1] = v; buf[i + 2] = v; buf[i + 3] = 12;   // alpha 12/255
+                }
+                bmp.WritePixels(new System.Windows.Int32Rect(0, 0, bw, bh), buf, bw * 4, 0);
+                bmp.Freeze();
+                var brush = new System.Windows.Media.ImageBrush(bmp)
+                {
+                    // 整幅单张（无 TileMode.Tile）→ 没有瓦片边界；尺寸与画布一致（不拉伸）
+                    Stretch = System.Windows.Media.Stretch.None
+                };
+                brush.Freeze();
+                _ditherCache[key] = brush;
+                _ditherLru.Add(key);
+                if (_ditherLru.Count > 4)
+                {
+                    _ditherCache.Remove(_ditherLru[0]);
+                    _ditherLru.RemoveAt(0);
+                }
+            }
+            return _ditherCache[key];
         }
 
         /// <summary>运行时应用：基于当前 _backgroundSettings 构建背景 Brush（按当前主题取深/浅色套）。</summary>
