@@ -43,6 +43,30 @@ namespace CpqSystemTool
         private StackPanel _angleGroup;   // 几何行「角度: [45]°」组（仅线性模式显示；径向不需要角度）
         private Button _addStopBtn, _addBlobBtn;
         private Button _applyBtn, _saveBtn, _cancelBtn;
+        // R-v125-E3（v1.25，用户提议）：完整预览窗（16:9）——弹窗内预览小、大半径渐变看不全，
+        // 点「预览」开独立大窗渲染当前活动套完整渐变；再次点击刷新内容；窗口可自由缩放
+        private Window _fullPreviewWindow;
+        private Button _radialShapeToggle;
+        private Canvas _fullPreviewCanvas;
+        // R-v125-E12（用户要求「增加背景类型切换和应用按钮」）：完整预览窗工具条控件
+        private ComboBox _fullPreviewModeCombo;
+        private Button _fullPreviewApplyBtn;
+        // R-v125-E13（用户要求「虚线与拖动控件在大预览页面上也要有」）：大窗句柄层（与光斑画布同尺寸叠加）
+        private Canvas _fullPreviewOverlay;
+        private readonly Dictionary<MeshBlobSetting, Ellipse> _fullBlobHandles = new Dictionary<MeshBlobSetting, Ellipse>();
+        private readonly Dictionary<MeshBlobSetting, Ellipse> _fullBlobRings = new Dictionary<MeshBlobSetting, Ellipse>();
+        private MeshBlobSetting _fullDraggingBlob;
+        private Point _fullDragStartMouse, _fullDragStartCenter;
+        // R-v125-E14（用户要求大预览每模式都要有同款虚线+拖动控件）：大窗独立交互态（线性/径向）
+        private GradientStopSetting _fullDraggingStop;
+        // R-v125-E16（用户要求大窗虚线可直接拖）：拖外圈半径环（16px 命中走廊）= 同时改横/纵半径
+        private bool _fullDraggingRadiusRing;
+        // R-v125-E20（用户反馈「切背景类型后显示异常」查实）：记录句柄层当前所属模式——
+        // 非网格→网格 切换时旧模式控件（半径圈/停点圈/走廊）必须整清，否则残留一大片虚线
+        private BackgroundMode _fullOverlayLastMode;
+        private bool _fullDraggingLineEnd, _fullDraggingLineCenter, _fullDraggingRadialCenter, _fullDraggingRadiusX, _fullDraggingRadiusY;
+        private Point _fullDragStartLineCenter;
+        private System.Windows.Shapes.Line _fullAxisLine;
         private TextBlock _modeHint;
         private Border _geometryCard;
         private Border _listCard;
@@ -159,6 +183,9 @@ namespace CpqSystemTool
         private readonly Dictionary<GradientStopSetting, StackPanel> _stopRows = new Dictionary<GradientStopSetting, StackPanel>();
         private readonly Dictionary<MeshBlobSetting, StackPanel> _blobRows = new Dictionary<MeshBlobSetting, StackPanel>();
         private readonly Dictionary<MeshBlobSetting, Ellipse> _blobHandles = new Dictionary<MeshBlobSetting, Ellipse>(); // 预览区光斑句柄
+        // 光斑虚线半径圈（用户提议，与径向渐变停靠点同心圆同视觉语言）：半径 = blob.Radius × 画布短边（与 PopulateBlobCanvas 渲染同源），
+        // 纯显示不可命中；选中的光斑半径圈与中心句柄同色（主题色），其余白色。
+        private readonly Dictionary<MeshBlobSetting, Ellipse> _blobRings = new Dictionary<MeshBlobSetting, Ellipse>();
         // 每模式最近一次的几何参数：模式切换时把当前值存回旧 mode、切回时从字典读回，避免 Linear 90° 切 Radial 后 90° 丢失
         private readonly Dictionary<BackgroundMode, double> _angleByMode = new Dictionary<BackgroundMode, double>();
         private readonly Dictionary<BackgroundMode, double> _centerXByMode = new Dictionary<BackgroundMode, double>();
@@ -168,12 +195,17 @@ namespace CpqSystemTool
         private Point _dragStartBlobCenter;     // 拖拽开始时光斑中心（0..1）
         // 预览区交互（线性/径向几何与停靠点拖拽）
         private GradientStopSetting _draggingStop;
+        // R-v125-E16b（用户反馈小预览虚线拖不动）：拖小窗外圈半径环（16px 命中走廊）= 同时改横/纵半径
+        private bool _draggingRadiusRing;
         private bool _draggingLineEnd;        // 拖线性两端圆点 = 绕中心旋转角度
         private bool _draggingLineCenter;     // 拖线性轴线本体 = 平移渐变中心
         private Point _dragStartLineCenter;   // 拖中心开始时的中心坐标（0..1）
         private bool _draggingRadialCenter;
         private bool _draggingRadiusX;
         private bool _draggingRadiusY;
+        // R-v125-E7（用户要求）：径向渐变半径「圆/椭圆」联动——圆=两个半径句柄拖一同步一（默认，正圆）；
+        // 椭圆=独立（x/y 分开拖）。切换控件在完整预览窗（大窗）右上角，用户指定位置
+        private bool _radialLinkedRadius = true;
         private double _linearAngleRad;
         private readonly List<System.Windows.UIElement> _gradientOverlayItems = new List<System.Windows.UIElement>();
         private const double K45 = 0.70710678;  // √½，径向 45° 半径方向投影系数
@@ -255,12 +287,17 @@ namespace CpqSystemTool
                 Text = "背景类型：",
                 Foreground = _owner._textMain,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 6, 0)
+                Margin = new Thickness(0, 0, 6, 0),
             });
             // ★ 始终白底黑字，避开深色模式 _inputBg/_inputFg 在 ComboBox 上不可靠的问题。
             _modeCombo = new ComboBox
             {
-                Width = 96,   // 最长项「线性/径向/网格渐变」4 字 ≈ 48px + 下拉箭头/边距；140 过宽（用户指出）
+                // R-v125-E26（用户拍板「模板内边距设 0 + 固定 72」）：内边距清零后内容区紧凑，
+                // 72 = 4 字文本 48 + 箭头 ~17 + 边框余量，刚好放下「网格渐变」不切字不空余白，且全模式统一。
+                Width = 72,
+                MinWidth = 72,
+                Padding = new Thickness(6, 1, 1, 1),   // R-v125-E26d（用户「左缩进又看不到了，缩进 6px 试试」）：左 6 与列表项对齐；右 1 靠箭头；72 宽 = 4字48 + 左6 + 箭头~17 + 右1 刚好
+                Margin = new Thickness(0, 0, 6, 0),
                 VerticalContentAlignment = VerticalAlignment.Center,
                 Background = Brushes.White,
                 Foreground = Brushes.Black,
@@ -272,6 +309,12 @@ namespace CpqSystemTool
             _modeCombo.Items.Add(new ComboBoxItem { Content = "径向渐变", Tag = BackgroundMode.RadialGradient, Foreground = Brushes.Black });
             _modeCombo.Items.Add(new ComboBoxItem { Content = "网格渐变", Tag = BackgroundMode.MeshGradient, Foreground = Brushes.Black });
             _modeCombo.SelectionChanged += ModeCombo_SelectionChanged;
+            // R-v125-E26c（用户指出「下面（列表）有缩进、上面（选中框）没有」）：默认模板的列表项自带 ~8px
+            // 左缩进，与选中框的 1px 不齐。列表项内边距清零，上下对齐。
+            var itemStyle = new System.Windows.Style(typeof(ComboBoxItem));
+            itemStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.Control.PaddingProperty, new Thickness(6, 0, 0, 0)));
+            itemStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.Control.MarginProperty, new Thickness(0)));
+            _modeCombo.ItemContainerStyle = itemStyle;
             modePanel.Children.Add(_modeCombo);
             header.Children.Add(modePanel);
             root.Children.Add(header);
@@ -999,6 +1042,19 @@ namespace CpqSystemTool
 
             // 第 2 行：按钮
             var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0) };
+            // R-v125-E3（v1.25）：「预览」完整渐变图（16:9 大窗），位置在「应用」左侧（用户指定）
+            var _previewFullBtn = new Button
+            {
+                Content = "预览",
+                Width = 80,
+                Height = 32,
+                Margin = new Thickness(0, 0, 8, 0),
+                Background = _owner._btnSecondaryBg,
+                Foreground = _owner._btnSecondaryFg,
+                BorderThickness = new Thickness(0)
+            };
+            _previewFullBtn.Click += (s, e) => ShowFullPreview();
+            btnRow.Children.Add(_previewFullBtn);
             _applyBtn = new Button
             {
                 Content = "应用",
@@ -1057,6 +1113,829 @@ namespace CpqSystemTool
 
             Content = root;
             Loaded += (s, e) => { RenderColorWheel(); UpdateWheelIndicator(); };
+        }
+
+        // ---- R-v125-E3（v1.25）：完整预览窗（16:9）----
+        /// <summary>打开/刷新「完整预览」大窗（1280×720 起，可缩放）：
+        /// 与弹窗小预览/主窗口同源渲染（BuildBackgroundBrushPreview 底色 + 网格光斑 PopulateBlobCanvas），
+        /// 停靠点/光斑/纯色均走活动套（C5 口径）。再次点「预览」刷新已开窗口，不重复开窗。</summary>
+        private void ShowFullPreview()
+        {
+            var win = _fullPreviewWindow;
+            if (win == null)
+            {
+                win = new Window
+                {
+                    Title = "背景完整预览（16:9）",
+                    Width = 1280,
+                    Height = 720,
+                    Owner = this,
+                    WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                    Background = _owner._windowBg,
+                    ResizeMode = ResizeMode.CanResize,
+                    ShowInTaskbar = false
+                };
+                var grid = new Grid();
+                var border = new Border();
+                var canvas = new Canvas { IsHitTestVisible = false };
+                _fullPreviewCanvas = canvas;
+                grid.Children.Add(border);
+                grid.Children.Add(canvas);
+                // R-v125-E7：顶部「正圆/椭圆」切换（仅径向渐变模式生效；用户指定位置=预览大窗）
+                _radialShapeToggle = new Button
+                {
+                    Content = "○ 切到椭圆（x/y 独立）",
+                    Height = 26,
+                    Padding = new Thickness(10, 0, 10, 0),
+                    Margin = new Thickness(0, 8, 12, 0),
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Background = _owner._btnSecondaryBg,
+                    Foreground = _owner._btnSecondaryFg,
+                    BorderThickness = new Thickness(0),
+ToolTip = "正圆 = 16:9 屏幕视觉正圆（纵半径=横半径×16/9，如 0.5→0.89）；椭圆 = 纵向收窄（×0.6）；再点可切回。按钮文字=点击后的效果"
+                };
+                // R-v125-E7b（用户反馈「点击之后预览也一直是椭圆」）：按钮标签改为【动作式】——
+                // 文字始终是「点击后的效果」（旧实现文字=当前状态，用户看到「正圆」以为点它会变正圆，
+                // 实际点它是切走正圆 → 一直切不出想要的状态）。切回正圆时同步 Y=X 并刷新预览。
+                _radialShapeToggle.Click += (s, e) =>
+                {
+                    // R-v125-E7c（用户反馈「连续点击预览都没有任何变化」查实）：旧「切椭圆」只改拖拽联动标志、
+                    // 不动半径数值——正圆状态下 X=Y，切完预览毫无视觉变化（且大窗没有半径句柄）。
+                    // 现改为【真变形】：切椭圆 = 纵半径缩到横半径 0.6 倍（预览立即呈椭圆）；
+                    // 切正圆 = 纵半径回到横半径（立即呈正圆）。每次点击必有可见效果。
+                    // R-v125-E7d（用户指正「这样才是正圆」）：正圆口径 = 16:9 视觉正圆（Y = X × 16/9，
+                    // 如 X 0.5 → Y 0.89，即 1920×1080 上呈现正圆）；旧实现 Y=X 只在小方形预览里是圆、
+                    // 到 16:9 屏幕反而横向变扁。椭圆 = Y = X × 0.6（纵向收窄）。
+                    if (_radialLinkedRadius)
+                    {
+                        // 正圆 → 椭圆（纵半径 = 横半径 × 0.6，立即刷新预览）
+                        _radialLinkedRadius = false;
+                        if (_settings.Mode == BackgroundMode.RadialGradient)
+                        {
+                            _settings.RadialRadiusY = Clamp(_settings.RadialRadiusX * 0.6, 0.02, 2.0);
+                            SyncGeometryBoxes();
+                            RefreshPreview();
+                        }
+                        _radialShapeToggle.Content = "● 切到正圆（16:9 视觉）";
+                    }
+                    else
+                    {
+                        // 椭圆 → 正圆（16:9 视觉正圆：纵半径 = 横半径 × 16/9，立即刷新预览）
+                        _radialLinkedRadius = true;
+                        if (_settings.Mode == BackgroundMode.RadialGradient)
+                        {
+                            _settings.RadialRadiusY = Clamp(_settings.RadialRadiusX * 16.0 / 9.0, 0.02, 2.0);
+                            SyncGeometryBoxes();
+                            RefreshPreview();
+                        }
+                        _radialShapeToggle.Content = "○ 切到椭圆（x/y 独立）";
+                    }
+                };
+                // R-v125-E12：顶部工具条（卡片底，与窗口标题区分）= 背景类型切换 + 应用 + 正圆/椭圆
+                var topRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(8, 8, 12, 8) };
+                topRow.Children.Add(new TextBlock { Text = "背景类型：", Foreground = _owner._textMain, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+                _fullPreviewModeCombo = new ComboBox { Width = 100, Height = 26, VerticalContentAlignment = VerticalAlignment.Center };
+                foreach (var item in _modeCombo.Items)
+                    _fullPreviewModeCombo.Items.Add(new ComboBoxItem { Content = ((ComboBoxItem)item).Content, Tag = ((ComboBoxItem)item).Tag, Foreground = Brushes.Black });
+                _fullPreviewModeCombo.SelectionChanged += (s, e) =>
+                {
+                    // 选大窗下拉 → 同步主弹窗的模式（触发主弹窗既有的模式切换逻辑：几何参数存/取、UI 显隐、预览刷新）
+                    var sel = _fullPreviewModeCombo.SelectedItem as ComboBoxItem;
+                    if (sel == null) return;
+                    for (int i = 0; i < _modeCombo.Items.Count; i++)
+                    {
+                        if (System.Object.Equals((_modeCombo.Items[i] as ComboBoxItem)?.Tag, sel.Tag))
+                        {
+                            if (_modeCombo.SelectedIndex != i) _modeCombo.SelectedIndex = i;
+                            break;
+                        }
+                    }
+                };
+                topRow.Children.Add(_fullPreviewModeCombo);
+                _fullPreviewApplyBtn = new Button
+                {
+                    Content = "应用",
+                    Width = 60,
+                    Height = 26,
+                    Margin = new Thickness(8, 0, 8, 0),
+                    Background = _owner._accent,
+                    Foreground = _owner._btnPrimaryFg,
+                    BorderThickness = new Thickness(0),
+                    ToolTip = "把当前设置应用到主窗口（等同弹窗里的「应用」，可再编辑/关闭时回滚）"
+                };
+                _fullPreviewApplyBtn.Click += (s, e) =>
+                {
+                    _owner.ApplyBackgroundSettings(_settings.Clone());
+                    _appliedSnapshot = _settings.Clone();
+                    _hasAppliedAtLeastOnce = true;
+                    SetCssStatus("已应用到主窗口（等同「应用」）");
+                };
+                topRow.Children.Add(_fullPreviewApplyBtn);
+                // 正圆/椭圆切换挪进工具条（仅径向模式可见，其余模式 Collapsed，由 UpdateFullPreviewContent 维护）
+                _radialShapeToggle.Margin = new Thickness(0, 0, 0, 0);
+                _radialShapeToggle.BorderBrush = _owner._panelBorder;   // 浅色模式下有边框轮廓，不再与深色 chrome 混成「黑块」
+                _radialShapeToggle.BorderThickness = new Thickness(1);
+                _radialShapeToggle.ToolTip = "正圆 = 16:9 屏幕视觉正圆（纵半径=横半径×16/9）；椭圆 = 纵向收窄（×0.6）；再点可切回。按钮文字=点击后的效果";
+                topRow.Children.Add(_radialShapeToggle);
+                // R-v125-E12b（用户反馈「其他功能怎么没了，让你补充功能你怎么乱改」）：
+                // 工具条不占整行（旧 E12 用 DockPanel 顶栏挤压了渐变显示区）——渐变保持全屏，
+                // 控件组【悬浮叠加在右上角】（不压缩任何预览内容；切换按钮回到原右上角位置）。
+                var toolBar = new Border
+                {
+                    Background = _owner._btnSecondaryBg,
+                    BorderBrush = _owner._panelBorder,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(8, 5, 8, 5),
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Margin = new Thickness(0, 10, 10, 0),
+                    Child = topRow
+                };
+                // R-v125-E13：句柄层（网格模式在大窗上直接拖光斑/看虚线半径圈；其余模式清空）
+                _fullPreviewOverlay = new Canvas { IsHitTestVisible = true };   // 必须 true：false 会排除整棵子树（句柄）的命中测试（Canvas 无填充本身不挡鼠标）
+                _fullPreviewOverlay.MouseMove += FullOverlay_MouseMove;
+                var overlay = new Grid();
+                overlay.Children.Add(grid);          // 渐变全屏（原 E3 布局）
+                overlay.Children.Add(_fullPreviewOverlay);   // 句柄/虚线圈层（网格模式）
+                overlay.Children.Add(toolBar);       // 工具条悬浮右上角（不占行，最顶层）
+                win.Content = overlay;
+                win.Closed += (s, e) => { if (ReferenceEquals(_fullPreviewWindow, win)) _fullPreviewWindow = null; };
+                win.SizeChanged += (s, e) => UpdateFullPreviewContent();   // 缩放时重铺光斑（保持 16:9 观感）
+                _fullPreviewWindow = win;
+            }
+            if (!win.IsVisible) win.Show();
+            UpdateFullPreviewContent();
+        }
+
+        private void UpdateFullPreviewContent()
+        {
+            var win = _fullPreviewWindow;
+            if (win == null || _fullPreviewCanvas == null) return;
+            var border = (System.Windows.Controls.Border)((System.Windows.Controls.Grid)_fullPreviewCanvas.Parent).Children[0];
+            var canvas = _fullPreviewCanvas;
+            double w = Math.Max(1, win.ActualWidth);
+            double h = Math.Max(1, win.ActualHeight);
+            // 与弹窗小预览同口径：活动套（_previewDark）
+            if (_settings.Mode == BackgroundMode.Image)
+            {
+                // R-v125-E6（用户要求）：图片模式直接预览原图（原尺寸居中、按主题透明度），
+                // 与弹窗大预览（LoadImagePreview）同源——统一走 GetPreviewImageSource：
+                // 覆盖三类场景：自定义图片文件 / DarkPath 为空（内置默认背景）/ 路径失效（回退内置），
+                // 旧实现只处理「外部文件存在」一种，内置背景时 img.Source 为 null → 大窗纯白。
+                border.Background = _owner._windowBg;
+                canvas.Children.Clear();
+                string path = _previewDark ? _settings.DarkPath : _settings.LightPath;
+                double op = _previewDark ? _settings.DarkOpacity : _settings.LightOpacity;
+                var img = new System.Windows.Controls.Image
+                {
+                    IsHitTestVisible = false,
+                    Stretch = System.Windows.Media.Stretch.Uniform,
+                    Opacity = op,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                    VerticalAlignment = System.Windows.VerticalAlignment.Center,
+                    Width = w,
+                    Height = h
+                };
+                img.Source = GetPreviewImageSource(path, _previewDark, out _);
+                canvas.Children.Add(img);
+            }
+            else
+            {
+                border.Background = _owner.BuildBackgroundBrushPreview(_settings, _previewDark);
+                if (_settings.Mode == BackgroundMode.MeshGradient)
+                    MainWindow.PopulateBlobCanvas(canvas, _settings.GetBlobs(_previewDark), w, h);
+                else
+                    canvas.Children.Clear();
+            }
+            // R-v125-E12：工具条同步（主弹窗模式变化时跟随；正圆/椭圆切换仅径向模式可见）
+            SyncFullPreviewToolbar();
+            // R-v125-E13：句柄层同步（网格模式=拖光斑句柄+虚线半径圈；其余模式清空）
+            RefreshFullPreviewHandles();
+        }
+
+        // R-v125-E13：大窗句柄层刷新（与 _previewOverlay 的小预览句柄同源同口径：
+        // 活动套 GetBlobs(_previewDark)、14px 椭圆句柄、虚线半径圈 pr=Radius×画布短边、选中 accent 描边）。
+        // R-v125-E13d（用户反馈「大窗句柄仍不显示」）：诊断日志（配置目录 e13_diag.log），
+        // 每帧记录 模式/活动光斑数/尺寸/句柄数/异常，一次重测即可定位（条件不满足/异常/未调用）。
+        private static void E13Diag(string line)
+        {
+            try
+            {
+                var p = System.IO.Path.Combine(AppPaths.ConfigDir, "e13_diag.log");
+                System.IO.File.AppendAllText(p, System.DateTime.Now.ToString("HH:mm:ss.fff") + " " + line + Environment.NewLine);
+            }
+            catch { /* 诊断失败不影响功能 */ }
+        }
+
+        private void RefreshFullPreviewHandles()
+        {
+            var ov = _fullPreviewOverlay;
+            if (ov == null) { E13Diag("SKIP ov==null"); return; }
+            var win = _fullPreviewWindow;
+            var active = _settings.GetBlobs(_previewDark);
+            if (win == null)
+            {
+                E13Diag("CLEAR win==null");
+                return;
+            }
+            // R-v125-E14：非网格模式也画对应控件（线性=轴虚线+停点+中心 / 径向=半径圈+中心+半径点 / 其他清空）
+            if (_settings.Mode != BackgroundMode.MeshGradient)
+            {
+                ov.Children.Clear();
+                _fullBlobHandles.Clear();
+                _fullBlobRings.Clear();
+                _fullAxisLine = null;
+                if (_settings.Mode == BackgroundMode.LinearGradient)
+                    DrawFullLinearHandles(ov, win.ActualWidth, win.ActualHeight);
+                else if (_settings.Mode == BackgroundMode.RadialGradient)
+                    DrawFullRadialHandles(ov, win.ActualWidth, win.ActualHeight);
+                _fullOverlayLastMode = _settings.Mode;
+                E13Diag($"UI mode={(int)_settings.Mode} ovChildren={ov.Children.Count}");
+                return;
+            }
+            if (active == null || active.Count == 0)
+            {
+                ov.Children.Clear();
+                _fullBlobHandles.Clear();
+                _fullBlobRings.Clear();
+                _fullOverlayLastMode = BackgroundMode.MeshGradient;
+                E13Diag($"CLEAR active empty");
+                return;
+            }
+            // R-v125-E20：非网格模式切到网格（且有光斑）时，旧模式控件（径向圈/停点/走廊）必须整清
+            if (_fullOverlayLastMode != BackgroundMode.MeshGradient)
+            {
+                ov.Children.Clear();
+                _fullBlobHandles.Clear();
+                _fullBlobRings.Clear();
+            }
+            _fullOverlayLastMode = BackgroundMode.MeshGradient;
+            double w = Math.Max(1, win.ActualWidth);
+            double h = Math.Max(1, win.ActualHeight);
+            try
+            {
+            // 清理已删除光斑的句柄/圈（先解绑事件）
+            foreach (var kv in _fullBlobHandles.Where(x => !active.Contains(x.Key)).ToList())
+            {
+                kv.Value.MouseLeftButtonDown -= FullHandle_MouseLeftButtonDown;
+                ov.Children.Remove(kv.Value);
+            }
+            foreach (var k in _fullBlobHandles.Where(x => !active.Contains(x.Key)).Select(x => x.Key).ToList())
+                _fullBlobHandles.Remove(k);
+            foreach (var k in _fullBlobRings.Where(x => !active.Contains(x.Key)).Select(x => x.Key).ToList())
+            {
+                ov.Children.Remove(_fullBlobRings[k]);
+                _fullBlobRings.Remove(k);
+            }
+            // 句柄
+            foreach (var blob in active)
+            {
+                if (!_fullBlobHandles.TryGetValue(blob, out var ellipse))
+                {
+                    ellipse = new Ellipse
+                    {
+                        Width = 14,
+                        Height = 14,
+                        StrokeThickness = 2,
+                        Cursor = Cursors.SizeAll,
+                        IsHitTestVisible = true,
+                        ToolTip = "拖动调整光斑位置（大预览）"
+                    };
+                    ellipse.MouseLeftButtonDown += FullHandle_MouseLeftButtonDown;
+                    _fullBlobHandles[blob] = ellipse;
+                    ov.Children.Add(ellipse);
+                }
+                bool isSel = blob == _selectedBlob;
+                ellipse.Stroke = isSel ? _owner._accent : Brushes.White;
+                ellipse.Fill = MakeColorBrush(blob.Color);
+                ellipse.Opacity = 0.7 + blob.Opacity * 0.3;
+                Canvas.SetLeft(ellipse, blob.CenterX * w - ellipse.Width / 2);
+                Canvas.SetTop(ellipse, blob.CenterY * h - ellipse.Height / 2);
+                // 虚线半径圈（与光斑渲染同源：pr = Radius × 画布短边）
+                if (!_fullBlobRings.TryGetValue(blob, out var ring))
+                {
+                    ring = new Ellipse
+                    {
+                        StrokeThickness = 1,
+                        StrokeDashArray = new DoubleCollection { 5, 4 },
+                        Fill = Brushes.Transparent,
+                        IsHitTestVisible = false
+                    };
+                    _fullBlobRings[blob] = ring;
+                    ov.Children.Add(ring);
+                }
+                double pr = blob.Radius * Math.Min(w, h);
+                ring.Width = pr * 2;
+                ring.Height = pr * 2;
+                ring.Stroke = isSel ? _owner._accent : AxisStrokeBrush;   // E14c 回退：与小窗 RefreshMeshHandles 一致
+                Canvas.SetLeft(ring, blob.CenterX * w - pr);
+                Canvas.SetTop(ring, blob.CenterY * h - pr);
+            }
+            E13Diag($"OK active={active.Count} w={w:F0} h={h:F0} ovChildren={ov.Children.Count} handles={_fullBlobHandles.Count}");
+            }
+            catch (Exception ex)
+            {
+                E13Diag("EX: " + ex.GetType().Name + " " + ex.Message + " @ " + ex.StackTrace?.Split('\n')[0].Trim());
+            }
+        }
+
+        private void FullHandle_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (!(sender is Ellipse ellipse)) return;
+            var blob = _fullBlobHandles.FirstOrDefault(kv => kv.Value == ellipse).Key;
+            if (blob == null) return;
+            // 与小预览句柄同一选中语义（同步列表高亮/色轮/编辑标签）
+            _selectedBlob = blob;
+            _selectedStop = null;
+            _currentColor = BackgroundSettings.ParseColor(blob.Color);
+            UpdateColor(_currentColor, true);
+            RefreshBlobList();
+            UpdateEditLabel();
+            _fullDraggingBlob = blob;
+            _fullDragStartMouse = e.GetPosition(_fullPreviewOverlay);
+            _fullDragStartCenter = new Point(blob.CenterX, blob.CenterY);
+            _fullPreviewOverlay.CaptureMouse();
+            e.Handled = true;
+        }
+
+        private void FullOverlay_MouseMove(object sender, MouseEventArgs e)
+        {
+            var ov = _fullPreviewOverlay;
+            var win = _fullPreviewWindow;
+            if (ov == null || win == null) return;
+            if (e.LeftButton != MouseButtonState.Pressed)
+            {
+                // 松手：结束所有拖拽态（小预览不感知；参数已随每次 RefreshPreview 同步）
+                if (_fullDraggingBlob != null) { _fullDraggingBlob = null; }
+                _fullDraggingStop = null;
+                _fullDraggingLineEnd = _fullDraggingLineCenter = false;
+                _fullDraggingRadialCenter = _fullDraggingRadiusX = _fullDraggingRadiusY = false;
+                _fullDraggingRadiusRing = false;
+                ov.ReleaseMouseCapture();
+                return;
+            }
+            double w = Math.Max(1, win.ActualWidth), h = Math.Max(1, win.ActualHeight);
+            var pos = e.GetPosition(ov);
+            // 网格光斑拖拽（E13）
+            if (_fullDraggingBlob != null)
+            {
+                double ddx = (pos.X - _fullDragStartMouse.X) / w;
+                double ddy = (pos.Y - _fullDragStartMouse.Y) / h;
+                _fullDraggingBlob.CenterX = Math.Max(0, Math.Min(1, _fullDragStartCenter.X + ddx));
+                _fullDraggingBlob.CenterY = Math.Max(0, Math.Min(1, _fullDragStartCenter.Y + ddy));
+                _hasEditedAfterShow = true;
+                UpdateBlobRow(_fullDraggingBlob);
+                RefreshPreview();
+                return;
+            }
+            // R-v125-E14：线性模式拖拽
+            if (_settings.Mode == BackgroundMode.LinearGradient)
+            {
+                if (_fullDraggingStop != null)
+                {
+                    // R-v125-E14b（用户反馈旋转拖不动查实）：投影必须用【物理像素空间】——
+                    // 大窗 1280×720 归一化坐标被 16:9 拉伸，旧公式（归一化投影）拖动停点偏移量错误、
+                    // 旋转角度在屏幕上看也是错的。物理空间公式：鼠标/中心像素差 × 单位方向向量。
+                    double px = pos.X - _settings.LinearCenterX * w;
+                    double py = pos.Y - _settings.LinearCenterY * h;
+                    double c = Math.Cos(_linearAngleRad), s = Math.Sin(_linearAngleRad);
+                    double dirX = c, dirY = -s;
+                    // 轴在物理空间的四角极值投影（与 DrawFullLinearHandles 轴线端点同公式，按 w/h 各向）
+                    double cX = _settings.LinearCenterX * w, cY = _settings.LinearCenterY * h;
+                    double p0 = (0 - cX) * dirX + (0 - cY) * dirY;
+                    double p1 = (w - cX) * dirX + (0 - cY) * dirY;
+                    double p2 = (0 - cX) * dirX + (h - cY) * dirY;
+                    double p3 = (w - cX) * dirX + (h - cY) * dirY;
+                    double minP = Math.Min(p0, Math.Min(p1, Math.Min(p2, p3)));
+                    double maxP = Math.Max(p0, Math.Max(p1, Math.Max(p2, p3)));
+                    double mP = px * dirX + py * dirY;
+                    _fullDraggingStop.Offset = Clamp((mP - minP) / Math.Max(1e-9, maxP - minP), 0, 1);
+                    _hasEditedAfterShow = true;
+                    RefreshStopList();
+                    SyncGeometryBoxes();
+                    RefreshPreview();
+                    return;
+                }
+                if (_fullDraggingLineEnd)
+                {
+                    // 旋转：物理像素空间算屏幕真实角度 + 15° 细吸附（旧 45° 粗吸附：当前角度离吸附点
+                    // 近时拖动一片区域角度都不变，观感「拖不动」）
+                    double mx2 = pos.X - _settings.LinearCenterX * w;
+                    double my2 = pos.Y - _settings.LinearCenterY * h;
+                    double ang = Math.Atan2(-my2, mx2) * 180.0 / Math.PI;
+                    double snapped = Math.Round(ang / 15.0) * 15.0;
+                    if (snapped < 0) snapped += 360;
+                    _settings.GradientAngle = snapped;
+                    _hasEditedAfterShow = true;
+                    SyncGeometryBoxes();
+                    RefreshPreview();
+                    return;
+                }
+                if (_fullDraggingLineCenter)
+                {
+                    double dx = (pos.X - _fullDragStartMouse.X) / w;
+                    double dy = (pos.Y - _fullDragStartMouse.Y) / h;
+                    _settings.LinearCenterX = Clamp(_fullDragStartLineCenter.X + dx, 0, 1);
+                    _settings.LinearCenterY = Clamp(_fullDragStartLineCenter.Y + dy, 0, 1);
+                    _hasEditedAfterShow = true;
+                    SyncGeometryBoxes();
+                    RefreshPreview();
+                    return;
+                }
+            }
+            // R-v125-E14：径向模式拖拽
+            if (_settings.Mode == BackgroundMode.RadialGradient)
+            {
+                // R-v125-E16：拖外圈半径环 = 同时改横/纵半径（环上任意角度抓取，按鼠标到中心的距离）
+                if (_fullDraggingRadiusRing)
+                {
+                    double nx = pos.X / w, ny = pos.Y / h;
+                    double nrx = Clamp(Math.Abs(nx - _settings.RadialCenterX), 0.02, 2.0);
+                    double nry = Clamp(Math.Abs(ny - _settings.RadialCenterY), 0.02, 2.0);
+                    if (_radialLinkedRadius)
+                    {
+                        // 正圆联动（E7d 16:9 口径）：按横向距离定基准，纵半径按比例
+                        _settings.RadialRadiusX = nrx;
+                        _settings.RadialRadiusY = Clamp(nrx * 16.0 / 9.0, 0.02, 2.0);
+                    }
+                    else
+                    {
+                        _settings.RadialRadiusX = nrx;
+                        _settings.RadialRadiusY = nry;
+                    }
+                    _hasEditedAfterShow = true;
+                    SyncGeometryBoxes();
+                    RefreshPreview();
+                    return;
+                }
+                if (_fullDraggingStop != null)
+                {
+                    // R-v125-E19（用户反馈「拖动的过程中，虚线没有完全跟随鼠标位置」查实）：
+                    // 旧 45° 方向投影公式——只有 45° 方向分量生效，鼠标朝其它角度径向移动时
+                    // 虚线（同心椭圆）跟不上。改椭圆归一化距离：任意方向拖动都 1:1 跟手
+                    //（offset = 鼠标到中心的椭圆距离，0=中心、1=外圈半径处）。
+                    double px2 = pos.X - _settings.RadialCenterX * w;
+                    double py2 = pos.Y - _settings.RadialCenterY * h;
+                    double rxp = Math.Max(1, _settings.RadialRadiusX * w);
+                    double ryp = Math.Max(1, _settings.RadialRadiusY * h);
+                    _fullDraggingStop.Offset = Clamp(Math.Sqrt((px2 / rxp) * (px2 / rxp) + (py2 / ryp) * (py2 / ryp)), 0, 1);
+                    _hasEditedAfterShow = true;
+                    RefreshStopList();
+                    SyncGeometryBoxes();
+                    RefreshPreview();
+                    return;
+                }
+                if (_fullDraggingRadialCenter)
+                {
+                    double dx = (pos.X - _fullDragStartMouse.X) / w;
+                    double dy = (pos.Y - _fullDragStartMouse.Y) / h;
+                    _settings.RadialCenterX = Clamp(_fullDragStartLineCenter.X + dx, 0, 1);
+                    _settings.RadialCenterY = Clamp(_fullDragStartLineCenter.Y + dy, 0, 1);
+                    _hasEditedAfterShow = true;
+                    SyncGeometryBoxes();
+                    RefreshPreview();
+                    return;
+                }
+                if (_fullDraggingRadiusX || _fullDraggingRadiusY)
+                {
+                    double nx = pos.X / w, ny = pos.Y / h;
+                    if (_fullDraggingRadiusX)
+                        _settings.RadialRadiusX = Clamp(Math.Abs(nx - _settings.RadialCenterX), 0.02, 2.0);
+                    else
+                        _settings.RadialRadiusY = Clamp(Math.Abs(ny - _settings.RadialCenterY), 0.02, 2.0);
+                    // 正圆联动（E7d：16:9 视觉正圆口径）
+                    if (_radialLinkedRadius)
+                    {
+                        if (_fullDraggingRadiusX)
+                            _settings.RadialRadiusY = Clamp(_settings.RadialRadiusX * 16.0 / 9.0, 0.02, 2.0);
+                        else
+                            _settings.RadialRadiusX = Clamp(_settings.RadialRadiusY * 9.0 / 16.0, 0.02, 2.0);
+                    }
+                    _hasEditedAfterShow = true;
+                    SyncGeometryBoxes();
+                    RefreshPreview();
+                    return;
+                }
+            }
+        }
+
+        // R-v125-E14：大窗线性模式控件（轴虚线+隐形旋转走廊+中心红点+停点圆，全交互；公式与小预览 DrawLinearHandles 同源）
+        private void DrawFullLinearHandles(Canvas ov, double winW, double winH)
+        {
+            var win = _fullPreviewWindow;
+            if (win == null) return;
+            double w = Math.Max(1, win.ActualWidth), h = Math.Max(1, win.ActualHeight);
+            _settings.EnsureGradientStops();
+            double ang = _settings.GradientAngle * Math.PI / 180.0;
+            _linearAngleRad = ang;   // 停点拖拽投影公式依赖（与小预览 DrawLinearHandles 同义）
+            double cx = _settings.LinearCenterX, cy = _settings.LinearCenterY;
+            double dx = Math.Cos(ang), dy = -Math.Sin(ang);
+            double minP = Math.Min(0, Math.Min(dx, Math.Min(dy, dx + dy)));
+            double maxP = Math.Max(0, Math.Max(dx, Math.Max(dy, dx + dy)));
+            double pc = 0.5 * dx + 0.5 * dy;
+            double sx = (cx + (minP - pc) * dx) * w, sy = (cy + (minP - pc) * dy) * h;
+            double ex = (cx + (maxP - pc) * dx) * w, ey = (cy + (maxP - pc) * dy) * h;
+
+            // E14c 已回退（用户指示：按小窗预览方案原样实现）——与小窗 DrawLinearHandles 一致：
+            // AxisStrokeBrush（白 α200）线宽 2、虚线 5,4。
+            _fullAxisLine = new System.Windows.Shapes.Line
+            {
+                X1 = sx, Y1 = sy, X2 = ex, Y2 = ey,
+                Stroke = AxisStrokeBrush, StrokeThickness = 2,
+                StrokeDashArray = new DoubleCollection { 5, 4 },
+                IsHitTestVisible = false
+            };
+            ov.Children.Add(_fullAxisLine);
+            var axisHit = new System.Windows.Shapes.Line
+            {
+                X1 = sx, Y1 = sy, X2 = ex, Y2 = ey,
+                Stroke = Brushes.Transparent, StrokeThickness = 16,
+                Cursor = Cursors.SizeAll, IsHitTestVisible = true
+            };
+            axisHit.MouseLeftButtonDown += (s, e) =>
+            {
+                _fullDraggingLineEnd = true;
+                ov.CaptureMouse();
+                e.Handled = true;
+            };
+            ov.Children.Add(axisHit);
+            var cDot = new Ellipse
+            {
+                Width = 10, Height = 10, StrokeThickness = 0,
+                Cursor = Cursors.SizeAll, IsHitTestVisible = true,
+                Fill = DotRedBrush
+            };
+            Canvas.SetLeft(cDot, cx * w - 5);
+            Canvas.SetTop(cDot, cy * h - 5);
+            cDot.MouseLeftButtonDown += (s, e) =>
+            {
+                _fullDraggingLineCenter = true;
+                _fullDragStartMouse = e.GetPosition(ov);
+                _fullDragStartLineCenter = new Point(_settings.LinearCenterX, _settings.LinearCenterY);
+                ov.CaptureMouse();
+                e.Handled = true;
+            };
+            ov.Children.Add(cDot);
+            foreach (var stop in _settings.GetStops(_previewDark).OrderBy(x => x.Offset))
+            {
+                double t = stop.Offset;
+                double proj = minP + t * (maxP - minP);
+                double px = (cx + (proj - pc) * dx) * w;
+                double py = (cy + (proj - pc) * dy) * h;
+                var dot = new Ellipse
+                {
+                    Width = 16, Height = 16, StrokeThickness = 2,
+                    Cursor = Cursors.SizeAll, IsHitTestVisible = true,
+                    Fill = MakeColorBrush(stop.Color),
+                    Stroke = InvertBrush(GradientColorAt(t)),
+                    Opacity = 0.92
+                };
+                Canvas.SetLeft(dot, px - 8);
+                Canvas.SetTop(dot, py - 8);
+                dot.MouseLeftButtonDown += (s, e) =>
+                {
+                    _selectedStop = stop;
+                    _selectedBlob = null;
+                    _currentColor = BackgroundSettings.ParseColor(stop.Color);
+                    UpdateColor(_currentColor, true);
+                    RefreshStopList();
+                    UpdateEditLabel();
+                    _fullDraggingStop = stop;
+                    _fullDragStartMouse = e.GetPosition(ov);
+                    ov.CaptureMouse();
+                    e.Handled = true;
+                };
+                ov.Children.Add(dot);
+            }
+        }
+
+        // R-v125-E14：大窗径向模式控件（半径虚线圈+中心点+x/y 半径点+停点圆，全交互；公式与小预览 DrawRadialHandles 同源）
+        private void DrawFullRadialHandles(Canvas ov, double winW, double winH)
+        {
+            var win = _fullPreviewWindow;
+            if (win == null) return;
+            double w = Math.Max(1, win.ActualWidth), h = Math.Max(1, win.ActualHeight);
+            _settings.EnsureGradientStops();
+            double cx = _settings.RadialCenterX * w;
+            double cy = _settings.RadialCenterY * h;
+            double rx = Math.Max(2, _settings.RadialRadiusX * w);
+            double ry = Math.Max(2, _settings.RadialRadiusY * h);
+
+            // E14c 已回退（用户指示：按小窗预览方案原样实现，不自作主张改样式）——
+            // 恢复与小窗 DrawRadialHandles 完全一致：AxisStrokeBrush（白 α200）线宽 2、虚线 5,4。
+            var ring = new Ellipse
+            {
+                Width = rx * 2, Height = ry * 2,
+                Stroke = AxisStrokeBrush, StrokeThickness = 2,   // R-v125-E18：按用户「按小窗原样」口径回退（E15b 擅自 3px）
+                StrokeDashArray = new DoubleCollection { 5, 4 },
+                Fill = Brushes.Transparent, IsHitTestVisible = false
+            };
+            Canvas.SetLeft(ring, cx - rx);
+            Canvas.SetTop(ring, cy - ry);
+            ov.Children.Add(ring);
+
+            var center = new Ellipse
+            {
+                Width = 10, Height = 10, StrokeThickness = 0,
+                Cursor = Cursors.SizeAll, IsHitTestVisible = true,
+                Fill = DotRedBrush
+            };
+            Canvas.SetLeft(center, cx - 5);
+            Canvas.SetTop(center, cy - 5);
+            center.MouseLeftButtonDown += (s, e) =>
+            {
+                _fullDraggingRadialCenter = true;
+                _fullDragStartMouse = e.GetPosition(ov);
+                _fullDragStartLineCenter = new Point(_settings.RadialCenterX, _settings.RadialCenterY);
+                ov.CaptureMouse();
+                e.Handled = true;
+            };
+            ov.Children.Add(center);
+            // R-v125-E15b（用户反馈大窗找不到半径点）：半径点 12→16px、白描边（亮暗背景都醒目）+ 提示
+            var hx = new Ellipse
+            {
+                Width = 16, Height = 16, StrokeThickness = 2,
+                Cursor = Cursors.SizeWE, IsHitTestVisible = true,
+                Fill = Brushes.Transparent,
+                Stroke = Brushes.White,
+                ToolTip = "拖我改横半径（半径大时虚线圈会溢出窗口、只剩四边弧线；把半径拖小就能看到完整圈）"
+            };
+            Canvas.SetLeft(hx, cx + rx - 8);
+            Canvas.SetTop(hx, cy - 8);
+            hx.MouseLeftButtonDown += (s, e) =>
+            {
+                _fullDraggingRadiusX = true;
+                _fullDragStartMouse = e.GetPosition(ov);
+                ov.CaptureMouse();
+                e.Handled = true;
+            };
+            ov.Children.Add(hx);
+            var hy = new Ellipse
+            {
+                Width = 16, Height = 16, StrokeThickness = 2,
+                Cursor = Cursors.SizeNS, IsHitTestVisible = true,
+                Fill = Brushes.Transparent,
+                Stroke = Brushes.White,
+                ToolTip = "拖我改纵半径（半径大时虚线圈会溢出窗口、只剩四边弧线；把半径拖小就能看到完整圈）"
+            };
+            Canvas.SetLeft(hy, cx - 8);
+            Canvas.SetTop(hy, cy + ry - 8);
+            hy.MouseLeftButtonDown += (s, e) =>
+            {
+                _fullDraggingRadiusY = true;
+                _fullDragStartMouse = e.GetPosition(ov);
+                ov.CaptureMouse();
+                e.Handled = true;
+            };
+            ov.Children.Add(hy);
+            // R-v125-E16fix：命中走廊垫底（停点同心环/小圆在其上优先抓取；原在停点之上会把内圈拖拽截走）
+            // R-v125-E16：半径环 16px 隐形命中走廊（直接拖虚线改半径，不必抓小圆点）——与线性轴向走廊同机制
+            var ringHit = new Ellipse
+            {
+                Width = rx * 2 + 16, Height = ry * 2 + 16,
+                Stroke = Brushes.Transparent, StrokeThickness = 16,
+                Cursor = Cursors.SizeAll, IsHitTestVisible = true,
+                Fill = null
+            };
+            Canvas.SetLeft(ringHit, cx - rx - 8);
+            Canvas.SetTop(ringHit, cy - ry - 8);
+            ringHit.MouseLeftButtonDown += (s, e) =>
+            {
+                _fullDraggingRadiusRing = true;
+                ov.CaptureMouse();
+                e.Handled = true;
+            };
+            ov.Children.Add(ringHit);
+            // R-v125-E15b：停点几何与小窗 DrawRadialHandles 逐条对齐——45° 半径方向（上右）分布、
+            // 每个非端点停点（0.02~0.98）画 offset×半径的同心虚线圆（选中红色）、停点外加红虚线小环。
+            foreach (var stop in _settings.GetStops(_previewDark).OrderBy(x => x.Offset))
+            {
+                double t = stop.Offset;
+                double px = cx + t * rx * K45;
+                double py = cy - t * ry * K45;
+                if (t > 0.02 && t < 0.98)
+                {
+                    double crx = t * rx, cry = t * ry;
+                    var ring2 = new Ellipse
+                    {
+                        Width = crx * 2, Height = cry * 2,
+                        Stroke = _selectedStop == stop ? DotRedBrush : AxisStrokeBrush,
+                        StrokeThickness = _selectedStop == stop ? 1.5 : 1,
+                        StrokeDashArray = new DoubleCollection { 5, 4 },
+                        Fill = Brushes.Transparent, IsHitTestVisible = false
+                    };
+                    Canvas.SetLeft(ring2, cx - crx);
+                    Canvas.SetTop(ring2, cy - cry);
+                    ov.Children.Add(ring2);
+                // R-v125-E17（用户反馈「松开后二次拖动还是上一次的虚线」查实）：1px 虚线细带抓不住，
+                // 实际点击穿透到外圈 16px 走廊 → 永远拖到半径环。现给每条停点同心环加 16px 命中走廊、
+                // 红小环加 12px 走廊（内圈在后=置顶优先抓取）；细线回退为纯显示。
+                var ring2Hit = new Ellipse
+                {
+                    Width = crx * 2 + 16, Height = cry * 2 + 16,
+                    Stroke = Brushes.Transparent, StrokeThickness = 16,
+                    Cursor = Cursors.SizeAll, IsHitTestVisible = true,
+                    Fill = null
+                };
+                Canvas.SetLeft(ring2Hit, cx - crx - 8);
+                Canvas.SetTop(ring2Hit, cy - cry - 8);
+                {
+                    var st = stop;
+                    ring2Hit.MouseLeftButtonDown += (s, e) =>
+                    {
+                        _selectedStop = st;
+                        _selectedBlob = null;
+                        _currentColor = BackgroundSettings.ParseColor(st.Color);
+                        UpdateColor(_currentColor, true);
+                        RefreshStopList();
+                        UpdateEditLabel();
+                        _fullDraggingStop = st;
+                        _fullDragStartMouse = e.GetPosition(ov);
+                        ov.CaptureMouse();
+                        e.Handled = true;
+                    };
+                }
+                ov.Children.Add(ring2Hit);
+                }
+                var dotRing = new Ellipse
+                {
+                    Width = 20, Height = 20,
+                    Stroke = DotRedBrush, StrokeThickness = 1.5,
+                    StrokeDashArray = new DoubleCollection { 3, 2 },
+                    Fill = Brushes.Transparent, IsHitTestVisible = false
+                };
+                Canvas.SetLeft(dotRing, px - 10);
+                Canvas.SetTop(dotRing, py - 10);
+                ov.Children.Add(dotRing);
+                var dotRingHit = new Ellipse
+                {
+                    Width = 20 + 12, Height = 20 + 12,
+                    Stroke = Brushes.Transparent, StrokeThickness = 12,
+                    Cursor = Cursors.SizeAll, IsHitTestVisible = true,
+                    Fill = null
+                };
+                Canvas.SetLeft(dotRingHit, px - 16);
+                Canvas.SetTop(dotRingHit, py - 16);
+                {
+                    var st = stop;
+                    dotRingHit.MouseLeftButtonDown += (s, e) =>
+                    {
+                        _selectedStop = st;
+                        _selectedBlob = null;
+                        _currentColor = BackgroundSettings.ParseColor(st.Color);
+                        UpdateColor(_currentColor, true);
+                        RefreshStopList();
+                        UpdateEditLabel();
+                        _fullDraggingStop = st;
+                        _fullDragStartMouse = e.GetPosition(ov);
+                        ov.CaptureMouse();
+                        e.Handled = true;
+                    };
+                }
+                ov.Children.Add(dotRingHit);
+                var dot = new Ellipse
+                {
+                    Width = 16, Height = 16, StrokeThickness = 2,
+                    Cursor = Cursors.SizeAll, IsHitTestVisible = true,
+                    Fill = MakeColorBrush(stop.Color),
+                    Stroke = InvertBrush(GradientColorAt(t)),
+                    Opacity = 0.92
+                };
+                Canvas.SetLeft(dot, px - 8);
+                Canvas.SetTop(dot, py - 8);
+                dot.MouseLeftButtonDown += (s, e) =>
+                {
+                    _selectedStop = stop;
+                    _selectedBlob = null;
+                    _currentColor = BackgroundSettings.ParseColor(stop.Color);
+                    UpdateColor(_currentColor, true);
+                    RefreshStopList();
+                    UpdateEditLabel();
+                    _fullDraggingStop = stop;
+                    _fullDragStartMouse = e.GetPosition(ov);
+                    ov.CaptureMouse();
+                    e.Handled = true;
+                };
+                ov.Children.Add(dot);
+            }
+        }
+
+        private void SyncFullPreviewToolbar()
+        {
+            if (_fullPreviewModeCombo == null) return;
+            int target = -1;
+            for (int i = 0; i < _modeCombo.Items.Count; i++)
+            {
+                if (System.Object.Equals((_modeCombo.Items[i] as ComboBoxItem)?.Tag, _settings.Mode)) { target = i; break; }
+            }
+            // 防重入：大窗下拉触发主弹窗切换会再走 RefreshPreview→本方法，选中已一致时直接跳过
+            if (_fullPreviewModeCombo.SelectedIndex != target && target >= 0)
+                _fullPreviewModeCombo.SelectedIndex = target;
+            if (_radialShapeToggle != null)
+                _radialShapeToggle.Visibility = _settings.Mode == BackgroundMode.RadialGradient
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
         }
 
         /// <summary>双列布局通用滑块行：标签(自动) + 滑块(占满列宽) + 数值显示(40, 可带单位后缀)。
@@ -1266,6 +2145,13 @@ namespace CpqSystemTool
             RefreshPreview();
         }
 
+        // R-v124-C4（v1.25）：blob 行输入框统一解析——IsFinite 守卫（NumberStyles.Float 会把 "NaN"/"Infinity"
+        // 解析成功，NaN 半径写进模型会让椭圆渲染出 NaN 几何），半径钳制改用模型层 MinBlobRadius/MaxBlobRadius
+        //（与 CSS 往返同源；旧 UI 钳 [0.05,1] 与模型 [0.01,10] 两套边界互相打架）。
+        private bool TryParseBlobBox(TextBox box, out double v)
+            => double.TryParse(box.Text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v)
+               && !double.IsNaN(v) && !double.IsInfinity(v);
+
         private void TryParseBox(TextBox box, Action<double> setter, Action onChanged)
         {
             if (_isUpdating) return;
@@ -1312,7 +2198,7 @@ namespace CpqSystemTool
                 Foreground = _owner._textMain,
                 Width = 74,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 6, 0)
+                Margin = new Thickness(0, 0, 6, 0),
             };
             Grid.SetColumn(opLabel, 0);
             row.Children.Add(opLabel);
@@ -1334,7 +2220,7 @@ namespace CpqSystemTool
                 Foreground = _owner._accent,
                 VerticalAlignment = VerticalAlignment.Center,
                 MinWidth = 34,
-                Margin = new Thickness(0, 0, 6, 0)
+                Margin = new Thickness(0, 0, 6, 0),
             };
             var localSlider = slider;
             var localValText = valText;
@@ -1523,12 +2409,14 @@ namespace CpqSystemTool
             if (_applyHarmonyGradBtn != null) _applyHarmonyGradBtn.IsEnabled = showStops;
             if (_applyHarmonyMeshBtn != null) _applyHarmonyMeshBtn.IsEnabled = showBlobs;
             // P1c：CSS 卡片在 线性/径向/网格 均可见（原先仅网格）；网格专属按钮（随机光斑/SVG）仅网格显示
+            // R-v125-E1：导出 SVG 扩展到 线性/径向/纯色（原仅网格）；纯色一并纳入 CSS 卡片（cssBox 显示色值）
             bool showCss = _settings.Mode == BackgroundMode.LinearGradient
                          || _settings.Mode == BackgroundMode.RadialGradient
-                         || _settings.Mode == BackgroundMode.MeshGradient;
+                         || _settings.Mode == BackgroundMode.MeshGradient
+                         || _settings.Mode == BackgroundMode.Solid;   // R-v125-E1：纯色也可导 SVG/复制色值
             SetVisibility(_cssCard, showCss);
             SetVisibility(_randMeshBtn, showBlobs);
-            SetVisibility(_exportSvgBtn, showBlobs);
+            SetVisibility(_exportSvgBtn, showCss);   // R-v125-E1：全渐变+纯色可导出
             // 切模式时按当前预览套（_previewDark）刷新 CSS 文本：所见即所导
             if (showCss && _cssBox != null)
             {
@@ -1539,6 +2427,8 @@ namespace CpqSystemTool
                     _cssBox.Text = BackgroundSettings.ToCssRadial(_settings.RadialCenterX, _settings.RadialCenterY, _settings.RadialRadiusX, _settings.RadialRadiusY, stops);
                 else if (showBlobs)
                     _cssBox.Text = BackgroundSettings.ToCssGradient(_settings.GetBlobs(_previewDark));
+                else if (_settings.Mode == BackgroundMode.Solid)
+                    _cssBox.Text = _settings.SolidColor;   // R-v125-E1：纯色显示色值（复制可用）
             }
 
             // 网格底色行（并入颜色卡）：仅网格模式可见
@@ -1588,8 +2478,11 @@ namespace CpqSystemTool
         /// 调用方只把结果赋给 Fill/Background/Stroke，不再修改笔刷属性，因此冻结是安全的：
         /// 冻结后 WPF 跳过 Freezable 的变更订阅与失效传播，重复赋值开销显著降低。</summary>
         private static SolidColorBrush MakeColorBrush(string hex)
+            => MakeColorBrush(BackgroundSettings.ParseColor(hex));
+
+        /// <summary>R-v124-C6（v1.25）：Color 直取重载（同缓存池，拖拽热路径避免每帧 new SolidColorBrush）。</summary>
+        private static SolidColorBrush MakeColorBrush(Color color)
         {
-            var color = BackgroundSettings.ParseColor(hex);
             lock (BrushCacheLock)
             {
                 SolidColorBrush cached;
@@ -1601,6 +2494,9 @@ namespace CpqSystemTool
                 return brush;
             }
         }
+
+        // R-v124-C6（v1.25）：红色标记常量笔刷（虚线环/实心圆）——旧实现每帧 new，现共享一份冻结
+        private static readonly SolidColorBrush DotRedBrush = FrozenBrush(Colors.Red);
 
         private void RefreshStopList()
         {
@@ -1914,22 +2810,22 @@ namespace CpqSystemTool
 
             row.Children.Add(new TextBlock { Text = "X", Foreground = _owner._textDim, FontSize = 10.0, VerticalAlignment = VerticalAlignment.Center });
             var xBox = new TextBox { Width = 36, Background = _owner._inputBg, Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 4, 0) };
-            xBox.TextChanged += (s, e) => { if (double.TryParse(xBox.Text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v)) { blob.CenterX = Math.Max(0, Math.Min(1, v)); _hasEditedAfterShow = true; RefreshPreview(); } };
+            xBox.TextChanged += (s, e) => { if (TryParseBlobBox(xBox, out double v)) { blob.CenterX = Math.Max(0, Math.Min(1, v)); _hasEditedAfterShow = true; RefreshPreview(); } };
             row.Children.Add(xBox);
 
             row.Children.Add(new TextBlock { Text = "Y", Foreground = _owner._textDim, FontSize = 10.0, VerticalAlignment = VerticalAlignment.Center });
             var yBox = new TextBox { Width = 36, Background = _owner._inputBg, Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 4, 0) };
-            yBox.TextChanged += (s, e) => { if (double.TryParse(yBox.Text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v)) { blob.CenterY = Math.Max(0, Math.Min(1, v)); _hasEditedAfterShow = true; RefreshPreview(); } };
+            yBox.TextChanged += (s, e) => { if (TryParseBlobBox(yBox, out double v)) { blob.CenterY = Math.Max(0, Math.Min(1, v)); _hasEditedAfterShow = true; RefreshPreview(); } };
             row.Children.Add(yBox);
 
             row.Children.Add(new TextBlock { Text = "R", Foreground = _owner._textDim, FontSize = 10.0, VerticalAlignment = VerticalAlignment.Center });
             var rBox = new TextBox { Width = 36, Background = _owner._inputBg, Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 4, 0) };
-            rBox.TextChanged += (s, e) => { if (double.TryParse(rBox.Text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v)) { blob.Radius = Math.Max(0.05, Math.Min(1, v)); _hasEditedAfterShow = true; RefreshPreview(); } };
+            rBox.TextChanged += (s, e) => { if (TryParseBlobBox(rBox, out double v)) { blob.Radius = Math.Max(BackgroundSettings.MinBlobRadius, Math.Min(BackgroundSettings.MaxBlobRadius, v)); _hasEditedAfterShow = true; RefreshPreview(); } };
             row.Children.Add(rBox);
 
             row.Children.Add(new TextBlock { Text = "A", Foreground = _owner._textDim, FontSize = 10.0, VerticalAlignment = VerticalAlignment.Center });
             var aBox = new TextBox { Width = 36, Background = _owner._inputBg, Foreground = _owner._inputFg, BorderBrush = _owner._panelBorder, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 4, 0) };
-            aBox.TextChanged += (s, e) => { if (double.TryParse(aBox.Text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v)) { blob.Opacity = Math.Max(0, Math.Min(1, v)); _hasEditedAfterShow = true; RefreshPreview(); } };
+            aBox.TextChanged += (s, e) => { if (TryParseBlobBox(aBox, out double v)) { blob.Opacity = Math.Max(0, Math.Min(1, v)); _hasEditedAfterShow = true; RefreshPreview(); } };
             row.Children.Add(aBox);
 
             var del = new Button
@@ -2196,8 +3092,9 @@ namespace CpqSystemTool
                     // 「深浅背景切换」：预览按「当前预览套」渲染（_previewDark=false 取浅色套，空则回退深色套）。
                     // 网格光斑层同源刷新（与主窗口 BgBlobs 同一 PopulateBlobCanvas + 取套逻辑）。
                     _previewRect.Fill = _owner.BuildBackgroundBrushPreview(_settings, _previewDark);
-                    if (_settings.Mode == BackgroundMode.MeshGradient && _blobCanvas != null && _blobCanvas.Width > 1)
-                        MainWindow.PopulateBlobCanvas(_blobCanvas, _settings.GetBlobs(_previewDark), _blobCanvas.Width, _blobCanvas.Height);
+                    if (_settings.Mode == BackgroundMode.MeshGradient && _blobCanvas != null && _blobCanvas.ActualWidth > 1)
+                    // R-v125-E9：原条件 Width > 1 恒假（Canvas.Width 默认 NaN）→ 光斑层永不刷新；改 ActualWidth/Height
+                    MainWindow.PopulateBlobCanvas(_blobCanvas, _settings.GetBlobs(_previewDark), _blobCanvas.ActualWidth, _blobCanvas.ActualHeight);
                     else if (_settings.Mode != BackgroundMode.MeshGradient)
                         _blobCanvas?.Children.Clear();
                 }
@@ -2210,6 +3107,8 @@ namespace CpqSystemTool
                 SetCssStatus("预览刷新失败（参数可能超出范围）：" + ex.Message);
             }
             RefreshOverlayHandles();
+            // R-v125-E5：完整预览窗开着时跟随主弹窗刷新（切模式/改参数即时同步，不要求再点「预览」）
+            if (_fullPreviewWindow != null && _fullPreviewWindow.IsVisible) UpdateFullPreviewContent();
         }
 
         /// <summary>
@@ -2325,7 +3224,10 @@ namespace CpqSystemTool
         private void RefreshMeshHandles()
         {
             if (_previewOverlay == null) return;
-            if (_settings.Mode != BackgroundMode.MeshGradient || _settings.Blobs == null)
+            // R-v125-E9：画布/句柄/清理统一活动套（列表/预览用 GetBlobs(_previewDark)，旧实现写死深色调，
+            // 浅色套编辑时「列表=浅色光斑、画布=深色光斑」不一致）
+            var activeBlobsForHandles = _settings.GetBlobs(_previewDark);
+            if (_settings.Mode != BackgroundMode.MeshGradient || activeBlobsForHandles == null)
             {
                 _previewOverlay.Children.Clear();
                 _blobHandles.Clear();
@@ -2339,14 +3241,14 @@ namespace CpqSystemTool
             // 光斑渲染层：与主窗口共用 PopulateBlobCanvas（底色由 _previewRect 的 SolidColorBrush 铺满）
             if (_blobCanvas != null)
             {
-                MainWindow.PopulateBlobCanvas(_blobCanvas, _settings.Blobs, w, h);
+                MainWindow.PopulateBlobCanvas(_blobCanvas, activeBlobsForHandles, w, h);
             }
 
             // 删除已不存在的句柄（先 -= 再从 dict 移除，避免 Ellipse 仍引用 handler 导致订阅泄漏）
             var removed = new List<MeshBlobSetting>();
             foreach (var kv in _blobHandles)
             {
-                if (!_settings.Blobs.Contains(kv.Key))
+                if (!activeBlobsForHandles.Contains(kv.Key))
                 {
                     kv.Value.MouseLeftButtonDown -= BlobHandle_MouseLeftButtonDown;
                     _previewOverlay.Children.Remove(kv.Value);
@@ -2354,9 +3256,20 @@ namespace CpqSystemTool
                 }
             }
             foreach (var r in removed) _blobHandles.Remove(r);
+            // 同步清理已删除光斑的半径圈（纯显示无事件，直接移除）
+            var ringGone = new List<MeshBlobSetting>();
+            foreach (var kv in _blobRings)
+            {
+                if (!activeBlobsForHandles.Contains(kv.Key))
+                {
+                    _previewOverlay.Children.Remove(kv.Value);
+                    ringGone.Add(kv.Key);
+                }
+            }
+            foreach (var r in ringGone) _blobRings.Remove(r);
 
             // 创建或更新句柄
-            foreach (var blob in _settings.Blobs)
+            foreach (var blob in activeBlobsForHandles)   // R-v125-E9：句柄与画布同源（活动套）
             {
                 if (!_blobHandles.TryGetValue(blob, out var ellipse))
                 {
@@ -2381,6 +3294,28 @@ namespace CpqSystemTool
                 Canvas.SetLeft(ellipse, blob.CenterX * w - ellipse.Width / 2);
                 Canvas.SetTop(ellipse, blob.CenterY * h - ellipse.Height / 2);
                 ellipse.Visibility = Visibility.Visible;
+
+                // 光斑虚线半径圈（与径向停靠点同心圆同视觉语言）：半径口径 = blob.Radius × 画布短边
+                //（与 PopulateBlobCanvas 光斑渲染同源，圈即该光斑实际衰减到透明的边界）
+                if (!_blobRings.TryGetValue(blob, out var ring))
+                {
+                    ring = new Ellipse
+                    {
+                        StrokeThickness = 1,
+                        StrokeDashArray = new DoubleCollection { 5, 4 },
+                        Fill = Brushes.Transparent,
+                        IsHitTestVisible = false
+                    };
+                    _blobRings[blob] = ring;
+                    _previewOverlay.Children.Add(ring);
+                }
+                double pr = blob.Radius * Math.Min(w, h);
+                ring.Width = pr * 2;
+                ring.Height = pr * 2;
+                ring.Stroke = isSel ? _owner._accent : AxisStrokeBrush;
+                Canvas.SetLeft(ring, blob.CenterX * w - pr);
+                Canvas.SetTop(ring, blob.CenterY * h - pr);
+                ring.Visibility = Visibility.Visible;
             }
         }
 
@@ -2452,9 +3387,9 @@ namespace CpqSystemTool
                     double cx = _settings.RadialCenterX * w, cy = _settings.RadialCenterY * h;
                     double rx = Math.Max(2, _settings.RadialRadiusX * w), ry = Math.Max(2, _settings.RadialRadiusY * h);
                     double dx = pos2.X - cx, dy = pos2.Y - cy;
-                    // 投影到 45° 椭圆半径方向 (rx·K45, −ry·K45)：offset = (dx·rx − dy·ry) / (K45·(rx²+ry²))
-                    double denom = K45 * (rx * rx + ry * ry);
-                    _draggingStop.Offset = Clamp((dx * rx - dy * ry) / Math.Max(1, denom), 0, 1);
+                    // R-v125-E19：椭圆归一化距离（与大窗同公式）——旧 45° 投影只有 45° 方向分量生效，
+                    // 虚线跟不上鼠标；现任意方向拖动 1:1 跟手（0=中心、1=外圈）。
+                    _draggingStop.Offset = Clamp(Math.Sqrt((dx / rx) * (dx / rx) + (dy / ry) * (dy / ry)), 0, 1);
                 }
                 _hasEditedAfterShow = true;
                 UpdateStopRow(_draggingStop);
@@ -2491,6 +3426,27 @@ namespace CpqSystemTool
                 RefreshPreview();
                 return;
             }
+            // R-v125-E16b：拖小窗外圈半径环 = 同时改横/纵半径（正圆 16:9 联动同 E7d 口径）
+            if (_draggingRadiusRing)
+            {
+                double nxx = pos2.X / w, nyy = pos2.Y / h;
+                double nrx = Clamp(Math.Abs(nxx - _settings.RadialCenterX), 0.02, 2.0);
+                double nry = Clamp(Math.Abs(nyy - _settings.RadialCenterY), 0.02, 2.0);
+                if (_radialLinkedRadius)
+                {
+                    _settings.RadialRadiusX = nrx;
+                    _settings.RadialRadiusY = Clamp(nrx * 16.0 / 9.0, 0.02, 2.0);
+                }
+                else
+                {
+                    _settings.RadialRadiusX = nrx;
+                    _settings.RadialRadiusY = nry;
+                }
+                _hasEditedAfterShow = true;
+                SyncGeometryBoxes();
+                RefreshPreview();
+                return;
+            }
             if (_draggingRadialCenter)
             {
                 _settings.RadialCenterX = Clamp(pos2.X / w, 0, 1);
@@ -2505,6 +3461,8 @@ namespace CpqSystemTool
             {
                 double cx = _settings.RadialCenterX * w;
                 _settings.RadialRadiusX = Clamp((pos2.X - cx) / w, 0.02, 2.0);
+                // R-v125-E7d：正圆联动 = 16:9 视觉正圆（纵半径 = 横半径 × 16/9；切到椭圆才独立）
+                if (_radialLinkedRadius) _settings.RadialRadiusY = Clamp(_settings.RadialRadiusX * 16.0 / 9.0, 0.02, 2.0);
                 _hasEditedAfterShow = true;
                 SyncGeometryBoxes();
                 RefreshOverlayHandles();
@@ -2515,6 +3473,8 @@ namespace CpqSystemTool
             {
                 double cy = _settings.RadialCenterY * h;
                 _settings.RadialRadiusY = Clamp((pos2.Y - cy) / h, 0.02, 2.0);
+                // R-v125-E7d：正圆联动 = 16:9 视觉正圆（横半径 = 纵半径 × 9/16；切到椭圆才独立）
+                if (_radialLinkedRadius) _settings.RadialRadiusX = Clamp(_settings.RadialRadiusY * 9.0 / 16.0, 0.02, 2.0);
                 _hasEditedAfterShow = true;
                 SyncGeometryBoxes();
                 RefreshOverlayHandles();
@@ -2533,6 +3493,7 @@ namespace CpqSystemTool
             if (_draggingRadialCenter) { _draggingRadialCenter = false; handled = true; }
             if (_draggingRadiusX) { _draggingRadiusX = false; handled = true; }
             if (_draggingRadiusY) { _draggingRadiusY = false; handled = true; }
+            if (_draggingRadiusRing) { _draggingRadiusRing = false; handled = true; }   // R-v125-E16b：半径环拖拽态复位（防残留导致二次拖拽错位）
             if (handled)
             {
                 if (_previewOverlay.IsMouseCaptured) _previewOverlay.ReleaseMouseCapture();
@@ -2554,9 +3515,12 @@ namespace CpqSystemTool
                 return;
             }
 
-            // 非 mesh：清掉残留的 mesh 句柄与光斑层
+            // 非 mesh：清掉残留的 mesh 句柄、半径圈与光斑层
+            // （R-v125-E2：_blobRings 是后加的，切模式时漏清 → 线性/径向预览残留网格虚线圈）
             foreach (var kv in _blobHandles) _previewOverlay.Children.Remove(kv.Value);
             _blobHandles.Clear();
+            foreach (var kv in _blobRings) _previewOverlay.Children.Remove(kv.Value);
+            _blobRings.Clear();
             if (_blobCanvas != null) _blobCanvas.Children.Clear();
 
             double w = Math.Max(1, _previewOverlay.ActualWidth);
@@ -2636,7 +3600,7 @@ namespace CpqSystemTool
                 StrokeThickness = 0,
                 Cursor = Cursors.SizeAll,
                 IsHitTestVisible = true,
-                Fill = new SolidColorBrush(Colors.Red)   // 小红色实心圆（用户指定，不做多层）
+                Fill = DotRedBrush   // 小红色实心圆（用户指定，不做多层；R-v124-C6 冻结共享）
             };
             Canvas.SetLeft(cDot, cx * w - 5);
             Canvas.SetTop(cDot, cy * h - 5);
@@ -2731,6 +3695,24 @@ namespace CpqSystemTool
             Canvas.SetLeft(ring, cx - rx);
             Canvas.SetTop(ring, cy - ry);
             _previewOverlay.Children.Add(ring);
+            // R-v125-E16b：外圈 16px 隐形命中走廊——直接拖虚线改半径（不必抓小圆点）；
+            // 命中走廊垫在停点控件之下（下面先建，再建停点，停点优先抓取）
+            var ringHit = new Ellipse
+            {
+                Width = rx * 2 + 16, Height = ry * 2 + 16,
+                Stroke = System.Windows.Media.Brushes.Transparent, StrokeThickness = 16,
+                Cursor = Cursors.SizeAll, IsHitTestVisible = true,
+                Fill = null
+            };
+            Canvas.SetLeft(ringHit, cx - rx - 8);
+            Canvas.SetTop(ringHit, cy - ry - 8);
+            ringHit.MouseLeftButtonDown += (s, e) =>
+            {
+                _draggingRadiusRing = true;
+                _previewOverlay.CaptureMouse();
+                e.Handled = true;
+            };
+            _previewOverlay.Children.Add(ringHit);
             _gradientOverlayItems.Add(ring);
 
             var center = new Ellipse
@@ -2739,7 +3721,7 @@ namespace CpqSystemTool
                 StrokeThickness = 0,
                 Cursor = Cursors.SizeAll,
                 IsHitTestVisible = true,
-                Fill = new SolidColorBrush(Colors.Red)   // 小红色实心圆（统一样式）
+                Fill = DotRedBrush   // 小红色实心圆（统一样式；R-v124-C6 冻结共享）
             };
             Canvas.SetLeft(center, cx - 5);
             Canvas.SetTop(center, cy - 5);
@@ -2784,6 +3766,55 @@ namespace CpqSystemTool
             {
                 double px = cx + stop.Offset * rx * K45;
                 double py = cy - stop.Offset * ry * K45;
+                // 停靠点虚线同心圆（用户提议：径向渐变停靠点按半径位置画同心圆更直观）：
+                // 每个非端点停靠点（0.02~0.98，1.0 已被外层半径大圈覆盖、0.0 即中心点）画一条
+                // 对应 offset 半径的虚线同心圆；选中停靠点的同心圆高亮红色（对应关系一目了然）。
+                // 45° 小圆保留为操作句柄（点击选中/拖拽改 offset），同心圆仅显示（不可命中）。
+                if (stop.Offset > 0.02 && stop.Offset < 0.98)
+                {
+                    double crx = stop.Offset * rx, cry = stop.Offset * ry;
+                    var ring2 = new Ellipse
+                    {
+                        Width = crx * 2, Height = cry * 2,
+                        Stroke = _selectedStop == stop ? DotRedBrush : AxisStrokeBrush,
+                        StrokeThickness = _selectedStop == stop ? 1.5 : 1,
+                        StrokeDashArray = new DoubleCollection { 5, 4 },
+                        Fill = Brushes.Transparent,
+                        IsHitTestVisible = false   // R-v125-E17：细线纯显示，命中交给 16px 走廊
+                    };
+                    Canvas.SetLeft(ring2, cx - crx);
+                    Canvas.SetTop(ring2, cy - cry);
+                    _previewOverlay.Children.Add(ring2);
+                    _gradientOverlayItems.Add(ring2);
+                    // R-v125-E17：停点同心环 16px 命中走廊（内圈优先），细线本身抓不住
+                    var ring2Hit = new Ellipse
+                    {
+                        Width = crx * 2 + 16, Height = cry * 2 + 16,
+                        Stroke = System.Windows.Media.Brushes.Transparent, StrokeThickness = 16,
+                        Cursor = Cursors.SizeAll, IsHitTestVisible = true,
+                        Fill = null
+                    };
+                    Canvas.SetLeft(ring2Hit, cx - crx - 8);
+                    Canvas.SetTop(ring2Hit, cy - cry - 8);
+                    {
+                        var st = stop;
+                        ring2Hit.MouseLeftButtonDown += (s, e) =>
+                        {
+                            _selectedStop = st;
+                            _selectedBlob = null;
+                            _currentColor = BackgroundSettings.ParseColor(st.Color);
+                            UpdateColor(_currentColor, true);
+                            RefreshStopList();
+                            UpdateEditLabel();
+                            _draggingStop = st;
+                            _dragStartMouse = e.GetPosition(_previewOverlay);
+                            _previewOverlay.CaptureMouse();
+                            e.Handled = true;
+                        };
+                    }
+                    _previewOverlay.Children.Add(ring2Hit);
+                    _gradientOverlayItems.Add(ring2Hit);
+                }
                 AddDotRing(px, py, 20);
                 var dot = new Ellipse
                 {
@@ -3264,8 +4295,9 @@ namespace CpqSystemTool
         // ===== 标记统一样式（用户指定）=====
         // 外侧 = 红色虚线圆（透明底色，不影响内部实线圆显示）；内侧实线圆描边 = 底色取反色（= 最大对比度）；
         // 中心点 = 小红色实心圆（不做多层）。
+        // R-v124-C6（v1.25）：取反色走冻结缓存（拖拽每帧多次调用，旧实现每次 new）
         private static Brush InvertBrush(Color under) =>
-            new SolidColorBrush(Color.FromArgb(255, (byte)(255 - under.R), (byte)(255 - under.G), (byte)(255 - under.B)));
+            MakeColorBrush(Color.FromArgb(255, (byte)(255 - under.R), (byte)(255 - under.G), (byte)(255 - under.B)));
 
         // 外侧红色虚线环（透明底色）
         private void AddDotRing(double x, double y, double size)
@@ -3273,7 +4305,7 @@ namespace CpqSystemTool
             var ring = new Ellipse
             {
                 Width = size, Height = size,
-                Stroke = new SolidColorBrush(Colors.Red),
+                Stroke = DotRedBrush,
                 StrokeThickness = 1.5,
                 StrokeDashArray = new DoubleCollection { 3, 2 },
                 Fill = Brushes.Transparent,
@@ -3314,11 +4346,14 @@ namespace CpqSystemTool
             _cssStatus.Visibility = string.IsNullOrEmpty(msg) ? Visibility.Collapsed : Visibility.Visible;
         }
 
-        // 下拉框宽度贴合当前选项文字（用户：背景类型下拉过宽——按字数 2/4 字自适应）
+        // R-v125-E21（用户反馈「下拉框宽度会变」）：旧实现按选中项字数自适应（图片=64px、径向渐变=88px），
+        // 切换选项时宽度跳变。现固定 96px（按最宽项 4 字预留，与初始 Width 一致），各模式下宽度不变。
         private void FitModeComboWidth()
         {
-            var txt = (_modeCombo.SelectedItem as ComboBoxItem)?.Content as string;
-            if (txt != null) _modeCombo.Width = txt.Length * 12.0 + 40;
+            // R-v125-E26：与构造器一致（内边距 0 + 固定 72），各模式统一不跳
+            _modeCombo.Width = 72;
+            _modeCombo.MinWidth = 72;
+            _modeCombo.Padding = new Thickness(6, 1, 1, 1);   // 左 6 与列表项对齐（E26d）
         }
 
         private static void SetFmt(Grid block, string text)
@@ -3885,7 +4920,7 @@ namespace CpqSystemTool
             // 标题行 =「预设色板」+ 括号说明（用户：括号内容足够描述，放在标题后一行即可，删独立提示行省一行）
             var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
             titleRow.Children.Add(new TextBlock { Text = "预设色板", FontWeight = FontWeights.SemiBold, Foreground = _owner._textMain, VerticalAlignment = VerticalAlignment.Center });
-            titleRow.Children.Add(new TextBlock { Text = "（纯色=底色 / 渐变=停靠点 / 网格=光斑）", FontSize = 11, Foreground = _owner._textDim, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) });
+            titleRow.Children.Add(new TextBlock { Text = "（纯色=点色块任选 / 渐变=停靠点 / 网格=底色+光斑）", FontSize = 11, Foreground = _owner._textDim, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) });
             sp.Children.Add(titleRow);
             // 修复（列数不匀）：原 WrapPanel 按可用宽度自动换行，12 套排成 4/3/3/2 每行列数不一致（用户指出）。
             // 改固定 4列×3行 Grid，每列等宽、每行等高；每格内部「名称在上 + 4 色块在下」堆叠，
@@ -3914,15 +4949,27 @@ namespace CpqSystemTool
                 var swRow = new StackPanel { Orientation = Orientation.Horizontal };
                 foreach (var blob in preset.Blobs.Take(4))
                 {
-                    swRow.Children.Add(new Border
+                    var blobColor = blob.Color;
+                    var sw = new Border
                     {
                         Width = 12, Height = 12,
                         CornerRadius = new CornerRadius(2),
                         Margin = new Thickness(0, 0, 4, 0),
-                        Background = new SolidColorBrush(BackgroundSettings.ParseColor(blob.Color)),
+                        Background = new SolidColorBrush(BackgroundSettings.ParseColor(blobColor)),
                         BorderBrush = _owner._panelBorder,
-                        BorderThickness = new Thickness(1)
-                    });
+                        BorderThickness = new Thickness(1),
+                        Cursor = Cursors.Hand,
+                        ToolTip = "纯色模式下点色块 = 直接用此色（预设色板含多色，不必只用第一个）"
+                    };
+                    // R-v125-E11b（用户反馈「色板有多个颜色，不能只按第一个色为准」）：
+                    // 纯色模式下每个色块可单独点选；渐变/网格/图片模式仍走整组按钮语义。
+                    sw.MouseLeftButtonDown += (s, e) =>
+                    {
+                        if (_settings.Mode != BackgroundMode.Solid) return;
+                        ApplySolidColorFromPalette(blobColor);
+                        e.Handled = true;   // 阻止冒泡到整组按钮（避免再套用首个色块）
+                    };
+                    swRow.Children.Add(sw);
                 }
                 content.Children.Add(swRow);
                 btn.Content = content;
@@ -3937,7 +4984,23 @@ namespace CpqSystemTool
             parent.Children.Add(_paletteCard);
         }
 
-        /// <summary>把预设配色方案应用到当前模式：网格→光斑 / 纯色→底色 / 线性、径向→均布停靠点 / 图片→切线性再应用。</summary>
+        /// <summary>R-v125-E11b：把指定十六进制色应用到纯色模式（写入活动套 + 同步色轮/选中/预览）。
+        /// 整组色板点击（默认首块）与单色块点击共用。</summary>
+        private void ApplySolidColorFromPalette(string hexColor)
+        {
+            WriteSolidHex(hexColor);   // 「分别编辑浅色套」：写入活动套
+            _selectedStop = null;
+            _selectedBlob = null;
+            _currentColor = BackgroundSettings.ParseColor(_settings.GetSolidColor(_previewDark));
+            _isUpdating = true;
+            try { UpdateColor(_currentColor, true); }
+            finally { _isUpdating = false; }
+            _hasEditedAfterShow = true;
+            RefreshPreview();
+            UpdateEditLabel();
+        }
+
+        /// <summary>把预设配色方案应用到当前模式：网格→底色+光斑 / 纯色→整组=首块（单块可点选，E11b）/ 线性、径向→均布停靠点 / 图片→切线性再应用。</summary>
         private void ApplyPaletteToCurrentMode(BackgroundSettings.MeshPreset preset)
         {
             if (preset == null) return;
@@ -3948,16 +5011,10 @@ namespace CpqSystemTool
             }
             if (_settings.Mode == BackgroundMode.Solid)
             {
-                WriteSolidHex(preset.BaseColor);   // 「分别编辑浅色套」：写入活动套
-                _selectedStop = null;
-                _selectedBlob = null;
-                _currentColor = BackgroundSettings.ParseColor(_settings.GetSolidColor(_previewDark));
-                _isUpdating = true;
-                try { UpdateColor(_currentColor, true); }
-                finally { _isUpdating = false; }
-                _hasEditedAfterShow = true;
-                RefreshPreview();
-                UpdateEditLabel();
+                // R-v125-E11/E11b：纯色整组点击 = 首个色块（默认）；单色块点击 = 该色（ApplySolidColorFromPalette）
+                ApplySolidColorFromPalette((preset.Blobs != null && preset.Blobs.Count > 0)
+                    ? preset.Blobs[0].Color
+                    : preset.BaseColor);
                 return;
             }
             var colors = preset.Blobs.Select(b => b.Color).Distinct().Take(5).ToList();
@@ -4168,24 +5225,47 @@ namespace CpqSystemTool
         {
             try
             {
-                if (_settings.Mode != BackgroundMode.MeshGradient || _settings.Blobs == null || _settings.Blobs.Count == 0)
-                {
-                    SetCssStatus("SVG 导出仅支持网格渐变模式，且至少需有 1 个光斑。");
-                    return;
-                }
+                // R-v125-E1（v1.25）：SVG 导出扩展到 线性/径向/纯色（原仅网格），画布统一 1920×1080（16:9）；
+                // 光斑/停靠点/纯色均走活动套（C5 口径：所见即所导）
+                if (_settings.Mode == BackgroundMode.Image) { SetCssStatus("图片模式无可导出的渐变内容。"); return; }
+                string fileBase = "background.svg";
+                if (_settings.Mode == BackgroundMode.MeshGradient) fileBase = "mesh-gradient.svg";
+                else if (_settings.Mode == BackgroundMode.LinearGradient) fileBase = "linear-gradient.svg";
+                else if (_settings.Mode == BackgroundMode.RadialGradient) fileBase = "radial-gradient.svg";
                 var dlg = new SaveFileDialog
                 {
                     Filter = "SVG 文件|*.svg|所有文件|*.*",
-                    FileName = "mesh-gradient.svg",
+                    FileName = fileBase,
                     DefaultExt = ".svg",
-                    Title = "导出网格渐变为 SVG",
+                    Title = "导出背景为 SVG（1920×1080，16:9）",
                     InitialDirectory = AppPaths.EnsureDir(AppPaths.WallpaperDir)
                 };
                 if (dlg.ShowDialog() == true)
                 {
-                    var svg = BackgroundSettings.ToSvg(_settings.Blobs, _settings.MeshBaseColor);
+                    string svg;
+                    var stops = _settings.GetStops(_previewDark);
+                    switch (_settings.Mode)
+                    {
+                        case BackgroundMode.MeshGradient:
+                            // R-v124-C5：活动套（旧实现恒取深色套）
+                            svg = BackgroundSettings.ToSvg(_settings.GetBlobs(_previewDark), _settings.GetMeshBaseColor(_previewDark));
+                            break;
+                        case BackgroundMode.LinearGradient:
+                            svg = BackgroundSettings.ToSvgLinear(_settings.GradientAngle, stops);
+                            break;
+                        case BackgroundMode.RadialGradient:
+                            svg = BackgroundSettings.ToSvgRadial(_settings.RadialCenterX, _settings.RadialCenterY, _settings.RadialRadiusX, _settings.RadialRadiusY, stops);
+                            break;
+                        case BackgroundMode.Solid:
+                            svg = BackgroundSettings.ToSvgSolid(_settings.SolidColor);
+                            break;
+                        default:
+                            SetCssStatus("当前模式不支持 SVG 导出。");
+                            return;
+                    }
+                    if (string.IsNullOrEmpty(svg)) { SetCssStatus("导出失败：无可导出的内容。"); return; }
                     AtomicFile.WriteFileAtomic(dlg.FileName, svg);
-                    SetCssStatus("已导出 SVG：" + dlg.FileName);
+                    SetCssStatus("已导出 SVG：" + System.IO.Path.GetFileName(dlg.FileName));
                 }
             }
             catch (Exception ex)
