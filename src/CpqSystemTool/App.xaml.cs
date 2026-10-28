@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text;
 using System.Windows;
@@ -34,6 +34,11 @@ namespace CpqSystemTool
             // 其构造期抛出的异常早于 handler 挂载 → 完全抓不到，程序直接崩、连 crash.log 都没有。
             // 故：先挂 handler，再手动创建主窗口（App.xaml 已移除 StartupUri，窗口仍正常显示）。
             DispatcherUnhandledException += OnDispatcherUnhandled;
+            // R-v125-E10c（用户两次反馈「网格中间有一个方框」）：GPU 硬件渲染管线的 tile 边界
+            // 在低对比渐变上形成可见的居中方形色块（软件渲染器无 GPU tile）。本项目背景层
+            // 均为静态/低频重绘（光斑拖拽只刷弹窗小画布，主窗 1920×1080 背景仅在切页/应用时重画），
+            // 全进程软件渲染的性能代价可接受。若用户侧反馈明显掉帧可移除此行。
+            System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
             // 单实例检查：第二实例不创建新 MainWindow，激活已有窗口后直接退出
             if (!TryAcquireSingleInstance()) return;
             try { System.IO.File.WriteAllText(TracePath, "=== trace " + System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " ===\n"); } catch (Exception caughtEx) { DebugLog.Ignore(caughtEx);  }
