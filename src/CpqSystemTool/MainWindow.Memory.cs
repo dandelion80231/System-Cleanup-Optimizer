@@ -26,6 +26,9 @@ namespace CpqSystemTool
         // ---- 整页缓存（同 M1 常用软件页模式）：首次构建完成后缓存整页外壳，二次进页复用并仅重跑分析刷新数据 ----
         private readonly PageCache<UIElement> _memoryCache = new PageCache<UIElement>();
 
+        // R-v124-C8：内存分析进行中标志（防止并发双分析的 applyUi 交错写 UI）
+        private bool _memoryAnalyzing;
+
         private UIElement BuildMemory()
         {
             // 记录本次构建时主题：缓存仅在主题一致时命中（主题切换会重建当前页，避免复用旧主题刷子的页面）。
@@ -298,6 +301,11 @@ namespace CpqSystemTool
         // 后台拉取并填充所有只读数据。
         private void DoMemoryAnalyze(ProgressBar pb, Action<MemoryAnalyzer.MemoryOverview, MemoryAnalyzer.MemoryUseCounts, List<MemoryAnalyzer.ProcessMemInfo>> applyUi)
         {
+            // R-v124-C8（v1.25）：进行中互斥——分析未完成时再进页/点「重新分析」不再并发第二个分析，
+            // 避免两个 applyUi 交错写同一批 TextBlock（数据互串一帧）。守卫成功置位，done 复位
+            //（RunInBgCore 成功/异常两路径均保证调 done，与全局锁同口径）。
+            if (_memoryAnalyzing) return;
+            _memoryAnalyzing = true;
             pb.Visibility = Visibility.Visible;
             RunInBg(null, l =>
             {
@@ -313,7 +321,7 @@ namespace CpqSystemTool
                 // 其余异常向外抛，由 RunInBgCore 统一记入 UI 日志（[!] 异常: …）而非静默丢进 DebugLog。
                 try { Dispatcher.Invoke(() => applyUi(overview, use, procs)); }
                 catch (System.InvalidOperationException) { /* Dispatcher 已关停（窗口已关闭），忽略 */ }
-            }, "内存分析完成", () => pb.Visibility = Visibility.Collapsed, "正在分析内存…");
+            }, "内存分析完成", () => { pb.Visibility = Visibility.Collapsed; _memoryAnalyzing = false; }, "正在分析内存…");
         }
 
         // 占比条图例：颜色块 + 名称 + 大小 + 百分比。
