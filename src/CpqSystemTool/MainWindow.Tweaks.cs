@@ -163,7 +163,7 @@ namespace CpqSystemTool
 
             TweaksCheckBoxes = checkBoxes;
             TweaksTextBlocks = textBlocks;
-            UpdateSelectedPanel = delegate () { RefreshSelectedList(checkBoxes, selectedPanel); };
+            UpdateSelectedPanel = delegate () { RefreshSelectedList(checkBoxes, selectedPanel); SaveTweaksStateCache(); };
 
             // 同步填充每行 CheckBox + 名称（用默认/未知状态，避免等待注册表读取）
             foreach (var g in groups)
@@ -313,6 +313,13 @@ namespace CpqSystemTool
                     TweaksOptimized = new HashSet<string>(
                         states.Where(kv => kv.Value == true).Select(kv => kv.Key),
                         StringComparer.Ordinal);
+                // R-v125-E4：首帧先套上次关闭前的勾选缓存（右栏秒显，不再等 3 秒）；
+                // 后台真实读取完成后照旧分块修正（真实值优先，缓存只解决速度）
+                if (LoadTweaksStateCache(checkBoxes, textBlocks))
+                {
+                    UpdateSelectedPanel();
+                    SetTweaksOutput("已载入上次的选中状态（后台正在核对系统真实状态，如有出入会自动修正）。");
+                }
                     UpdateSelectedPanel();
                     int optCount = TweaksOptimized.Count;
                         bool outputEmpty = string.IsNullOrEmpty(TweaksOutputLine?.Text); // P2-2 类：重进页不覆盖用户已产生的输出（操作日志）
@@ -428,6 +435,60 @@ namespace CpqSystemTool
             int selected = TweaksCheckBoxes?.Values.Count(cb => cb.IsChecked == true) ?? 0;
             int total = TweaksCheckBoxes?.Count ?? 0;
             SetStatus($"{_tweaksStatusBase}（已选中 {selected} 项；共 {total} 项）");
+        }
+
+        // ---- R-v125-E4（v1.25）：优化项勾选状态缓存（两段式首帧渲染，用户提议「直接载入关闭前的状态」）----
+        // 进页时 113 项逐个读注册表真实状态（后台 Parallel），右栏「已选中的项目」要等全部读完才首刷（约 3 秒空白）。
+        // 现把最近一次勾选状态落盘（KB 级），进页首帧立即套缓存（右栏秒显）；后台真实读取完成后照旧分块修正
+        //（缓存只解决「快」，真实值永远是准）。
+        private static string _tweaksCachePath => System.IO.Path.Combine(AppPaths.ConfigDir, "TweaksStateCache.json");
+
+        private void SaveTweaksStateCache()
+        {
+            try
+            {
+                if (TweaksCheckBoxes == null) return;
+                // R-v125-E4b：写合法 JSON（"id":true 键值对）；【始终落盘】（含空选）——
+                // 区分「从没保存过」与「保存过但没选」，后者也要首帧秒显「(尚无选中项)」不再等 3 秒
+                var sb = new System.Text.StringBuilder();
+                sb.Append('{');
+                bool first = true;
+                foreach (var kv in TweaksCheckBoxes)
+                {
+                    if (kv.Value.IsChecked != true) continue;   // 只落「选中」项（未选=缺省，三态 null 亦不落）
+                    if (!first) sb.Append(',');
+                    sb.Append('"').Append(kv.Key).Append("\":true");
+                    first = false;
+                }
+                sb.Append('}');
+                System.IO.Directory.CreateDirectory(AppPaths.ConfigDir);
+                AtomicFile.WriteFileAtomic(_tweaksCachePath, sb.ToString());
+            }
+            catch { /* 缓存写失败不影响主流程（下次进页退回真实状态慢刷） */ }
+        }
+
+        /// <summary>进页首帧套缓存：立即勾选上次关闭前的选中项（右栏秒显）。
+        /// 文件存在即返回 true（R-v125-E4b：空选也落盘 → 区分「没保存过」与「保存过但没选」，
+        /// 后者首帧也秒显「(尚无选中项)」，3 秒空白只留给后台真实核对，不再阻塞首屏）。</summary>
+        private bool LoadTweaksStateCache(Dictionary<string, System.Windows.Controls.CheckBox> boxes, Dictionary<string, TextBlock> textBlocks)
+        {
+            try
+            {
+                if (!System.IO.File.Exists(_tweaksCachePath)) return false;
+                var json = System.IO.File.ReadAllText(_tweaksCachePath, System.Text.Encoding.UTF8);
+                // 宽松匹配：新旧两种缓存格式都可读（新 "id":true；旧仅 "id"）
+                foreach (System.Text.RegularExpressions.Match mm in System.Text.RegularExpressions.Regex.Matches(json, "\"([A-Za-z0-9_]+)\""))
+                {
+                    var id = mm.Groups[1].Value;
+                    if (boxes.TryGetValue(id, out var chk))
+                    {
+                        chk.IsChecked = true;
+                        SyncTweakTextColor(id);
+                    }
+                }
+                return true;
+            }
+            catch { return false; }
         }
 
         private void RefreshSelectedList(Dictionary<string, System.Windows.Controls.CheckBox> boxes, StackPanel panel)
@@ -679,18 +740,10 @@ namespace CpqSystemTool
                 System.Windows.MessageBox.Show(this, "已有" + busyBy + "操作正在运行，请先完成再执行。", "操作冲突", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                 return;
             }
-            // fix-3：优化/还原前记录每项当前系统实际状态（仅首次记录，供"还原所有项"按原值恢复）
-            foreach (var kv in desired)
-            {
-                if (kv.Value == null || _originalTweakStates.ContainsKey(kv.Key)) continue;
-                var t = Tweaks.All.FirstOrDefault(x => x.Id == kv.Key);
-                if (t == null) continue;
-                try
-                {
-                    _originalTweakStates[kv.Key] = t.IsThreeState ? (TweakState?)t.GetState3() : (t.State() ? TweakState.On : TweakState.Off);
-                }
-                catch { /* 读取失败则不记录，还原时走"使用默认值"提示路径 */ }
-            }
+            // fix-3：优化/还原前记录每项当前系统实际状态（仅首次记录，供"还原所有项"按原值恢复）。
+            // R-v124-C7（v1.25）：注册表读取移出 UI 线程（113 项最坏卡 0.5–1s）——
+            // 移入下方后台 worker、Parallel 应用之前执行（同一 worker 内串行，记录必在状态改变前；
+            // OperationLock 互斥保证不会与其他 ApplyTweaks 并发，跨线程访问 _originalTweakStates 安全）。
             // 1) 同步勾选框（仅纳入范围且非"系统默认"的项；Default 留待刷新回写）
             foreach (var kv in desired)
                 if (TweaksCheckBoxes != null && TweaksCheckBoxes.TryGetValue(kv.Key, out var cb) && kv.Value != null)
@@ -707,6 +760,18 @@ namespace CpqSystemTool
             {
                 try
                 {
+                    // fix-3 原始状态记录（后台执行，见上方 C7 注释）
+                    foreach (var kv in desired)
+                    {
+                        if (kv.Value == null || _originalTweakStates.ContainsKey(kv.Key)) continue;
+                        var t = Tweaks.All.FirstOrDefault(x => x.Id == kv.Key);
+                        if (t == null) continue;
+                        try
+                        {
+                            _originalTweakStates[kv.Key] = t.IsThreeState ? (TweakState?)t.GetState3() : (t.State() ? TweakState.On : TweakState.Off);
+                        }
+                        catch { /* 读取失败则不记录，还原时走"使用默认值"提示路径 */ }
+                    }
                     int ok = 0, fail = 0;
                     foreach (var kv in desired)
                     {
