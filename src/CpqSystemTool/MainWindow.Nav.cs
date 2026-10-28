@@ -15,8 +15,8 @@ namespace CpqSystemTool
     public partial class MainWindow
     {
         // 软件版本号：左下角显示（同 BuildAbout 关于页更新日志）。
-        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.24.0 ↔ v1.24），两处保持一致。
-        private const string APP_VERSION = "v1.24";
+        // ⚠ 升版时须同步修改 CpqSystemTool.csproj 的 AssemblyVersion / FileVersion / InformationalVersion（当前 1.0.25.0 ↔ v1.25），两处保持一致。
+        private const string APP_VERSION = "v1.25";
 
         // 导航按钮最小高度：16 个按钮平分视口高度（Star 行），窗口变矮或高 DPI 下高度会小于文字行高，
         // 导致文字被压扁/截断。给行与按钮同时设该下限，空间不足时由外层 ScrollViewer 滚动兜底。
@@ -34,7 +34,7 @@ namespace CpqSystemTool
                 new NavItem { Key = "services",  Title = "服务优化",   Icon = "🛠", Build = BuildServices },
                 new NavItem { Key = "appx",      Title = "Appx 商店", Icon = "🛍️", Build = BuildAppx },
                 new NavItem { Key = "appxraw",   Title = "Appx 管理", Icon = "📦", Build = BuildAppxRaw },
-                new NavItem { Key = "commonsw",  Title = "常用软件",   Icon = "📦", Build = BuildCommonSoftware },
+                new NavItem { Key = "commonsw",  Title = "常用软件",   Icon = "💿", Build = BuildCommonSoftware },
                 new NavItem { Key = "security",  Title = "安全防护",   Icon = "🛡", Build = BuildSecurity },
                 new NavItem { Key = "edge",      Title = "Edge 管理",  Icon = "🌐", Build = BuildEdge },
                 new NavItem { Key = "privacy",   Title = "隐私设置",   Icon = "🔒", Build = BuildPrivacy },
@@ -86,7 +86,7 @@ namespace CpqSystemTool
             // 左下角版本+关于入口：文字颜色随主题切换，统一由 UpdateSidebarTitleColors 刷新
             var verTb = new TextBlock
             {
-                // R-v124-B4：显示「关于 V1.24」（= APP_VERSION 常量 Substring(1) 自动跟随，升版无需改此处）。
+                // R-v124-B4：显示「关于 V1.25」（= APP_VERSION 常量 Substring(1) 自动跟随，升版无需改此处）。
                 Text = "关于 V" + APP_VERSION.Substring(1),
                 FontSize = 12,
                 Foreground = _textMain,
