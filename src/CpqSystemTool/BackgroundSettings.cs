@@ -303,6 +303,33 @@ namespace CpqSystemTool
         /// 随数据文件夹一起迁移（挪 exe 数据自动跟随），避免原图片被移动/删除/换机后背景丢失。</summary>
         public static string WallpaperArchiveDir => AppPaths.WallpaperDir;
 
+        /// <summary>
+        /// R-v124-C2（v1.25）：壁纸存档全量 GC——扫描 壁纸\ 目录，删除不被 keepDark/keepLight
+        /// 引用的文件（历史会话遗留的孤儿副本、同名 _N 序号文件、选图后取消的副本）。
+        /// 安全边界：只删「文件」（目录结构不动）；白名单 = 当前设置引用的两个路径（全路径归一化比对）；
+        /// 被占用文件（渲染中/外部程序打开）删除失败即跳过不阻断。返回实际删除数。
+        /// 调用时机：主窗启动 LoadBackgroundSettings 的后台 worker 内、迁移复制之前（串行，无竞态）。
+        /// </summary>
+        public static int GcUnreferencedWallpapers(string keepDark, string keepLight)
+        {
+            var dir = WallpaperArchiveDir;
+            if (!Directory.Exists(dir)) return 0;
+            var keep = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var k in new[] { keepDark, keepLight })
+            {
+                if (string.IsNullOrEmpty(k)) continue;
+                try { keep.Add(Path.GetFullPath(k)); } catch { }
+            }
+            int removed = 0;
+            foreach (var f in Directory.GetFiles(dir))
+            {
+                if (keep.Contains(f)) continue;
+                try { File.Delete(f); removed++; }
+                catch { /* 被占用则跳过（渲染中/外部打开），下次启动再清 */ }
+            }
+            return removed;
+        }
+
         /// <summary>路径是否已在本机数据目录的壁纸存档内（幂等判断；空路径/非法路径返回 false，不抛异常）。</summary>
         public static bool IsLocalImagePath(string path)
         {
@@ -502,9 +529,11 @@ namespace CpqSystemTool
 
         private static double? ExtractJsonDouble(string json, string key)
         {
-            var idx = json.IndexOf("\"" + key + "\"", StringComparison.OrdinalIgnoreCase);
+            // R-v124-C3（v1.25）：键定位与 ExtractJsonString 同口径（结构定位，防字符串值内子串误命中；
+            // 旧实现朴素 IndexOf 在数值键上误命中面更大——如 Stops 项内 "Color" 值含 "Radius" 子串的脏数据场景）
+            int idx = FindStructKeyIndex(json, key);
             if (idx < 0) return null;
-            var colon = json.IndexOf(':', idx);
+            var colon = json.IndexOf(':', idx + key.Length + 2);
             if (colon < 0) return null;
             int i = colon + 1;
             while (i < json.Length && char.IsWhiteSpace(json[i])) i++;
@@ -517,7 +546,8 @@ namespace CpqSystemTool
         private static List<GradientStopSetting> ExtractGradientStops(string json, string key)
         {
             var list = new List<GradientStopSetting>();
-            var idx = json.IndexOf("\"" + key + "\"", StringComparison.OrdinalIgnoreCase);
+            // R-v124-C3（v1.25）：键定位改结构定位（防字符串值内子串误命中，与 ExtractJsonString 同口径）
+            var idx = FindStructKeyIndex(json, key);
             if (idx < 0) return list;
             var start = json.IndexOf('[', idx);
             var end = FindBracketEnd(json, start, '[', ']');
@@ -538,7 +568,8 @@ namespace CpqSystemTool
         private static List<MeshBlobSetting> ExtractMeshBlobs(string json, string key)
         {
             var list = new List<MeshBlobSetting>();
-            var idx = json.IndexOf("\"" + key + "\"", StringComparison.OrdinalIgnoreCase);
+            // R-v124-C3（v1.25）：键定位改结构定位（同上）
+            var idx = FindStructKeyIndex(json, key);
             if (idx < 0) return list;
             var start = json.IndexOf('[', idx);
             var end = FindBracketEnd(json, start, '[', ']');
@@ -945,7 +976,7 @@ namespace CpqSystemTool
         /// 把网格渐变导出为 SVG（忠实复刻 WPF 渲染：底色矩形 + 多层正圆径向渐变椭圆，三段 0→α/4→0 柔边、无模糊）。
         /// 几何与衰减曲线均与 MainWindow.Theme.cs 的 PopulateBlobCanvas 对齐，保证「所见即所得」。
         /// </summary>
-        public static string ToSvg(List<MeshBlobSetting> blobs, string baseColor, int w = 1200, int h = 800)
+        public static string ToSvg(List<MeshBlobSetting> blobs, string baseColor, int w = 1920, int h = 1080)
         {
             if (blobs == null || blobs.Count == 0) return string.Empty;
             var sb = new System.Text.StringBuilder();
@@ -998,6 +1029,74 @@ namespace CpqSystemTool
             sb.AppendLine("  </g>");
             sb.AppendLine("</svg>");
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// 线性渐变导出 SVG（画布 16:9 默认 1920×1080）：与 ToCssLinear 同源的停靠点 + 角度，
+        /// 输出 vector 图（各模式均可导出图片文件；停靠点走活动套调用方传入）。
+        /// </summary>
+        public static string ToSvgLinear(double angleDeg, List<GradientStopSetting> stops, int w = 1920, int h = 1080)
+        {
+            if (stops == null || stops.Count == 0) return string.Empty;
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{0}\" height=\"{1}\" viewBox=\"0 0 {0} {1}\">", w, h));
+            // SVG 坐标系角度：0° = x 轴正向，顺时针为正；CSS linear-gradient angle 与之同向同义（0° 自下而上）。
+            var ang = (angleDeg % 360 + 360) % 360;
+            double rad = ang * Math.PI / 180;
+            // 默认端点：画布中心出发，方向 (sin, -cos)（CSS 0°=向上）
+            double cx = w / 2.0, cy = h / 2.0;
+            double dx = Math.Sin(rad), dy = -Math.Cos(rad);
+            sb.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "  <defs><linearGradient id=\"lin\" x1=\"{0:F1}\" y1=\"{1:F1}\" x2=\"{2:F1}\" y2=\"{3:F1}\">",
+                cx - dx * Math.Max(w, h) / 2, cy - dy * Math.Max(w, h) / 2, cx + dx * Math.Max(w, h) / 2, cy + dy * Math.Max(w, h) / 2));
+            foreach (var st in stops.OrderBy(x => x.Offset))
+            {
+                var c = ParseColor(st.Color);
+                sb.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "    <stop offset=\"{0}%\" stop-color=\"#{1:X2}{2:X2}{3:X2}\" stop-opacity=\"1\"/>",
+                    Math.Round(Clamp01(st.Offset) * 100, 1), c.R, c.G, c.B));
+            }
+            sb.AppendLine("  </linearGradient></defs>");
+            sb.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "  <rect width=\"{0}\" height=\"{1}\" fill=\"url(#lin)\"/>", w, h));
+            sb.AppendLine("</svg>");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 径向渐变导出 SVG（画布 16:9 默认 1920×1080）：中心/半径与停靠点同 ToCssRadial 口径（停靠点走活动套调用方传入）。
+        /// </summary>
+        public static string ToSvgRadial(double centerX, double centerY, double radiusX, double radiusY, List<GradientStopSetting> stops, int w = 1920, int h = 1080)
+        {
+            if (stops == null || stops.Count == 0) return string.Empty;
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{0}\" height=\"{1}\" viewBox=\"0 0 {0} {1}\">", w, h));
+            sb.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "  <defs><radialGradient id=\"rad\" cx=\"{0}%\" cy=\"{1}%\" r=\"{2}%\" fx=\"{0}%\" fy=\"{1}%\">",
+                Clamp01(centerX) * 100, Clamp01(centerY) * 100, Math.Max(0.01, Math.Min(1, (radiusX + radiusY) / 2)) * 100));
+            foreach (var st in stops.OrderBy(x => x.Offset))
+            {
+                var c = ParseColor(st.Color);
+                sb.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "    <stop offset=\"{0}%\" stop-color=\"#{1:X2}{2:X2}{3:X2}\" stop-opacity=\"1\"/>",
+                    Math.Round(Clamp01(st.Offset) * 100, 1), c.R, c.G, c.B));
+            }
+            sb.AppendLine("  </radialGradient></defs>");
+            sb.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "  <rect width=\"{0}\" height=\"{1}\" fill=\"url(#rad)\"/>", w, h));
+            sb.AppendLine("</svg>");
+            return sb.ToString();
+        }
+
+        /// <summary>纯色导出 SVG（画布 16:9 默认 1920×1080）。</summary>
+        public static string ToSvgSolid(string color, int w = 1920, int h = 1080)
+        {
+            var c = ParseColor(color);
+            return string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{0}\" height=\"{1}\"><rect width=\"{0}\" height=\"{1}\" fill=\"#{2:X2}{3:X2}{4:X2}\"/></svg>",
+                w, h, c.R, c.G, c.B) + "\n";
         }
 
         /// <summary>线性插值两个颜色（t=0 返回 a，t=1 返回 b）。用于 Shades/Tints/Tones 生成。</summary>
@@ -1273,9 +1372,9 @@ namespace CpqSystemTool
         // ---- 反序列化数值校验常量（background.json 是用户可直接编辑的明文本，必须当作不可信输入处理）----
 
         /// <summary>光斑半径下限：必须 &gt; 0，否则 Ellipse.Width/Height 为负会在 WPF 渲染时抛异常。</summary>
-        private const double MinBlobRadius = 0.01;
+        public const double MinBlobRadius = 0.01;
         /// <summary>光斑半径上限：防止超大数值把渲染尺寸撑爆（Radius 会乘以画布短边）。</summary>
-        private const double MaxBlobRadius = 10.0;
+        public const double MaxBlobRadius = 10.0;
 
         /// <summary>
         /// 把反序列化得到的数值钳制到 [min, max]。
