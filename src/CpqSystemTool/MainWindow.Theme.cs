@@ -631,7 +631,7 @@ namespace CpqSystemTool
                 // R-v125-E10 已按用户要求回退：farthest-corner 是「方框=光斑衰减边界」的错误诊断下的顺带改动
                 //（光斑是圆的，解释不了方形框；真凶是 E10b 噪点瓦片/E10c GPU tile，已独立修复）。
                 // 恢复原口径 pr = Radius × 画布短边（正圆光斑，与既有 0.6~0.9 参数观感一致）。
-                // 注：CSS/SVG 导出仍为 farthest-corner 语义（导出文件独立口径，不影响屏幕渲染）。
+                // 注：CSS/SVG 网格导出与屏幕渲染同源（Radius×画布短边），无 farthest-corner 独立口径（E10 回退后已统一）。
                 double pr = b.Radius * Math.Min(canvasW, canvasH);
                 var grad = new RadialGradientBrush
                 {
@@ -687,7 +687,7 @@ namespace CpqSystemTool
 
         private static System.Windows.Media.ImageBrush GetBandingDitherBrush(int w, int h)
         {
-            long key = ((long)Math.Max(1, w) << 32) | Math.Max(1, h);
+            long key = ((long)Math.Max(1, w) << 32) | (Math.Max(1, h) & 0xFFFFFFFFL);
             lock (_ditherLock)
             {
                 System.Windows.Media.ImageBrush cached;

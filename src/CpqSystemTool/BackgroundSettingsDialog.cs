@@ -64,9 +64,10 @@ namespace CpqSystemTool
         // R-v125-E20（用户反馈「切背景类型后显示异常」查实）：记录句柄层当前所属模式——
         // 非网格→网格 切换时旧模式控件（半径圈/停点圈/走廊）必须整清，否则残留一大片虚线
         private BackgroundMode _fullOverlayLastMode;
+        // 大窗线性轴虚线（DrawFullLinearHandles 创建，加入 overlay；非网格切换时整清）
+        private System.Windows.Shapes.Line _fullAxisLine;
         private bool _fullDraggingLineEnd, _fullDraggingLineCenter, _fullDraggingRadialCenter, _fullDraggingRadiusX, _fullDraggingRadiusY;
         private Point _fullDragStartLineCenter;
-        private System.Windows.Shapes.Line _fullAxisLine;
         private TextBlock _modeHint;
         private Border _geometryCard;
         private Border _listCard;
@@ -1316,27 +1317,15 @@ ToolTip = "正圆 = 16:9 屏幕视觉正圆（纵半径=横半径×16/9，如 0.
 
         // R-v125-E13：大窗句柄层刷新（与 _previewOverlay 的小预览句柄同源同口径：
         // 活动套 GetBlobs(_previewDark)、14px 椭圆句柄、虚线半径圈 pr=Radius×画布短边、选中 accent 描边）。
-        // R-v125-E13d（用户反馈「大窗句柄仍不显示」）：诊断日志（配置目录 e13_diag.log），
-        // 每帧记录 模式/活动光斑数/尺寸/句柄数/异常，一次重测即可定位（条件不满足/异常/未调用）。
-        private static void E13Diag(string line)
-        {
-            try
-            {
-                var p = System.IO.Path.Combine(AppPaths.ConfigDir, "e13_diag.log");
-                System.IO.File.AppendAllText(p, System.DateTime.Now.ToString("HH:mm:ss.fff") + " " + line + Environment.NewLine);
-            }
-            catch { /* 诊断失败不影响功能 */ }
-        }
 
         private void RefreshFullPreviewHandles()
         {
             var ov = _fullPreviewOverlay;
-            if (ov == null) { E13Diag("SKIP ov==null"); return; }
+            if (ov == null) return;
             var win = _fullPreviewWindow;
             var active = _settings.GetBlobs(_previewDark);
             if (win == null)
             {
-                E13Diag("CLEAR win==null");
                 return;
             }
             // R-v125-E14：非网格模式也画对应控件（线性=轴虚线+停点+中心 / 径向=半径圈+中心+半径点 / 其他清空）
@@ -1345,13 +1334,11 @@ ToolTip = "正圆 = 16:9 屏幕视觉正圆（纵半径=横半径×16/9，如 0.
                 ov.Children.Clear();
                 _fullBlobHandles.Clear();
                 _fullBlobRings.Clear();
-                _fullAxisLine = null;
                 if (_settings.Mode == BackgroundMode.LinearGradient)
                     DrawFullLinearHandles(ov, win.ActualWidth, win.ActualHeight);
                 else if (_settings.Mode == BackgroundMode.RadialGradient)
                     DrawFullRadialHandles(ov, win.ActualWidth, win.ActualHeight);
                 _fullOverlayLastMode = _settings.Mode;
-                E13Diag($"UI mode={(int)_settings.Mode} ovChildren={ov.Children.Count}");
                 return;
             }
             if (active == null || active.Count == 0)
@@ -1360,7 +1347,6 @@ ToolTip = "正圆 = 16:9 屏幕视觉正圆（纵半径=横半径×16/9，如 0.
                 _fullBlobHandles.Clear();
                 _fullBlobRings.Clear();
                 _fullOverlayLastMode = BackgroundMode.MeshGradient;
-                E13Diag($"CLEAR active empty");
                 return;
             }
             // R-v125-E20：非网格模式切到网格（且有光斑）时，旧模式控件（径向圈/停点/走廊）必须整清
@@ -1432,12 +1418,8 @@ ToolTip = "正圆 = 16:9 屏幕视觉正圆（纵半径=横半径×16/9，如 0.
                 Canvas.SetLeft(ring, blob.CenterX * w - pr);
                 Canvas.SetTop(ring, blob.CenterY * h - pr);
             }
-            E13Diag($"OK active={active.Count} w={w:F0} h={h:F0} ovChildren={ov.Children.Count} handles={_fullBlobHandles.Count}");
             }
-            catch (Exception ex)
-            {
-                E13Diag("EX: " + ex.GetType().Name + " " + ex.Message + " @ " + ex.StackTrace?.Split('\n')[0].Trim());
-            }
+            catch { /* 句柄层异常不上抛（不影响渐变渲染） */ }
         }
 
         private void FullHandle_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -5257,7 +5239,7 @@ ToolTip = "正圆 = 16:9 屏幕视觉正圆（纵半径=横半径×16/9，如 0.
                             svg = BackgroundSettings.ToSvgRadial(_settings.RadialCenterX, _settings.RadialCenterY, _settings.RadialRadiusX, _settings.RadialRadiusY, stops);
                             break;
                         case BackgroundMode.Solid:
-                            svg = BackgroundSettings.ToSvgSolid(_settings.SolidColor);
+                            svg = BackgroundSettings.ToSvgSolid(_settings.GetSolidColor(_previewDark));   // 所见即所导（活动套）
                             break;
                         default:
                             SetCssStatus("当前模式不支持 SVG 导出。");
