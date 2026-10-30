@@ -91,12 +91,12 @@
 
 ### 下载与运行
 
-1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cab.dpdns.org/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.25.exe`）。
+1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cab.dpdns.org/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_智能外壳_v1.25.exe`，单文件含运行时指引）。
 2. 双击运行即可，**无需安装**。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入单文件 exe。
 3. 首次使用建议：先创建系统还原点，再进行优化配置。
 
-> 当前版本 `系统清理与优化工具_v1.25.exe`：10,677,444 字节（约 10.18 MiB），SHA256：
-`EF0BA7FDB1B9BD153AED1F5B899291ABD4E69CFC178DFAD4A586509DFABB0B85`
+> 当前版本 `系统清理与优化工具_智能外壳_v1.25.exe`（智能外壳版：缺 .NET 10 运行时自动一键安装）：10,945,536 字节（约 10.44 MiB），SHA256：
+`c995c9090612f4eecf1bd17bf3d7fe8aeeeb044d5a4d58aeaf45506ea80d3098`
 
 ### 通用操作约定
 
@@ -652,7 +652,7 @@ dotnet build -c Release
 
 ### 分发
 
-只需分发单个 `系统清理与优化工具_v1.25.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来；`WebView2Loader.dll` 并排放置，缺失时程序自动从 NuGet 恢复）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
+只需分发单个 `系统清理与优化工具_智能外壳_v1.25.exe`（智能外壳版：内嵌主程序 + 缺 .NET 10 运行时自动安装指引；由发布链构建，主程序构建输出按版本内嵌进外壳）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
 
 ---
 
