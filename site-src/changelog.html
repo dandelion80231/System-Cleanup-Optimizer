@@ -3,16 +3,16 @@
 <head data-page-node-id="kHNxH6vkJQWYsX9RQpKiDq">
 <meta charset="UTF-8" data-page-node-id="JQVThOj7vJm2Ct6tdKPv2W">
 <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="IMWMkF1wkLLg6LDfIADWG9">
-<title>更新日志 — 系统清理与优化工具 v1.01 – v1.24</title>
+<title>更新日志 — 系统清理与优化工具 v1.01 – v1.25</title>
 <meta name="description" content="系统清理与优化工具更新日志：v1.01 到 v1.24 的完整迭代记录，包括官网地址、检查更新改为官网 version.json、安装包统一中文名等。" data-page-node-id="RlDQcqTGO2cz3jAhKIeBiT">
 <link rel="canonical" href="https://cab.dpdns.org/changelog" data-page-node-id="dPwLooDLD92TzuZJolPUcj">
 <meta property="og:type" content="website" data-page-node-id="2zj94ZWQPnLlqYJNiV56Ku">
 <meta property="og:site_name" content="系统清理与优化工具" data-page-node-id="GwE9ZfZCoW6OEe9sUkhXwg">
-<meta property="og:title" content="更新日志 — 系统清理与优化工具 v1.01 – v1.24" data-page-node-id="cjhqz3XBcbZ8cL5kqsqTM9">
+<meta property="og:title" content="更新日志 — 系统清理与优化工具 v1.01 – v1.25" data-page-node-id="cjhqz3XBcbZ8cL5kqsqTM9">
 <meta property="og:description" content="系统清理与优化工具更新日志：v1.01 到 v1.24 的完整迭代记录，包括官网地址、检查更新改为官网 version.json、安装包统一中文名等。" data-page-node-id="PGpB3lFad94wzOEeNvJP9I">
 <meta property="og:url" content="https://cab.dpdns.org/changelog" data-page-node-id="V4y9tNDqKG29uebF2giQcL">
 <meta name="twitter:card" content="summary_large_image" data-page-node-id="hiPCCTbj8dytEJshqAcT15">
-<meta name="twitter:title" content="更新日志 — 系统清理与优化工具 v1.01 – v1.24" data-page-node-id="7BmsDXeaEscM4hbcdaYeFy">
+<meta name="twitter:title" content="更新日志 — 系统清理与优化工具 v1.01 – v1.25" data-page-node-id="7BmsDXeaEscM4hbcdaYeFy">
 <meta name="twitter:description" content="系统清理与优化工具更新日志：v1.01 到 v1.24 的完整迭代记录，包括官网地址、检查更新改为官网 version.json、安装包统一中文名等。" data-page-node-id="AXn4UHdQOb1PNm8c9BUQFl">
 
 <meta name="keywords" content="更新日志,changelog,系统清理与优化工具,v1.24" data-page-node-id="tyM9k3VL001cvdqAF27EEC">
@@ -66,6 +66,17 @@
         </div>
       </div>
       <div class="timeline-scroll">
+        <div class="tl-item">
+          <span class="ver">v1.25</span><span class="date">2026-10-21</span>
+          <ul>
+            <li><em>相对 v1.24：全量代码审查修复批 + 性能/健壮性优化批；背景预览体验大幅增强（完整预览窗、虚线直接拖拽、SVG 16:9 导出）。</em></li>
+            <li><strong>⚡ 性能</strong>：背景图存量迁移复制改后台线程（百 MB 壁纸不再冻结启动窗口）；弹窗拖拽热路径笔刷收敛（消除 mousemove 高频 GC）；系统优化「开始优化/还原」原始状态记录移后台（113 项注册表不再卡 UI）；内存分析进行中互斥。</li>
+            <li><strong>🐛 缺陷修复</strong>：blob 行输入框 NaN/Infinity 守卫 + 半径钳制统一模型层边界；背景 JSON 解析器口径统一；SVG 导出改走活动套；background.json 损坏自愈（加载期严格自检，非法时后台重写干净文件）。</li>
+            <li><strong>♻️ 打磨</strong>：壁纸存档全量 GC；SVG 导出扩展到 线性/径向/纯色 + 画布 16:9（1920×1080）；完整预览窗（1280×720，随弹窗即时同步、图片模式显示原图、正圆/椭圆 16:9 语义）；渐变放大条纹修复（4 段衰减 + 噪点抖动）；网格「中间方框」修复（整幅无瓦片噪点 + 软件渲染）；纯色色板单色块点选；预览窗悬浮工具条；大窗全模式句柄与虚线直接拖拽（16px 命中走廊、停点同心圈独立可拖、椭圆距离跟手、松手统一复位）；切类型句柄整清；背景类型下拉框定稿（72px 固定 + 左缩进 6px 上下对齐）；系统优化页首帧加速（勾选缓存两段式）。</li>
+            <li><strong>🧹 冗余/注释债</strong>：7 项清理（废弃模块注释、KMS 死分支、菜单项计数更正等）。</li>
+            <li><strong>📌 元数据</strong>：APP_VERSION → v1.25；csproj 1.0.25.0；外壳元数据同步 v1.25；左侧导航「常用软件」图标与「Appx 管理」区分。</li>
+          </ul>
+        </div>
         <div class="tl-item">
           <span class="ver">v1.24</span><span class="date">2026-10-18</span>
           <ul>
