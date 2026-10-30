@@ -4,7 +4,7 @@
 >
 > **技术栈**: WPF (C# / .NET 10) · 单文件 exe · 零安装 · 双击即跑 · 管理员权限自动提权
 >
-> **版本**: v1.24
+> **版本**: v1.25
 >
 > **项目主页**: [https://github.com/dandelion80231/System-Cleanup-Optimizer](https://github.com/dandelion80231/System-Cleanup-Optimizer)
 >
@@ -91,12 +91,12 @@
 
 ### 下载与运行
 
-1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cab.dpdns.org/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.24.exe`）。
+1. 前往 [Releases](https://github.com/dandelion80231/System-Cleanup-Optimizer/releases/latest) 或 [官网](https://cab.dpdns.org/) 下载最新版 `.exe`（文件名如 `系统清理与优化工具_v1.25.exe`）。
 2. 双击运行即可，**无需安装**。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入单文件 exe。
 3. 首次使用建议：先创建系统还原点，再进行优化配置。
 
-> 当前版本 `系统清理与优化工具_v1.24.exe`：10,607,812 字节（约 10.11 MiB），SHA256：
-`0ac577f6234500584336edc05b99e0d82c824e8c96e5f526fae6f40183277490`
+> 当前版本 `系统清理与优化工具_v1.25.exe`：10,677,444 字节（约 10.18 MiB），SHA256：
+`EF0BA7FDB1B9BD153AED1F5B899291ABD4E69CFC178DFAD4A586509DFABB0B85`
 
 ### 通用操作约定
 
@@ -652,7 +652,7 @@ dotnet build -c Release
 
 ### 分发
 
-只需分发单个 `系统清理与优化工具_v1.24.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来；`WebView2Loader.dll` 并排放置，缺失时程序自动从 NuGet 恢复）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
+只需分发单个 `系统清理与优化工具_v1.25.exe` 文件（由构建输出 `系统清理与优化工具.exe` 按版本重命名而来；`WebView2Loader.dll` 并排放置，缺失时程序自动从 NuGet 恢复）。所有资源（背景图、图标、SKU 许可令牌、源码包）均已嵌入。
 
 ---
 
@@ -682,7 +682,7 @@ dotnet build -c Release
 
 ## 版本更新记录
 
-最新版本为 **v1.24**（.NET 10 构建，2026-10-18）。各版本完整变更见 [CHANGELOG.md](CHANGELOG.md)。
+最新版本为 **v1.25**（.NET 10 构建，2026-10-29）。各版本完整变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ### v1.24（2026-10-18）
 
